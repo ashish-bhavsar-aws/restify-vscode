@@ -504,11 +504,11 @@ body {
 
 <!-- SSL toggle -->
 <div class="ssl-row">
-  <label title="Allow self-signed and untrusted certificates">
-    <input type="checkbox" id="ssl-bypass" checked>
-    Allow self-signed certs
+  <label title="Verify SSL certificates. Uncheck to allow self-signed/untrusted certificates.">
+    <input type="checkbox" id="ssl-verify">
+    Verify SSL Connection
   </label>
-  <span style="font-size:10px;opacity:.5">Useful for local dev / internal APIs</span>
+  <span style="font-size:10px;opacity:.5">Uncheck for local dev / internal APIs</span>
 </div>
 
 <!-- Main Split Area -->
@@ -862,7 +862,7 @@ function buildRequest() {
     headers.push({ key: 'Content-Type', value: 'application/json', enabled: true });
   }
 
-  const sslBypass = document.getElementById('ssl-bypass').checked;
+  const sslVerify = document.getElementById('ssl-verify').checked;
 
   return {
     name: document.getElementById('req-name').value || state.url,
@@ -873,7 +873,7 @@ function buildRequest() {
     bodyType: state.bodyType === 'graphql' ? 'json' : state.bodyType,
     body,
     formData: state.formData,
-    rejectUnauthorized: !sslBypass
+    rejectUnauthorized: sslVerify
   };
 }
 
@@ -1002,8 +1002,9 @@ function loadRequestData(data) {
     setTimeout(() => { const el = document.getElementById('auth-token'); if (el) el.value = state.authData.token; }, 50);
   }
 
-  const sslEl = document.getElementById('ssl-bypass');
-  if (sslEl) sslEl.checked = data.rejectUnauthorized === false || data.rejectUnauthorized === undefined ? true : false;
+  const sslEl = document.getElementById('ssl-verify');
+  // If rejectUnauthorized is explicitly true, check the box to verify. Otherwise, default to unchecked (allow all).
+  if (sslEl) sslEl.checked = data.rejectUnauthorized === true;
 }
 
 // ─── Tabs ──────────────────────────────────────────────────

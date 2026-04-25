@@ -128,7 +128,8 @@ class RestifyPanel {
     this.panel.webview.postMessage({ command: 'requestStart' });
 
     try {
-      const result = await this._doRequest(method, finalUrl, headers, body, req.rejectUnauthorized !== false ? false : true);
+      // Pass the strict boolean directly (true to verify, false to bypass)
+      const result = await this._doRequest(method, finalUrl, headers, body, req.rejectUnauthorized === true);
       const duration = Date.now() - startTime;
 
       const responseData = {

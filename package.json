@@ -7,8 +7,12 @@
   "engines": {
     "vscode": "^1.80.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onView:restify-sidebar"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:restify-sidebar"
+  ],
   "main": "./src/extension.js",
   "icon": "media/icon.png",
   "contributes": {
@@ -51,7 +55,59 @@
         "title": "New Request",
         "category": "Restify"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Restify",
+      "properties": {
+        "restify.proxy": {
+          "type": "object",
+          "description": "Proxy settings for Restify requests",
+          "default": {},
+          "properties": {
+            "http.proxyAuthorization": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The header value for proxy authorization."
+            },
+            "http.proxy": {
+              "type": "string",
+              "description": "The proxy setting to use."
+            },
+            "http.noProxy": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Hosts that should not use the proxy."
+            }
+          }
+        },
+        "restify.certificates": {
+          "type": "object",
+          "description": "mTLS Certificates mapping (Hostname to File Paths)",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "certPath": {
+                "type": "string",
+                "description": "Absolute path to client certificate"
+              },
+              "keyPath": {
+                "type": "string",
+                "description": "Absolute path to client private key"
+              },
+              "caPath": {
+                "type": "string",
+                "description": "Optional: Path to CA certificate"
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "dependencies": {
     "node-fetch": "^2.6.9"

@@ -56,6 +56,9 @@ class SidebarProvider {
         case 'requestData':
           this._sendData();
           break;
+        case 'toggleCollectionState':
+          this.storageManager.setCollectionExpansionState(msg.id, msg.isOpen);
+          break;
       }
     });
 
@@ -70,7 +73,10 @@ class SidebarProvider {
     if (this.type === 'history') {
       data = { history: this.storageManager.getHistory() };
     } else if (this.type === 'collections') {
-      data = { collections: this.storageManager.getCollections() };
+      data = { 
+        collections: this.storageManager.getCollections(),
+        expansionStates: this.storageManager.getExpansionStates()
+      };
     } else if (this.type === 'environments') {
       data = {
         environments: this.storageManager.getEnvironments(),

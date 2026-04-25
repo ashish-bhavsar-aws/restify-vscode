@@ -249,6 +249,10 @@ window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.command === 'setData') {
     state = msg.data;
+    // Sync the local openCollections with the data from the extension
+    if (msg.data.expansionStates) {
+      openCollections = msg.data.expansionStates;
+    }
     render();
   }
 });
@@ -380,8 +384,14 @@ function toggleCol(idx, colId) {
   const isNowOpen = el.classList.toggle('open');
   caret.classList.toggle('open');
   
-  // Save the state so it survives the next UI refresh
   openCollections[colId] = isNowOpen; 
+
+  // PERSIST: Tell the extension to remember this
+  vscode.postMessage({ 
+    command: 'toggleCollectionState', 
+    id: colId, 
+    isOpen: isNowOpen 
+  });
 }
 
 function newCollection() {

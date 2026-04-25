@@ -2,7 +2,18 @@ class StorageManager {
   constructor(globalState) {
     this.globalState = globalState;
     this.listeners = [];
+    this.expansionStates = {};
   }
+
+setCollectionExpansionState(id, isOpen) {
+  const states = this.globalState.get('restify.expansionStates', {});
+  states[id] = isOpen;
+  this.globalState.update('restify.expansionStates', states);
+}
+
+getExpansionStates() {
+  return this.globalState.get('restify.expansionStates', {});
+}
 
   // ─── History ──────────────────────────────────────────────
   getHistory() {

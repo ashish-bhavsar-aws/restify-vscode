@@ -41,6 +41,20 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+#variable-tooltip {
+  position: fixed;
+  display: none;
+  background: var(--surface-2);
+  color: var(--accent);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  font-family: monospace;
+}
 /* ─── Top Bar ─────────────────────── */
 .top-bar {
   display: flex;
@@ -494,7 +508,7 @@ body {
 </style>
 </head>
 <body>
-
+<div id="variable-tooltip"></div>
 <!-- Top Bar -->
 <div class="top-bar">
   <div class="brand">⚡ Restify</div>
@@ -731,6 +745,11 @@ window.addEventListener('message', e => {
     case 'collections':
       state.collections = msg.data || [];
       populateSaveModal();
+      break;
+    case 'setTooltipValue':
+      if (msg.value) {
+        tooltip.textContent = msg.value;
+      }
       break;
   }
 });
@@ -1155,6 +1174,40 @@ function escHtml(s) {
   if (typeof s !== 'string') s = String(s || '');
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+
+const tooltip = document.getElementById('variable-tooltip');
+
+function handleVarHover(e) {
+  const text = e.target.value || '';
+  const pos = e.target.selectionStart; // Simple detection based on cursor/hover
+  
+  // Regex to find all {{vars}}
+  const regex = /\{\{([^}]+)\}\}/g;
+  let match;
+  let hoveredVar = null;
+
+  // Check if mouse/cursor is within a variable range
+  while ((match = regex.exec(text)) !== null) {
+    hoveredVar = match[0];
+    break; // For simplicity, we resolve the first one or the whole string
+  }
+
+  if (hoveredVar) {
+    vscode.postMessage({ command: 'resolveTooltip', text: hoveredVar });
+    
+    // Position tooltip near cursor
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 10) + 'px';
+    tooltip.style.top = (e.clientY + 10) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+// Attach to URL input
+document.getElementById('url-input').addEventListener('mousemove', handleVarHover);
+document.getElementById('url-input').addEventListener('mouseleave', () => tooltip.style.display = 'none');
+
 </script>
 </body>
 </html>`;

@@ -1,7 +1,7 @@
 const vscode = require('vscode');
 const https = require('https');
 const http = require('http');
-const fs = require('fs'); // New: required to read cert files
+const fs = require('fs');
 const { URL } = require('url');
 const { getMainPanelHtml } = require('./mainPanelHtml');
 
@@ -11,9 +11,10 @@ class RestifyPanel {
     this.storageManager = storageManager;
     this.onDispose = onDispose;
 
+    // CHANGED: Create a NEW panel every time this class is instantiated
     this.panel = vscode.window.createWebviewPanel(
       'restify-main',
-      'Restify',
+      'New Request', 
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -23,18 +24,30 @@ class RestifyPanel {
     );
 
     this.panel.webview.html = getMainPanelHtml();
-
     this.panel.webview.onDidReceiveMessage(msg => this._handleMessage(msg));
+    
+    // CHANGED: Pass 'this' to onDispose so extension.js can track multiple instances
     this.panel.onDidDispose(() => {
-      this.onDispose();
+      this.onDispose(this);
     });
 
-    setTimeout(() => {
-      this._sendEnvironments();
-    }, 500);
+    this.updateMetadata();
   }
 
+  // NEW: Helper to sync data across all open tabs
+  updateMetadata() {
+    this._sendEnvironments();
+    this.panel.webview.postMessage({
+      command: 'collections',
+      data: this.storageManager.getCollections()
+    });
+  }
+
+  // CHANGED: Update the VS Code Tab Title when a request is loaded
   loadRequest(requestData) {
+    if (requestData && requestData.name) {
+      this.panel.title = requestData.name;
+    }
     setTimeout(() => {
       this.panel.webview.postMessage({ command: 'loadRequest', data: requestData });
     }, 300);
@@ -48,7 +61,6 @@ class RestifyPanel {
     });
   }
 
-  // Helper to determine if the proxy should be bypassed for a host
   _shouldUseProxy(host, noProxyArray) {
     if (!noProxyArray || !Array.isArray(noProxyArray)) return true;
     return !noProxyArray.some(noHost => {
@@ -59,7 +71,6 @@ class RestifyPanel {
 
   _getCertificatesForHost(host) {
     const config = vscode.workspace.getConfiguration('restify').get('certificates') || {};
-    // Match exact host or find if host ends with the config key (for wildcards)
     const hostMatch = Object.keys(config).find(key => 
         host === key || host.endsWith('.' + key)
     );
@@ -78,7 +89,7 @@ class RestifyPanel {
         }
     }
     return null;
-}
+  }
 
   async _handleMessage(msg) {
     switch (msg.command) {
@@ -89,10 +100,7 @@ class RestifyPanel {
         this._saveToCollection(msg.request, msg.collectionName);
         break;
       case 'getCollections':
-        this.panel.webview.postMessage({
-          command: 'collections',
-          data: this.storageManager.getCollections()
-        });
+        this.updateMetadata();
         break;
       case 'openSettings':
         vscode.commands.executeCommand('workbench.action.openSettings', 'restify');
@@ -105,8 +113,18 @@ class RestifyPanel {
         break;
       case 'setActiveEnvironment':
         this.storageManager.setActiveEnvironment(msg.id);
-        this._sendEnvironments();
         break;
+      // NEW: Update tab title dynamically
+      case 'updateTitle':
+        this.panel.title = msg.title || 'New Request';
+        break;
+      case 'resolveTooltip':
+        const resolved = this.storageManager.resolveVariables(msg.text);
+        this.panel.webview.postMessage({ 
+          command: 'setTooltipValue', 
+          value: resolved 
+        });
+      break;
     }
   }
 
@@ -176,7 +194,6 @@ class RestifyPanel {
       return;
     }
 
-    // Proxy Logic Implementation
     const proxyConfig = vscode.workspace.getConfiguration('restify').get('proxy');
     let proxyOpts = null;
 
@@ -249,22 +266,19 @@ class RestifyPanel {
         rejectUnauthorized: rejectUnauthorized === true
       };
 
-      // --- New: mTLS Logic ---
       if (isHttps) {
         const mtlsOptions = this._getCertificatesForHost(parsedUrl.hostname);
         if (mtlsOptions) {
           Object.assign(options, mtlsOptions);
         }
       }
-      // -----------------------
 
-      // Configuration for Proxy Request
       if (proxyOpts && proxyOpts.proxy) {
         try {
           const proxyUrl = new URL(proxyOpts.proxy);
           options.hostname = proxyUrl.hostname;
           options.port = proxyUrl.port || (proxyUrl.protocol === 'https:' ? 443 : 80);
-          options.path = url; // Full URL required for proxy requests
+          options.path = url; 
 
           if (proxyOpts.auth) {
             options.headers['Proxy-Authorization'] = proxyOpts.auth;

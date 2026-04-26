@@ -53,9 +53,19 @@
       {
         "command": "restify.newRequest",
         "title": "New Request",
-        "category": "Restify"
+        "category": "Restify",
+        "icon": "media/new-request.svg"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "restify.newRequest",
+          "when": "view == restify-history",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Restify",
       "properties": {

@@ -3,12 +3,12 @@ const { RestifyPanel } = require('./RestifyPanel');
 const { SidebarProvider } = require('./SidebarProvider');
 const { StorageManager } = require('./StorageManager');
 
-let mainPanel = null;
-
 function activate(context) {
   const storageManager = new StorageManager(context.globalState);
+  
+  // Track all open panels to sync data (like environment changes) across all tabs
+  const openPanels = new Set();
 
-  // Register sidebar providers
   const historyProvider = new SidebarProvider(context, 'history', storageManager);
   const collectionsProvider = new SidebarProvider(context, 'collections', storageManager);
   const environmentsProvider = new SidebarProvider(context, 'environments', storageManager);
@@ -19,50 +19,49 @@ function activate(context) {
     vscode.window.registerWebviewViewProvider('restify-environments', environmentsProvider)
   );
 
-  // Command: open main panel
+  // Updated Command: Always creates a NEW instance
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.openMain', (requestData) => {
-      if (mainPanel) {
-        mainPanel.panel.reveal(vscode.ViewColumn.One);
-        if (requestData) {
-          mainPanel.loadRequest(requestData);
-        }
-      } else {
-        mainPanel = new RestifyPanel(context, storageManager, () => { mainPanel = null; });
-        if (requestData) {
-          mainPanel.loadRequest(requestData);
-        }
+      // Pass a disposal callback to remove the panel from our Set when closed
+      const panel = new RestifyPanel(context, storageManager, (instance) => {
+        openPanels.delete(instance);
+      });
+
+      openPanels.add(panel);
+
+      if (requestData) {
+        panel.loadRequest(requestData);
       }
 
-      // Notify sidebars to refresh
       historyProvider.refresh();
       collectionsProvider.refresh();
       environmentsProvider.refresh();
     })
   );
 
-  // Command: new request
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.newRequest', () => {
       vscode.commands.executeCommand('restify.openMain');
     })
   );
 
-  // Auto-open main panel when sidebar is first viewed
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.openFromSidebar', (data) => {
       vscode.commands.executeCommand('restify.openMain', data);
     })
   );
   
-  // Actually execute the command to open the panel
   vscode.commands.executeCommand('restify.openMain');
 
-  // Set up message passing between sidebar and main panel
   storageManager.onDidChange(() => {
     historyProvider.refresh();
     collectionsProvider.refresh();
     environmentsProvider.refresh();
+    
+    // Sync environment/collection data across ALL open request tabs
+    openPanels.forEach(p => {
+        if (p.updateMetadata) p.updateMetadata();
+    });
   });
 }
 

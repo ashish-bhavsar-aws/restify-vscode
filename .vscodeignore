@@ -1,4 +1,9 @@
-.vscode/**
+# Exclude source
+src/**
+
+# Exclude dev stuff
 node_modules/**
-.gitignore
-*.vsix
+!node_modules/your-runtime-deps/**
+output.zip
+test/**
+.vscode/**

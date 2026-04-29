@@ -2,7 +2,7 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "AshishBhavsar",
   "engines": {
     "vscode": "^1.80.0"
@@ -11,9 +11,13 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:restify-sidebar"
+    "onView:restify-history",
+    "onView:restify-collections",
+    "onView:restify-environments",
+    "onCommand:restify.openMain",
+    "onCommand:restify.newRequest"
   ],
-  "main": "./src/extension.js",
+  "main": "./dist/extension.js",
   "icon": "media/icon.jpg",
   "contributes": {
     "viewsContainers": {
@@ -119,7 +123,32 @@
       }
     }
   },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/webview-ui-toolkit": "^1.2.0",
+    "css-loader": "^7.1.4",
+    "mini-css-extract-plugin": "^2.10.2",
+    "prettier": "^3.8.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.4.0",
+    "typescript": "^5.0.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0"
+  },
   "dependencies": {
+    "https-proxy-agent": "^9.0.0",
+    "lokijs": "^1.5.12",
     "node-fetch": "^2.6.9"
+  },
+  "scripts": {
+    "compile": "webpack --mode development",
+    "watch": "webpack --mode development --watch",
+    "build": "webpack --mode production",
+    "package": "vsce package"
   }
 }

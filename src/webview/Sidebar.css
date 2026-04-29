@@ -1,0 +1,214 @@
+:root {
+  --bg:        var(--vscode-editor-background);
+  --fg:        var(--vscode-editor-foreground);
+  --border:    var(--vscode-panel-border, var(--vscode-editorGroup-border, rgba(128,128,128,0.3)));
+  --input-bg:  var(--vscode-input-background);
+  --input-fg:  var(--vscode-input-foreground);
+  --accent:    var(--vscode-button-background, #0078d4);
+  --accent-fg: var(--vscode-button-foreground, #ffffff);
+  --surface:   var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --surface-2: var(--vscode-dropdown-background, var(--vscode-input-background));
+  --hover:     var(--vscode-list-hoverBackground, rgba(128,128,128,0.1));
+  --muted:     var(--vscode-descriptionForeground, rgba(128,128,128,0.8));
+  --error:     var(--vscode-errorForeground, #cf222e);
+  /* Semantic — light-safe defaults */
+  --success:    #2da44e;
+  --warning:    #9a6700;
+  --tag-get:    #1a7f37;
+  --tag-post:   #bc4c00;
+  --tag-put:    #0076d1;
+  --tag-delete: #cf222e;
+  --tag-patch:  #7d4e00;
+  --tag-head:   #6639ba;
+  --radius: 6px;
+}
+
+body.vscode-dark {
+  --success:    #a6e3a1;
+  --warning:    #f9e2af;
+  --error:      #f38ba8;
+  --tag-get:    #a6e3a1;
+  --tag-post:   #fab387;
+  --tag-put:    #89dceb;
+  --tag-delete: #f38ba8;
+  --tag-patch:  #f9e2af;
+  --tag-head:   #cba6f7;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--vscode-font-family, 'Segoe UI', system-ui, sans-serif);
+  font-size: 12px; overflow: hidden; height: 100vh;
+}
+#root { height: 100%; display: flex; flex-direction: column; }
+/* ─── Container ──── */
+.sidebar-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* ─── Toolbar ──── */
+.toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.toolbar-label { flex: 1; font-size: 11px; color: var(--muted); }
+.search-input {
+  flex: 1; background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--fg); padding: 4px 8px; border-radius: var(--radius);
+  font-size: 11px; outline: none; font-family: inherit;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--muted); }
+/* ─── Buttons ──── */
+.btn {
+  background: var(--accent); color: var(--accent-fg); border: none;
+  padding: 4px 10px; border-radius: var(--radius); font-size: 11px;
+  font-weight: 700; cursor: pointer; font-family: inherit;
+  white-space: nowrap; flex-shrink: 0; transition: opacity .15s;
+}
+.btn:hover { opacity: .85; }
+.btn-ghost {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  padding: 4px 10px; border-radius: var(--radius); font-size: 11px;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+  flex-shrink: 0; transition: all .15s;
+}
+.btn-ghost:hover { color: var(--fg); background: var(--hover); }
+.btn-icon {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 2px 5px; font-size: 14px;
+  border-radius: 3px; flex-shrink: 0; transition: color .1s;
+  line-height: 1;
+}
+.btn-icon:hover { color: var(--error); }
+/* ─── List ──── */
+.list { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.list::-webkit-scrollbar { width: 4px; }
+.list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* ─── Empty state ──── */
+.empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 32px 16px;
+  color: var(--muted); gap: 6px; text-align: center;
+}
+.empty-icon { font-size: 28px; opacity: .4; }
+.empty-sub  { font-size: 10px; opacity: .6; }
+/* ─── History item ──── */
+.item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  cursor: pointer; transition: background .1s;
+}
+.item:hover { background: var(--hover); }
+.item-content { flex: 1; min-width: 0; }
+.item-name {
+  font-size: 12px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.item-meta {
+  font-size: 10px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+}
+.item-right {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 2px; flex-shrink: 0;
+}
+.status-row { display: flex; align-items: center; gap: 3px; }
+.status-text { font-size: 10px; color: var(--muted); }
+.time { font-size: 9px; color: var(--muted); }
+/* ─── Method badge ──── */
+.method-badge {
+  font-size: 9px; font-weight: 700; padding: 1px 5px;
+  border-radius: 3px; flex-shrink: 0; letter-spacing: .5px;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+.method-GET     { color: var(--tag-get); }
+.method-POST    { color: var(--tag-post); }
+.method-PUT     { color: var(--tag-put); }
+.method-DELETE  { color: var(--tag-delete); }
+.method-PATCH   { color: var(--tag-patch); }
+.method-HEAD    { color: var(--tag-head); }
+.method-OPTIONS { color: var(--muted); }
+/* ─── Status dot ──── */
+.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-ok   { background: var(--success); }
+.status-warn { background: var(--tag-patch); }
+.status-err  { background: var(--error); }
+/* ─── Collection group ──── */
+.collection-group { border-bottom: 1px solid var(--border); }
+.collection-header {
+  display: flex; align-items: center; gap: 6px; padding: 7px 8px;
+  cursor: pointer; background: color-mix(in srgb, var(--hover) 60%, transparent);
+  user-select: none; transition: background .1s;
+}
+.collection-header:hover { background: var(--hover); }
+.caret { font-size: 10px; transition: transform .2s; color: var(--muted); display: inline-block; }
+.caret.open { transform: rotate(90deg); }
+.collection-name { flex: 1; font-weight: 600; font-size: 12px; }
+.collection-count { color: var(--muted); font-size: 10px; }
+.collection-requests { display: none; }
+.collection-requests.open { display: block; }
+.sub-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px 5px 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  cursor: pointer; transition: background .1s;
+}
+.sub-item:hover { background: var(--hover); }
+.sub-name { flex: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub-empty { padding: 8px 24px; font-size: 11px; color: var(--muted); }
+/* ─── Environment item ──── */
+.env-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  cursor: pointer; transition: background .1s;
+}
+.env-item:hover { background: var(--hover); }
+.env-radio {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--border); flex-shrink: 0; transition: all .15s;
+}
+.env-radio.active { border-color: var(--accent); background: var(--accent); }
+.env-info { flex: 1; min-width: 0; }
+.env-name { font-size: 12px; font-weight: 500; }
+.env-count { font-size: 10px; color: var(--muted); margin-top: 1px; }
+/* ─── Modal ──── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.6); z-index: 100;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--vscode-editor-background, #1e1e2e);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px; width: 90%; max-width: 320px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+}
+.modal h3 { font-size: 13px; margin-bottom: 12px; color: var(--fg); }
+.modal-label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; margin-top: 8px; }
+.modal-input {
+  width: 100%; background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--fg); padding: 6px 8px; border-radius: 4px;
+  font-size: 12px; outline: none; font-family: inherit;
+}
+.modal-input:focus { border-color: var(--accent); }
+.modal-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+/* ─── Variables table ──── */
+.vars-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.vars-table th {
+  text-align: left; font-size: 10px; color: var(--muted);
+  padding: 3px 4px; border-bottom: 1px solid var(--border);
+}
+.vars-table td { padding: 2px 4px; }
+.var-input {
+  width: 100%; background: var(--input-bg); border: 1px solid transparent;
+  color: var(--fg); padding: 3px 5px; border-radius: 3px;
+  font-size: 11px; font-family: inherit; outline: none;
+}
+.var-input:focus { border-color: var(--accent); }
+.add-var-btn {
+  font-size: 11px; color: var(--accent);
+  background: none; border: none; cursor: pointer;
+  padding: 4px 0; margin-top: 4px; font-family: inherit;
+}
+.add-var-btn:hover { text-decoration: underline; }

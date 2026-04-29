@@ -1,0 +1,299 @@
+import React, { useState, useEffect, useRef } from 'react';
+import './MainPanel.css';
+
+import { TopBar }       from './components/TopBar';
+import { UrlBar }       from './components/UrlBar';
+import { RequestPane }  from './components/RequestPane';
+import { ResponsePane } from './components/ResponsePane';
+import { SaveModal }    from './components/SaveModal';
+import { SettingsModal } from './components/SettingsModal';
+
+import {
+  DEFAULT_REQUEST,
+  DEFAULT_SETTINGS,
+  KVItem,
+  RequestState,
+  ResponseState,
+  Environment,
+  Collection,
+  SettingsState,
+} from './types';
+import { getScriptTemplate } from './components/scriptExecutor';
+
+export const MainPanel: React.FC = () => {
+  /* ── State ───────────────────────────────────────── */
+  const [request, setRequest]         = useState<RequestState>(DEFAULT_REQUEST);
+  const [response, setResponse]       = useState<ResponseState | null>(null);
+  const [requestInfo, setRequestInfo] = useState<any>(null);
+  const [loading, setLoading]         = useState(false);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
+
+  const vscodeApi = useRef<any>(null);
+  const requestRef = useRef<RequestState>(request);
+
+  /* ── VS Code API bootstrap ───────────────────────── */
+  useEffect(() => {
+    vscodeApi.current = (window as any).acquireVsCodeApi?.();
+
+      const handler = (event: MessageEvent) => {
+        const msg = event.data;
+        try {
+          // Log raw incoming message for quick debugging in the browser console
+          console.log('webview message:', msg?.command, msg?.data ?? msg?.response ?? msg?.error ?? '');
+        } catch (e) {}
+        switch (msg.command) {
+          case 'loadRequest':
+            setRequest((prev: RequestState) => ({ ...prev, ...msg.data }));
+            // If the request has an activeEnvironmentId, set that environment
+            if (msg.data.activeEnvironmentId) {
+              setActiveEnvId(msg.data.activeEnvironmentId);
+              // Notify the extension that environment was changed
+              post({ command: 'setActiveEnvironment', id: msg.data.activeEnvironmentId });
+            }
+            break;
+          case 'setEnvironments':
+            setEnvironments(msg.environments ?? []);
+            setActiveEnvId(msg.activeEnvId ?? null);
+            break;
+          case 'collections':
+            setCollections(msg.data ?? []);
+            break;
+          case 'loadSettings':
+          case 'setSettings':
+            setSettings(msg.settings ?? DEFAULT_SETTINGS);
+            break;
+          case 'requestStart':
+            setLoading(true);
+            setResponse(null);
+            break;
+          case 'requestComplete':
+            setLoading(false);
+            setResponse(msg.response);
+            setRequestInfo(msg.requestInfo);
+            // If the current request has a post-response script, delegate to extension host
+            try {
+              const script = requestRef.current?.script;
+              if (script && script.trim().length > 0) {
+                // Mark script as running so the UI can show a spinner
+                setRequestInfo((prev: any) => ({ ...prev, scriptRunning: true }));
+                // Send script + response to extension host for CSP-free execution
+                post({ command: 'runScript', script, response: msg.response });
+              }
+            } catch (e) { /* ignore */ }
+            break;
+          case 'scriptResult':
+            // Result returned from extension host script execution
+            setRequestInfo((prev: any) => ({
+              ...prev,
+              scriptRunning: false,
+              scriptLogs: msg.result?.logs || [],
+              scriptSuccess: msg.result?.success !== false,
+              scriptError: msg.result?.error,
+              scriptVariables: msg.result?.variables || {},
+            }));
+            break;
+          case 'requestError':
+            setLoading(false);
+            setResponse({
+              status: 0,
+              statusText: 'Error',
+              headers: {},
+              body: msg.error ?? 'Unknown error',
+              duration: msg.duration ?? 0,
+              size: 0,
+            });
+            break;
+          case 'debugLog':
+            try {
+              const ts = new Date().toLocaleTimeString();
+              const entry = `${ts} — ${msg.data?.stage || 'debug'}: ${JSON.stringify(msg.data?.info || {})}`;
+              setRequestInfo((prev: any) => ({ ...(prev || {}), scriptLogs: [ ...(prev?.scriptLogs || []), entry ] }));
+              console.debug('[debugLog]', msg.data?.stage, msg.data?.info);
+            } catch (e) { console.error('Failed to append debugLog', e); }
+            break;
+        }
+        
+      };
+
+    window.addEventListener('message', handler);
+    
+    // Signal that the webview is ready to receive messages
+    vscodeApi.current?.postMessage({ command: 'webviewReady' });
+    
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  // keep requestRef in sync with latest request state for message handler access
+  useEffect(() => { requestRef.current = request; }, [request]);
+
+  /* ── Helpers ─────────────────────────────────────── */
+  const post = (message: any) => vscodeApi.current?.postMessage(message);
+
+  const updateRequest = (updates: Partial<RequestState>) => {
+    setRequest((prev: RequestState) => {
+      const next = { ...prev, ...updates };
+      if (updates.name) post({ command: 'updateTitle', title: updates.name });
+      return next;
+    });
+  };
+
+  /* Build the request object, injecting auth headers/params */
+  const buildPayload = (): RequestState => {
+    const headers = [...request.headers];
+    const queryParams = [...request.queryParams];
+
+    if (request.authType === 'bearer' && request.authData.token) {
+      headers.push({ key: 'Authorization', value: `Bearer ${request.authData.token}`, enabled: true });
+    } else if (request.authType === 'basic' && request.authData.username) {
+      const creds = btoa(`${request.authData.username}:${request.authData.password ?? ''}`);
+      headers.push({ key: 'Authorization', value: `Basic ${creds}`, enabled: true });
+    } else if (request.authType === 'apikey' && request.authData.keyName) {
+      const kv = { key: request.authData.keyName, value: request.authData.keyValue ?? '', enabled: true };
+      if (request.authData.addTo === 'query') queryParams.push(kv);
+      else headers.push(kv);
+    }
+
+    return { ...request, headers, queryParams };
+  };
+
+  // Send the built payload (with injected auth headers) for execution, but also
+  // send the original `request` state so the extension saves it to history WITHOUT
+  // the injected headers. Otherwise every reload from history duplicates auth headers.
+  const handleSend = () => post({
+    command: 'executeRequest',
+    request: buildPayload(),
+    savedRequest: request,
+  });
+
+  // Normal send handler
+  const handleSendGuarded = handleSend;
+
+  // Safely decode a URI component, falling back to the raw string on malformed input
+  const safeDecode = (s: string): string => {
+    try { return decodeURIComponent(s); } catch { return s; }
+  };
+
+  // Sync query params from a typed URL back to the params tab
+  const handleUrlChange = (rawUrl: string) => {
+    const qIdx = rawUrl.indexOf('?');
+    if (qIdx === -1) {
+      updateRequest({ url: rawUrl });
+      return;
+    }
+    const baseUrl = rawUrl.slice(0, qIdx);
+    const queryString = rawUrl.slice(qIdx + 1);
+    const parsedParams: KVItem[] = queryString
+      .split('&')
+      .filter(part => part.length > 0)
+      .map(part => {
+        const eqIdx = part.indexOf('=');
+        return eqIdx === -1
+          ? { key: safeDecode(part), value: '', enabled: true as const }
+          : { key: safeDecode(part.slice(0, eqIdx)), value: safeDecode(part.slice(eqIdx + 1)), enabled: true as const };
+      });
+    // Preserve any explicitly disabled params (they don't appear in the URL)
+    const disabledParams = request.queryParams.filter(p => p.enabled === false);
+    updateRequest({ url: baseUrl, queryParams: [...parsedParams, ...disabledParams] });
+  };
+
+  const handleSave = (reqName: string, collectionName: string) => {
+    post({ 
+      command: 'saveToCollection', 
+      request: { ...request, name: reqName, activeEnvironmentId: activeEnvId }, 
+      collectionName 
+    });
+    setSaveModalOpen(false);
+  };
+
+  const handleEnvChange = (id: string | null) => {
+    setActiveEnvId(id);
+    post({ command: 'setActiveEnvironment', id });
+  };
+
+  const handleSaveSettings = (newSettings: SettingsState) => {
+    setSettings(newSettings);
+    post({ command: 'saveSettings', settings: newSettings });
+    setSettingsModalOpen(false);
+  };
+
+  // script functionality removed
+
+  /* ── Render ──────────────────────────────────────── */
+  const activeEnvironment = environments.find((env) => env.id === activeEnvId) || null;
+
+  return (
+    <div className="restify-container">
+
+      <TopBar
+        name={request.name}
+        environments={environments}
+        activeEnvId={activeEnvId}
+        onNameChange={(name) => updateRequest({ name })}
+        onEnvChange={handleEnvChange}
+        onOpenSettings={() => setSettingsModalOpen(true)}
+      />
+
+      {/* Animated loading bar */}
+      <div className={`loading-bar ${loading ? 'active' : ''}`} />
+
+      <UrlBar
+        method={request.method}
+        url={request.url}
+        loading={loading}
+        queryParams={request.queryParams}
+        environment={activeEnvironment}
+        onMethodChange={(method) => updateRequest({ method })}
+        onUrlChange={handleUrlChange}
+        onSend={handleSendGuarded}
+        onSave={() => setSaveModalOpen(true)}
+      />
+
+      {/* SSL toggle */}
+      <div className="ssl-row">
+        <label title="Uncheck to allow self-signed/untrusted certificates">
+          <input
+            type="checkbox"
+            checked={request.rejectUnauthorized}
+            onChange={(e) => updateRequest({ rejectUnauthorized: e.target.checked })}
+          />
+          Verify SSL Connection
+        </label>
+        <span style={{ fontSize: 10, opacity: 0.5 }}>Uncheck for local dev / internal APIs</span>
+      </div>
+
+      {/* Split pane */}
+      <div className="main-area">
+        <div className="split-pane">
+          <RequestPane request={request} onUpdate={updateRequest} environment={activeEnvironment} />
+          <div className="resizer" />
+          <ResponsePane 
+            response={response} 
+            loading={loading} 
+            request={requestInfo}
+          />
+        </div>
+      </div>
+
+      <SaveModal
+        open={saveModalOpen}
+        requestName={request.name}
+        collections={collections}
+        onSave={handleSave}
+        onClose={() => setSaveModalOpen(false)}
+      />
+
+      <SettingsModal
+        open={settingsModalOpen}
+        initialSettings={settings}
+        onSave={handleSaveSettings}
+        onClose={() => setSettingsModalOpen(false)}
+        onClearProxyCache={() => post({ command: 'clearProxyCache' })}
+      />
+    </div>
+  );
+};

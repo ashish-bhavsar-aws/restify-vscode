@@ -18,7 +18,7 @@
     "onCommand:restify.newRequest"
   ],
   "main": "./dist/extension.js",
-  "icon": "media/icon.jpg",
+  "icon": "media/icon.png",
   "contributes": {
     "viewsContainers": {
       "activitybar": [

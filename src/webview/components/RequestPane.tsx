@@ -22,6 +22,13 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, env
 
   const activeParamCount = request.queryParams.filter((p) => p.key && p.enabled !== false).length;
   const activeHeaderCount = request.headers.filter((h) => h.key && h.enabled !== false).length;
+  const hasBody = request.bodyType !== 'none' && (
+    (request.bodyType === 'form' && (request.formData||[]).some(f => f.key)) ||
+    (request.bodyType === 'urlencoded' && (request.urlencoded||[]).some(u => u.key)) ||
+    (['json','text','xml','graphql'].includes(request.bodyType) && (request.body||'').trim().length > 0)
+  );
+  const hasAuth = request.authType && request.authType !== 'none';
+  const hasScript = (request.script || '').trim().length > 0;
 
   const updateKvList = (field: 'queryParams' | 'headers' | 'formData', index: number, key: keyof KVItem, value: any) => {
     const items = [...request[field]] as KVItem[];
@@ -100,6 +107,15 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, env
             )}
             {tab === 'headers' && activeHeaderCount > 0 && (
               <span className="tab-badge">{activeHeaderCount}</span>
+            )}
+            {tab === 'body' && hasBody && (
+              <span className="tab-badge tab-badge-dot" />
+            )}
+            {tab === 'auth' && hasAuth && (
+              <span className="tab-badge tab-badge-dot" />
+            )}
+            {tab === 'script' && hasScript && (
+              <span className="tab-badge tab-badge-dot" />
             )}
           </div>
         ))}

@@ -32,9 +32,13 @@ export const MainPanel: React.FC = () => {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
+  const [savedCollectionName, setSavedCollectionName] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
 
   const vscodeApi = useRef<any>(null);
   const requestRef = useRef<RequestState>(request);
+  const savedCollectionNameRef = useRef<string | null>(null);
+  const activeEnvIdRef = useRef<string | null>(null);
 
   /* ── VS Code API bootstrap ───────────────────────── */
   useEffect(() => {
@@ -47,15 +51,19 @@ export const MainPanel: React.FC = () => {
           console.log('webview message:', msg?.command, msg?.data ?? msg?.response ?? msg?.error ?? '');
         } catch (e) {}
         switch (msg.command) {
-          case 'loadRequest':
-            setRequest((prev: RequestState) => ({ ...prev, ...msg.data }));
+          case 'loadRequest': {
+            const { _collectionName, ...reqData } = msg.data;
+            setRequest((prev: RequestState) => ({ ...prev, ...reqData }));
+            setSavedCollectionName(_collectionName ?? null);
+            setIsDirty(false);
             // If the request has an activeEnvironmentId, set that environment
-            if (msg.data.activeEnvironmentId) {
-              setActiveEnvId(msg.data.activeEnvironmentId);
+            if (reqData.activeEnvironmentId) {
+              setActiveEnvId(reqData.activeEnvironmentId);
               // Notify the extension that environment was changed
-              post({ command: 'setActiveEnvironment', id: msg.data.activeEnvironmentId });
+              post({ command: 'setActiveEnvironment', id: reqData.activeEnvironmentId });
             }
             break;
+          }
           case 'setEnvironments':
             setEnvironments(msg.environments ?? []);
             setActiveEnvId(msg.activeEnvId ?? null);
@@ -128,8 +136,36 @@ export const MainPanel: React.FC = () => {
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // keep requestRef in sync with latest request state for message handler access
+  // keep refs in sync with latest state for use in event handlers
   useEffect(() => { requestRef.current = request; }, [request]);
+  useEffect(() => { savedCollectionNameRef.current = savedCollectionName; }, [savedCollectionName]);
+  useEffect(() => { activeEnvIdRef.current = activeEnvId; }, [activeEnvId]);
+
+  // Ctrl+S / Cmd+S — silent save if already in a collection, otherwise open SaveModal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        const colName = savedCollectionNameRef.current;
+        if (colName) {
+          vscodeApi.current?.postMessage({
+            command: 'saveToCollection',
+            request: { ...requestRef.current, activeEnvironmentId: activeEnvIdRef.current },
+            collectionName: colName,
+          });
+          setIsDirty(false);
+        } else {
+          setSaveModalOpen(true);
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSend();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   /* ── Helpers ─────────────────────────────────────── */
   const post = (message: any) => vscodeApi.current?.postMessage(message);
@@ -140,6 +176,7 @@ export const MainPanel: React.FC = () => {
       if (updates.name) post({ command: 'updateTitle', title: updates.name });
       return next;
     });
+    setIsDirty(true);
   };
 
   /* Build the request object, injecting auth headers/params */
@@ -180,6 +217,14 @@ export const MainPanel: React.FC = () => {
 
   // Sync query params from a typed URL back to the params tab
   const handleUrlChange = (rawUrl: string) => {
+    // Auto-fill request name from URL when still at default
+    if (request.name === 'New Request' || request.name === '') {
+      try {
+        const urlObj = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
+        const path = urlObj.pathname || '/';
+        setRequest((prev: RequestState) => ({ ...prev, name: `${prev.method} ${path}` }));
+      } catch { /* invalid URL — skip */ }
+    }
     const qIdx = rawUrl.indexOf('?');
     if (qIdx === -1) {
       updateRequest({ url: rawUrl });
@@ -207,6 +252,9 @@ export const MainPanel: React.FC = () => {
       request: { ...request, name: reqName, activeEnvironmentId: activeEnvId }, 
       collectionName 
     });
+    setSavedCollectionName(collectionName);
+    updateRequest({ name: reqName });
+    setIsDirty(false);
     setSaveModalOpen(false);
   };
 
@@ -226,11 +274,26 @@ export const MainPanel: React.FC = () => {
   /* ── Render ──────────────────────────────────────── */
   const activeEnvironment = environments.find((env) => env.id === activeEnvId) || null;
 
+  // Compute which env variables are referenced in the current request
+  const usedVars = React.useMemo(() => {
+    if (!activeEnvironment) return null;
+    const allVarKeys = new Set(activeEnvironment.variables.map(v => v.key));
+    const searchText = [
+      request.url, request.body || '',
+      ...(request.headers || []).map(h => `${h.key} ${h.value}`),
+      ...(request.queryParams || []).map(p => `${p.key} ${p.value}`),
+    ].join(' ');
+    const matches = [...searchText.matchAll(/\{\{([^}]+)}}/g)].map(m => m[1]);
+    const unique = [...new Set(matches)];
+    return unique.map(name => ({ name, resolved: allVarKeys.has(name) }));
+  }, [request.url, request.body, request.headers, request.queryParams, activeEnvironment]);
+
   return (
     <div className="restify-container">
 
       <TopBar
         name={request.name}
+        isDirty={isDirty}
         environments={environments}
         activeEnvId={activeEnvId}
         onNameChange={(name) => updateRequest({ name })}
@@ -253,18 +316,29 @@ export const MainPanel: React.FC = () => {
         onSave={() => setSaveModalOpen(true)}
       />
 
-      {/* SSL toggle */}
+      {/* Per-request SSL setting */}
       <div className="ssl-row">
-        <label title="Uncheck to allow self-signed/untrusted certificates">
+        <label title="Uncheck to allow self-signed or untrusted certificates for this request">
           <input
             type="checkbox"
             checked={request.rejectUnauthorized}
             onChange={(e) => updateRequest({ rejectUnauthorized: e.target.checked })}
           />
-          Verify SSL Connection
+          Verify SSL Certificate
         </label>
-        <span style={{ fontSize: 10, opacity: 0.5 }}>Uncheck for local dev / internal APIs</span>
       </div>
+
+      {/* Used environment variables strip */}
+      {usedVars && usedVars.length > 0 && (
+        <div className="used-vars-strip">
+          <span className="used-vars-label">Vars:</span>
+          {usedVars.map(v => (
+            <span key={v.name} className={`used-var-chip ${v.resolved ? 'resolved' : 'unresolved'}`} title={v.resolved ? 'Resolved in active environment' : 'Not found in active environment'}>
+              {'{{'}{v.name}{'}}'}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Split pane */}
       <div className="main-area">
@@ -292,7 +366,6 @@ export const MainPanel: React.FC = () => {
         initialSettings={settings}
         onSave={handleSaveSettings}
         onClose={() => setSettingsModalOpen(false)}
-        onClearProxyCache={() => post({ command: 'clearProxyCache' })}
       />
     </div>
   );

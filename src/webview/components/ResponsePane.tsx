@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ResponseState, getStatusClass } from '../types';
+
+const LARGE_RESPONSE_THRESHOLD = 500 * 1024; // 500 KB
+
+function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // Helper: detect if response is JSON
 function isLikelyJson(body: string | undefined | null, headers?: Record<string, string>): boolean {
@@ -135,12 +139,29 @@ type ResTab = 'body' | 'headers' | 'logs' | 'raw';
 export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [bodySearch, setBodySearch] = useState('');
+  const [showRawForLarge, setShowRawForLarge] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (showSearch) searchRef.current?.focus(); }, [showSearch]);
+  useEffect(() => { setShowSearch(false); setBodySearch(''); }, [response]);
 
   const handleCopy = () => {
     if (response?.body) {
       navigator.clipboard.writeText(response.body);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+  const handleCopyCurlStatus = () => {
+    const curlCmd = request?.curlCommand || (request ? buildCurlCommand(request) : '');
+    if (curlCmd) {
+      navigator.clipboard.writeText(curlCmd);
+      setCopiedCurl(true);
+      setTimeout(() => setCopiedCurl(false), 1500);
     }
   };
 
@@ -156,14 +177,18 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     );
   }
 
-  /* empty state */
+    /* empty state */
   if (!response) {
     return (
       <div className="response-pane" id="res-pane">
         <div className="response-empty">
           <div className="icon">→</div>
           <div>Send a request to see the response</div>
-          <div style={{ fontSize: 11, opacity: 0.5 }}>Results will appear here</div>
+          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 8, lineHeight: 1.8 }}>
+            <span style={{ display: 'block' }}>⏎ Enter — send request</span>
+            <span style={{ display: 'block' }}>Ctrl+S — save request</span>
+            <span style={{ display: 'block' }}>Ctrl+Enter — send request</span>
+          </div>
         </div>
       </div>
     );
@@ -181,9 +206,21 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
         <span className="status-text">{response.statusText}</span>
         <span className="meta-chip">{response.duration} ms</span>
         <span className="meta-chip">{formatSize(response.size)}</span>
-        <button className="copy-btn" onClick={handleCopy}>
-          {copied ? '✓ Copied' : 'Copy'}
-        </button>
+        {request && (
+          <button className="copy-btn" style={{ marginLeft: 0 }} onClick={handleCopyCurlStatus} title="Copy as cURL command">
+            {copiedCurl ? '✓ cURL' : 'cURL'}
+          </button>
+        )}
+        {response.body && (
+          <button className="copy-btn" onClick={handleCopy}>
+            {copied ? '✓ Copied' : 'Copy'}
+          </button>
+        )}
+        {response.body && (
+          <button className="copy-btn" title="Search in body (/)" onClick={() => setShowSearch(s => !s)}>
+            🔍
+          </button>
+        )}
       </div>
 
       {/* Tab bar */}
@@ -209,28 +246,45 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
 
       {/* Body tab — pretty JSON / XML when appropriate, otherwise raw text */}
       {activeTab === 'body' && (
-        <div className="tab-content active" style={{ flex: 1, overflow: 'auto' }}>
-          {isLikelyJson(response.body, response.headers) ? (
-            <div style={{ padding: 8 }}>
-              <JsonPrettyViewer text={response.body} />
+        <div className="tab-content active" style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {/* Search bar */}
+          {showSearch && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
+              <input ref={searchRef} type="text" placeholder="Search in response..." value={bodySearch}
+                onChange={e => setBodySearch(e.target.value)}
+                onKeyDown={e => e.key === 'Escape' && (setShowSearch(false), setBodySearch(''))}
+                style={{ flex: 1, background: 'var(--input-bg)', border: '1px solid var(--accent)', color: 'var(--fg)', padding: '3px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
+              {bodySearch && (
+                <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>
+                  {(() => { try { return (response.body.match(new RegExp(escapeRegex(bodySearch), 'gi')) || []).length; } catch { return 0; } })()} matches
+                </span>
+              )}
+              <button onClick={() => { setShowSearch(false); setBodySearch(''); }}
+                style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
             </div>
-          ) : isLikelyXml(response.body, response.headers) ? (
-            <div style={{ padding: 8 }}>
-              <XmlPrettyViewer text={response.body} />
-            </div>
-          ) : (
-            <pre style={{
-              margin: 0,
-              padding: '12px',
-              fontSize: 12,
-              fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              color: 'var(--fg)',
-            }}>
-              {response.body}
-            </pre>
           )}
+          {/* Large response warning */}
+          {response.size > LARGE_RESPONSE_THRESHOLD && !showRawForLarge && (
+            <div style={{ padding: '6px 12px', background: 'color-mix(in srgb, var(--warning, #f9e2af) 15%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--warning, #f9e2af) 30%, transparent)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <span>⚠️ Large response ({formatSize(response.size)}) — syntax highlighting may be slow.</span>
+              <button onClick={() => { setShowRawForLarge(true); setActiveTab('raw'); }}
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: 'var(--fg)', flexShrink: 0 }}>Show Raw</button>
+            </div>
+          )}
+          {/* Body content */}
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            {bodySearch ? (
+              <SearchableBody text={response.body} search={bodySearch} />
+            ) : isLikelyJson(response.body, response.headers) ? (
+              <div style={{ padding: 8 }}><JsonPrettyViewer text={response.body} /></div>
+            ) : isLikelyXml(response.body, response.headers) ? (
+              <div style={{ padding: 8 }}><XmlPrettyViewer text={response.body} /></div>
+            ) : (
+              <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }}>
+                {response.body}
+              </pre>
+            )}
+          </div>
         </div>
       )}
 
@@ -287,6 +341,23 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/* ─── Searchable Body ────────────────────────────── */
+const SearchableBody: React.FC<{ text: string; search: string }> = ({ text, search }) => {
+  const parts = React.useMemo(() => {
+    if (!search) return [{ text, match: false }];
+    try {
+      return text.split(new RegExp(`(${escapeRegex(search)})`, 'gi')).map((part, i) => ({ text: part, match: i % 2 === 1 }));
+    } catch { return [{ text, match: false }]; }
+  }, [text, search]);
+  return (
+    <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }}>
+      {parts.map((p, i) => p.match
+        ? <mark key={i} style={{ background: 'color-mix(in srgb, var(--accent, #89b4fa) 50%, transparent)', color: 'var(--fg)', borderRadius: 2 }}>{p.text}</mark>
+        : <React.Fragment key={i}>{p.text}</React.Fragment>)}
+    </pre>
+  );
+};
 
 
 /* ─── Collapsible Section ───────────────────────────── */

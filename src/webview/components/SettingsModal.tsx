@@ -6,7 +6,6 @@ interface SettingsModalProps {
   onClose: () => void;
   onSave: (settings: SettingsState) => void;
   initialSettings?: SettingsState;
-  onClearProxyCache?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -14,7 +13,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onSave,
   initialSettings,
-  onClearProxyCache,
 }) => {
   // Proxy settings
   const [proxyHost, setProxyHost] = useState('');
@@ -34,6 +32,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     keyPath: '',
     caPath: '',
   });
+
+  // Proxy error state
+  const [proxyError, setProxyError] = useState<string | null>(null);
 
   // Message state
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -107,6 +108,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSave = () => {
+    // Validate proxy host
+    if (proxyHost) {
+      if (/\s/.test(proxyHost) || /^https?:\/\//i.test(proxyHost)) {
+        setProxyError('Enter hostname only (e.g. proxy.example.com), without http:// prefix or spaces.');
+        return;
+      }
+      if (proxyPort && (isNaN(Number(proxyPort)) || Number(proxyPort) < 1 || Number(proxyPort) > 65535)) {
+        setProxyError('Port must be a number between 1 and 65535.');
+        return;
+      }
+    }
+    setProxyError(null);
     onSave({
       proxy: buildProxyUrl(),
       proxyAuthorization: buildProxyAuth(),
@@ -174,7 +187,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="modal-input"
                 placeholder="proxy.example.com"
                 value={proxyHost}
-                onChange={(e) => setProxyHost(e.target.value)}
+                onChange={(e) => { setProxyHost(e.target.value); setProxyError(null); }}
               />
             </div>
             <div className="proxy-field">
@@ -184,10 +197,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="number"
                 placeholder="8080"
                 value={proxyPort}
-                onChange={(e) => setProxyPort(e.target.value)}
+                onChange={(e) => { setProxyPort(e.target.value); setProxyError(null); }}
               />
             </div>
           </div>
+          {proxyError && (
+            <div style={{ color: 'var(--error, #f44336)', fontSize: 11, marginTop: 4, padding: '4px 6px', background: 'color-mix(in srgb, var(--error, #f44336) 10%, transparent)', borderRadius: 4 }}>
+              ⚠️ {proxyError}
+            </div>
+          )}
 
           {/* Proxy Authentication Checkbox */}
           <label className="checkbox-label">
@@ -390,59 +408,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         )}
 
         <div className="modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn-ghost" onClick={onClose}>
-              Cancel
-            </button>
-            {onClearProxyCache && (
-              <button
-                className="btn-danger"
-                onClick={() => {
-                  if (confirm('Clear all proxy settings? This will ensure no proxy is used for future requests.')) {
-                    try {
-                      onClearProxyCache();
-                      // Reset proxy fields immediately
-                      setProxyHost('');
-                      setProxyPort('');
-                      setUseProxyAuth(false);
-                      setProxyUsername('');
-                      setProxyPassword('');
-                      setNoProxyTags([]);
-                      // Show success message
-                      setMessage({ type: 'success', text: '✓ Proxy cache cleared successfully!' });
-                      // Auto-dismiss message after 3 seconds
-                      setTimeout(() => setMessage(null), 3000);
-                    } catch (error) {
-                      setMessage({ type: 'error', text: '✗ Failed to clear proxy cache' });
-                      setTimeout(() => setMessage(null), 3000);
-                    }
-                  }
-                }}
-                title="Clear all cached proxy configuration"
-                style={{
-                  background: '#f38ba8',
-                  color: '#1e1e2e',
-                  border: 'none',
-                  padding: '6px 12px',
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f17a97';
-                  e.currentTarget.style.transform = 'scale(1.02)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f38ba8';
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-              >
-                🧹 Clear Proxy Cache
-              </button>
-            )}
-          </div>
+          <button className="btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
           <button className="btn" onClick={handleSave}>
             Save Settings
           </button>

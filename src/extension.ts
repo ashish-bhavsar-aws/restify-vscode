@@ -71,6 +71,18 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('restify.newCollection', () => {
+      collectionsProvider.postMessage({ command: 'openNewCollectionModal' });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.newEnvironment', () => {
+      environmentsProvider.postMessage({ command: 'openNewEnvironmentModal' });
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('restify.openFromSidebar', (data) => {
       vscode.commands.executeCommand('restify.openMain', data);
     })

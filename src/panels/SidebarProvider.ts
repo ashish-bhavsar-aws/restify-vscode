@@ -31,10 +31,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     );
     this._sendData();
 
-    webviewView.webview.onDidReceiveMessage((msg) => {
+    webviewView.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.command) {
         case 'loadRequest':
-          vscode.commands.executeCommand('restify.openFromSidebar', msg.data);
+          vscode.commands.executeCommand('restify.openFromSidebar', {
+            ...msg.data,
+            _collectionName: msg.collectionName ?? null,
+          });
           break;
         case 'loadHistoryItem': {
           // Use getHistoryItem to hydrate any body files stored on disk
@@ -74,9 +77,127 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             msg.requestId
           );
           break;
-        case 'saveEnvironment':
-          this.storageManager.saveEnvironment(msg.data);
+        case 'copyCollectionRequest': {
+          const cols = this.storageManager.getCollections();
+          const srcCol = cols.find((c) => c.id === msg.collectionId);
+          if (srcCol?.requests) {
+            const original = srcCol.requests.find((r: any) => r.id === msg.requestId);
+            if (original) {
+              const { id: _id, ...rest } = original;
+              this.storageManager.addRequestToCollection(msg.collectionId, {
+                ...rest,
+                name: `Copy of ${rest.name || 'Untitled'}`,
+              });
+            }
+          }
           break;
+        }
+        case 'moveCollectionRequest': {
+          const allCols = this.storageManager.getCollections();
+          const fromCol = allCols.find((c) => c.id === msg.fromCollectionId);
+          if (fromCol?.requests && msg.fromCollectionId !== msg.toCollectionId) {
+            const request = fromCol.requests.find((r: any) => r.id === msg.requestId);
+            if (request) {
+              this.storageManager.deleteRequestFromCollection(msg.fromCollectionId, msg.requestId);
+              this.storageManager.addRequestToCollection(msg.toCollectionId, { ...request });
+            }
+          }
+          break;
+        }
+        case 'reorderCollectionRequest': {
+          const cols = this.storageManager.getCollections();
+          const col = cols.find((c) => c.id === msg.collectionId);
+          if (col?.requests) {
+            const fromIdx = col.requests.findIndex((r: any) => r.id === msg.requestId);
+            if (fromIdx !== -1) {
+              const [item] = col.requests.splice(fromIdx, 1);
+              const insertAt = Math.min(Math.max(msg.toIndex > fromIdx ? msg.toIndex - 1 : msg.toIndex, 0), col.requests.length);
+              col.requests.splice(insertAt, 0, item);
+              this.storageManager.saveCollection(col);
+            }
+          }
+          break;
+        }
+        case 'renameCollection': {
+          const cols = this.storageManager.getCollections();
+          const col = cols.find((c) => c.id === msg.id);
+          if (col && msg.name?.trim()) {
+            col.name = msg.name.trim();
+            this.storageManager.saveCollection(col);
+          }
+          break;
+        }
+        case 'renameCollectionRequest': {
+          const cols = this.storageManager.getCollections();
+          const col = cols.find((c) => c.id === msg.collectionId);
+          if (col?.requests) {
+            const req = col.requests.find((r: any) => r.id === msg.requestId);
+            if (req && msg.name?.trim()) {
+              req.name = msg.name.trim();
+              this.storageManager.saveCollection(col);
+            }
+          }
+          break;
+        }
+        case 'saveHistoryToCollection': {
+          const entry = this.storageManager.getHistory().find((h) => h.id === msg.id);
+          if (entry) {
+            const reqData = (entry as any).request || entry;
+            const collections = this.storageManager.getCollections();
+            let col = collections.find((c) => c.name === msg.collectionName);
+            if (!col) {
+              const newCol = { id: Date.now().toString(), name: msg.collectionName, requests: [] };
+              this.storageManager.saveCollection(newCol);
+              col = this.storageManager.getCollections().find((c) => c.name === msg.collectionName);
+            }
+            if (col) {
+              const { id: _id, ...rest } = reqData;
+              this.storageManager.addRequestToCollection(col.id, rest);
+              vscode.window.showInformationMessage(`✓ Saved to collection "${msg.collectionName}"`);
+            }
+          }
+          break;
+        }
+        case 'exportCollections': {
+          const data = JSON.stringify(this.storageManager.getCollections(), null, 2);
+          const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file('restify-collections.json'),
+            filters: { 'JSON': ['json'] },
+          });
+          if (uri) {
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8'));
+            vscode.window.showInformationMessage('✓ Collections exported');
+          }
+          break;
+        }
+        case 'importCollections': {
+          const uris = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            filters: { 'JSON': ['json'] },
+            openLabel: 'Import',
+          });
+          if (uris && uris[0]) {
+            const raw = Buffer.from(await vscode.workspace.fs.readFile(uris[0])).toString('utf8');
+            try {
+              const imported = JSON.parse(raw);
+              const cols: any[] = Array.isArray(imported) ? imported : [];
+              let count = 0;
+              for (const col of cols) {
+                if (col.name) {
+                  const existing = this.storageManager.getCollections().find(c => c.name === col.name);
+                  const toSave = { ...col, id: existing?.id || col.id || Date.now().toString() };
+                  this.storageManager.saveCollection(toSave);
+                  count++;
+                }
+              }
+              vscode.window.showInformationMessage(`✓ Imported ${count} collection${count !== 1 ? 's' : ''}`);
+            } catch {
+              vscode.window.showErrorMessage('Import failed: invalid JSON file');
+            }
+          }
+          break;
+        }
+        case 'saveEnvironment':
         case 'deleteEnvironment':
           this.storageManager.deleteEnvironment(msg.id);
           break;
@@ -136,6 +257,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   refresh(): void {
     this._sendData();
+  }
+
+  postMessage(msg: any): void {
+    this._view?.webview.postMessage(msg);
   }
 }
 

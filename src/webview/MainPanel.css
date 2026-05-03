@@ -117,6 +117,25 @@ body {
     color: var(--muted);
 }
 
+/* Dirty indicator wrapper */
+.request-name-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    position: relative;
+}
+
+.dirty-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    margin-left: 2px;
+    opacity: 0.85;
+}
+
 .env-selector {
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -197,6 +216,31 @@ body {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* ─── SSL Lock Button ─────────────────────────────────────── */
+.ssl-lock-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    padding: 0 6px;
+    height: 34px;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 34px;
+    flex-shrink: 0;
+    transition: border-color .15s, background .15s;
+    outline: none;
+}
+.ssl-lock-btn:hover {
+    background: var(--hover);
+    border-color: var(--border);
+}
+.ssl-lock-btn.insecure {
+    border-color: color-mix(in srgb, var(--error, #f44336) 40%, transparent);
+}
+.ssl-lock-btn.insecure:hover {
+    background: color-mix(in srgb, var(--error, #f44336) 12%, transparent);
 }
 
 /* ─── URL Bar ─────────────────────────────────────────────── */
@@ -524,6 +568,55 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     margin-left: 4px;
     font-weight: 700;
     vertical-align: middle;
+}
+
+.tab-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    padding: 0;
+    vertical-align: middle;
+}
+
+/* Used-variables strip */
+.used-vars-strip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 3px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+
+.used-vars-label {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-right: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.used-var-chip {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-family: monospace;
+    user-select: none;
+    cursor: default;
+}
+
+.used-var-chip.resolved {
+    background: color-mix(in srgb, var(--success, #4caf50) 18%, transparent);
+    color: var(--success, #4caf50);
+    border: 1px solid color-mix(in srgb, var(--success, #4caf50) 35%, transparent);
+}
+
+.used-var-chip.unresolved {
+    background: color-mix(in srgb, var(--error, #f44336) 18%, transparent);
+    color: var(--error, #f44336);
+    border: 1px solid color-mix(in srgb, var(--error, #f44336) 35%, transparent);
 }
 
 .tab-content {

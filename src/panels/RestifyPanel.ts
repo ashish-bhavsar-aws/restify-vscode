@@ -277,11 +277,6 @@ export class RestifyPanel {
       case 'configureProxy':
         await this._initializeProxySettings();
         break;
-      case 'clearProxyCache':
-        this.storageManager.clearProxySettings();
-        vscode.window.showInformationMessage('✓ Proxy settings cleared. No proxy will be used for future requests.');
-        this._sendEnvironments();
-        break;
       case 'getEnvironments':
         this._sendEnvironments();
         break;

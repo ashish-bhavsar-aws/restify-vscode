@@ -3,6 +3,7 @@ import { Environment, METHODS, METHOD_COLORS } from '../types';
 
 interface TopBarProps {
   name: string;
+  isDirty?: boolean;
   environments: Environment[];
   activeEnvId: string | null;
   onNameChange: (name: string) => void;
@@ -12,6 +13,7 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({
   name,
+  isDirty = false,
   environments,
   activeEnvId,
   onNameChange,
@@ -21,13 +23,16 @@ export const TopBar: React.FC<TopBarProps> = ({
   <div className="top-bar">
     <div className="brand">⚡ Restify</div>
 
-    <input
-      type="text"
-      className="request-name-input"
-      value={name}
-      onChange={(e) => onNameChange(e.target.value)}
-      placeholder="Untitled Request"
-    />
+    <div className="request-name-wrapper">
+      <input
+        type="text"
+        className="request-name-input"
+        value={name}
+        onChange={(e) => onNameChange(e.target.value)}
+        placeholder="Untitled Request"
+      />
+      {isDirty && <span className="dirty-dot" title="Unsaved changes" />}
+    </div>
 
     <select
       className="env-selector"

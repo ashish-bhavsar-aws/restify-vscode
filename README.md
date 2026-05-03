@@ -87,9 +87,9 @@ Variables use `{{VARIABLE_NAME}}` syntax anywhere — in URLs, headers, body, an
 ### Creating an Environment
 
 1. Open the **Environments** sidebar panel
-2. Click the `+` icon and give it a name
+2. Click the **`+` button in the panel title bar** and give the environment a name
 3. Add key/value pairs (e.g. `baseUrl = https://api.example.com`, `token = abc123`)
-4. Select it as active from the **top bar dropdown** or from the Environments panel
+4. Select it as active by clicking the radio button next to its name in the panel
 
 Switch environments per-request from the top bar. The active environment is saved with each history entry, so reopening a past request restores the same environment automatically.
 
@@ -156,7 +156,7 @@ Open **Settings** (⚙ icon in the top bar) → **Proxy Settings** section.
 | **Proxy Authentication** | checkbox | Reveals username + password fields |
 | **No Proxy Hosts** | `localhost`, `internal.corp` | Press Enter after each hostname to add as a tag |
 
-Once saved, all requests route through the proxy. Hosts in the No Proxy list bypass it (exact hostname or any subdomain). Use the **Clear Proxy Cache** button to reset proxy settings.
+Once saved, all requests route through the proxy. Hosts in the No Proxy list bypass it (exact hostname or any subdomain).
 
 > Restify explicitly prevents Node.js environment variables (`HTTP_PROXY`, `HTTPS_PROXY`) from interfering — the proxy you configure here is the only one used.
 
@@ -198,9 +198,14 @@ The **"Verify SSL Connection"** checkbox beneath the URL bar controls `rejectUna
 
 - Browse all saved collections with collapsible groups
 - Click any saved request to open it instantly with all settings restored (body, headers, auth, script, environment)
-- Delete individual requests or entire collections
-- Use the **search box** to filter by name or URL
-- Click **+ New** to create a collection directly from the sidebar
+- **Rename** collections or individual requests with the ✎ edit button (appears on hover)
+- **Copy** a request within or across collections with the ⊕ button (appears on hover)
+- **Drag & drop** requests to reorder within a collection or move between collections
+- Delete individual requests or entire collections (confirmation required)
+- Use the **search box** in the panel to filter by collection or request name
+- **Expand / collapse all** collections with the ⊞/⊟ toggle button
+- **Import / export** collections as JSON with the 📥 / 📤 buttons
+- Click the **`+` button in the panel title bar** to create a new collection
 
 ---
 
@@ -212,7 +217,10 @@ The **History sidebar panel** keeps the last **25 executed requests** automatica
 - Status code with colour indicator (green = 2xx, yellow = 3xx/4xx, red = 5xx)
 - Response duration
 
-Click any entry to re-open it with the full request state restored. Large request/response bodies are stored on disk and loaded on demand. Use the **Clear** button (with confirmation dialog) to wipe all history.
+Click any entry to re-open it with the full request state restored. Large request/response bodies are stored on disk and loaded on demand.
+
+- Hover an entry to reveal the **`+`** button (save to a collection) and the **`×`** delete button
+- Use the **Clear** button (visible when history is non-empty) to wipe all history
 
 ---
 
@@ -226,6 +234,12 @@ Click any entry to re-open it with the full request state restored. Large reques
 | **Headers** | All response headers in a table |
 | **Logs** | Full request/response debug breakdown (see below) |
 | **Raw** | Unformatted raw response body |
+
+### Response Body Features
+
+- **Search** — click the 🔍 icon in the Body tab toolbar to open an inline search bar; matches are highlighted and a match count is shown. Press `Escape` to close.
+- **Large responses** — bodies over 500 KB show a warning with a **Show Raw** button to avoid rendering slowdowns.
+- **Copy as cURL** — the response status bar has a **Copy cURL** button that copies the exact `curl` command to reproduce the request.
 
 ### Logs Tab — Debug Breakdown
 
@@ -245,5 +259,8 @@ The Logs tab is your debugging companion. It shows collapsible sections:
 | Shortcut | Action |
 |---|---|
 | `Enter` (in URL bar) | Send request |
+| `Ctrl+Enter` | Send request (from anywhere in the panel) |
+| `Ctrl+S` | Save / update the current request |
 | `Shift+Alt+F` | Format JSON / XML in body editor |
 | `Tab` | Insert 2 spaces in code editor |
+| `Escape` | Close response body search bar |

@@ -45,13 +45,13 @@ body {
 .sidebar-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 /* ─── Toolbar ──── */
 .toolbar {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 4px;
   padding: 6px 8px; border-bottom: 1px solid var(--border);
-  background: var(--surface); flex-shrink: 0;
+  background: var(--surface); flex-shrink: 0; overflow: hidden;
 }
 .toolbar-label { flex: 1; font-size: 11px; color: var(--muted); }
 .search-input {
-  flex: 1; background: var(--input-bg); border: 1px solid var(--border);
+  flex: 1; min-width: 0; background: var(--input-bg); border: 1px solid var(--border);
   color: var(--fg); padding: 4px 8px; border-radius: var(--radius);
   font-size: 11px; outline: none; font-family: inherit;
 }
@@ -149,7 +149,7 @@ body {
 .collection-requests.open { display: block; }
 .sub-item {
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px 5px 24px;
+  padding: 5px 8px 5px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
   cursor: pointer; transition: background .1s;
 }
@@ -212,3 +212,64 @@ body {
   padding: 4px 0; margin-top: 4px; font-family: inherit;
 }
 .add-var-btn:hover { text-decoration: underline; }
+/* ─── Drag & drop ──── */
+.drag-handle {
+  color: var(--muted); font-size: 13px; cursor: grab; flex-shrink: 0;
+  opacity: 0; transition: opacity .15s; line-height: 1; padding: 0 1px;
+  user-select: none; width: 14px; text-align: center;
+}
+.sub-item:hover .drag-handle { opacity: 1; }
+.sub-item.dragging { opacity: .4; }
+/* ─── Reorder drop indicator ──── */
+.drop-indicator {
+  height: 2px; margin: 0 8px 0 24px;
+  background: var(--accent); border-radius: 1px;
+  pointer-events: none;
+}
+.collection-group.drag-over > .collection-header {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: 1px dashed var(--accent);
+}
+/* ─── Copy button ──── */
+.btn-copy { opacity: 0; transition: opacity .15s; }
+.sub-item:hover .btn-copy { opacity: 1; }
+.btn-copy:hover { color: var(--accent) !important; }
+/* ─── Rename buttons ──── */
+.btn-rename-col { opacity: 0; transition: opacity .15s; }
+.collection-header:hover .btn-rename-col { opacity: 1; }
+.btn-rename-col:hover { color: var(--accent) !important; }
+.btn-rename-req { opacity: 0; transition: opacity .15s; }
+.sub-item:hover .btn-rename-req { opacity: 1; }
+.btn-rename-req:hover { color: var(--accent) !important; }
+/* ─── Toolbar expand/collapse ──── */
+.toolbar-icons {
+  display: flex; align-items: center; gap: 0; flex-shrink: 0;
+}
+.toolbar-expand {
+  font-size: 14px; color: var(--muted); padding: 2px 3px;
+  opacity: 0.7; flex-shrink: 0;
+}
+.toolbar-expand:hover { color: var(--accent) !important; opacity: 1; }
+.toolbar-new {
+  opacity: 0.9; padding: 0px 2px; line-height: 0;
+}
+.toolbar-new:hover { opacity: 1; }
+/* ─── Active env chip ──── */
+.active-env-chip {
+  font-size: 10px; color: var(--success, #4caf50); flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 0 4px; opacity: 0.85;
+}
+/* ─── Inline rename input ──── */
+.inline-rename {
+  flex: 1; background: var(--input-bg); border: 1px solid var(--accent);
+  color: var(--fg); padding: 1px 5px; border-radius: 3px;
+  font-size: 12px; font-family: inherit; outline: none; min-width: 0;
+}
+/* ─── Save to collection button (history) ──── */
+.item-actions {
+  display: none; align-items: center; gap: 0; flex-shrink: 0;
+}
+.item:hover .item-actions { display: flex; }
+.btn-save-history { font-size: 13px; font-weight: 700; }
+.btn-save-history:hover { color: var(--accent) !important; }

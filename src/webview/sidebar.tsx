@@ -7,7 +7,6 @@ interface HistoryEntry {
 }
 interface CollectionRequest { id?: string; method: string; url: string; name?: string; }
 interface Collection { id: string; name: string; requests?: CollectionRequest[]; }
-interface Environment { id: string; name: string; variables: KVItem[]; }
 type SidebarType = 'history' | 'collections' | 'environments';
 
 function relativeTime(iso?: string): string {
@@ -37,12 +36,9 @@ export const Sidebar: React.FC = () => {
   const [sidebarType, setSidebarType] = useState<SidebarType>('history');
   const [history, setHistory]           = useState<HistoryEntry[]>([]);
   const [collections, setCollections]   = useState<Collection[]>([]);
-  const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [activeEnvId, setActiveEnvId]   = useState<string | null>(null);
   const [expansionStates, setExpansionStates] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [triggerNewCollection, setTriggerNewCollection] = useState(false);
-  const [triggerNewEnvironment, setTriggerNewEnvironment] = useState(false);
   const vscodeApi = useRef<any>(null);
   const pendingToggleRef = useRef<{ id: string; state: boolean } | null>(null);
 
@@ -53,12 +49,9 @@ export const Sidebar: React.FC = () => {
     const handler = (event: MessageEvent) => {
       const d = event.data;
       if (d.command === 'openNewCollectionModal') { setTriggerNewCollection(true); }
-      if (d.command === 'openNewEnvironmentModal') { setTriggerNewEnvironment(true); }
       if (d.command === 'setData') {
         if (d.data.history)      setHistory(d.data.history);
         if (d.data.collections)  setCollections(d.data.collections);
-        if (d.data.environments) setEnvironments(d.data.environments);
-        if (d.data.activeEnvId !== undefined) setActiveEnvId(d.data.activeEnvId);
         // Only update expansion states if there's no pending toggle
         if (d.data.expansionStates && !pendingToggleRef.current) {
           setExpansionStates(d.data.expansionStates);
@@ -110,14 +103,6 @@ export const Sidebar: React.FC = () => {
           onExportCollections={() => post({ command: 'exportCollections' })}
           triggerNew={triggerNewCollection}
           onTriggerNewDone={() => setTriggerNewCollection(false)} />
-      )}
-      {sidebarType === 'environments' && (
-        <EnvironmentsPanel environments={environments} activeEnvId={activeEnvId}
-          onSetActive={(id) => { setActiveEnvId(id); post({ command: 'setActiveEnvironment', id }); }}
-          onSave={(env) => post({ command: 'saveEnvironment', data: env })}
-          onDelete={(id) => post({ command: 'deleteEnvironment', id })}
-          triggerNew={triggerNewEnvironment}
-          onTriggerNewDone={() => setTriggerNewEnvironment(false)} />
       )}
     </div>
   );
@@ -352,81 +337,4 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
       </div>)}
   </>);
 };
-/* ─── Environments ───────────────────────────────────────── */
-interface EnvironmentsPanelProps {
-  environments: Environment[]; activeEnvId: string | null;
-  onSetActive(id: string): void; onSave(env: Environment): void; onDelete(id: string): void;
-  triggerNew?: boolean;
-  onTriggerNewDone?(): void;
-}
-const EnvironmentsPanel: React.FC<EnvironmentsPanelProps> = ({ environments, activeEnvId, onSetActive, onSave, onDelete, triggerNew, onTriggerNewDone }) => {
-  const [editingEnv, setEditingEnv] = useState<Environment | null>(null);
-  const openNew = () => setEditingEnv({ id: '', name: '', variables: [{ key: '', value: '' }] });
-  useEffect(() => { if (triggerNew) { openNew(); onTriggerNewDone?.(); } }, [triggerNew]);
-  const activeEnv = environments.find(e => e.id === activeEnvId);
-  return (<>
-    <div className="toolbar">
-      {activeEnv && (
-        <span className="active-env-chip" title={`Active: ${activeEnv.name}`}>
-          ● {activeEnv.name}
-        </span>
-      )}
-    </div>
-    <div className="list">
-      {environments.length === 0
-        ? <div className="empty"><div className="empty-icon">🌍</div><div>No environments</div><div className="empty-sub">{'Use {{variable}} in requests'}</div></div>
-            : environments.map(env => {
-            const visibleVars = (env.variables || []).filter(v => (v.key||'').trim() !== '' || (v.value||'').trim() !== '');
-            return (
-            <div key={env.id} className="env-item" onClick={() => onSetActive(env.id)}>
-              <div className={`env-radio ${env.id === activeEnvId ? 'active' : ''}`} />
-              <div className="env-info">
-                <div className="env-name">{env.name}</div>
-                <div className="env-count">{visibleVars.length} variable{visibleVars.length!==1?'s':''}</div>
-              </div>
-              <button className="btn-icon" title="Edit" onClick={e => { e.stopPropagation(); setEditingEnv({ ...env }); }}>✎</button>
-              <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDelete(env.id); }}>×</button>
-            </div>)} )}
-    </div>
-    {editingEnv && <EnvModal env={editingEnv} onChange={setEditingEnv}
-      onSave={() => { onSave(editingEnv); setEditingEnv(null); }} onClose={() => setEditingEnv(null)} />}
-  </>);
-};
-/* ─── Env Modal ──────────────────────────────────────────── */
-interface EnvModalProps {
-  env: Environment; onChange(env: Environment): void; onSave(): void; onClose(): void;
-}
-const EnvModal: React.FC<EnvModalProps> = ({ env, onChange, onSave, onClose }) => {
-  const updateVar = (i: number, field: 'key'|'value', val: string) => {
-    const vars = env.variables.map((v, idx) => idx === i ? { ...v, [field]: val } : v);
-    onChange({ ...env, variables: vars });
-  };
-  const addVar = () => onChange({ ...env, variables: [...env.variables, { key: '', value: '' }] });
-  const removeVar = (i: number) => onChange({ ...env, variables: env.variables.filter((_, idx) => idx !== i) });
-  return (
-    <div className="modal-overlay open" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <h3>{env.id ? 'Edit' : 'New'} Environment</h3>
-        <label className="modal-label">Name</label>
-        <input className="modal-input" placeholder="Production" value={env.name} autoFocus
-          onChange={e => onChange({ ...env, name: e.target.value })} />
-        <label className="modal-label" style={{ marginTop: 10 }}>Variables</label>
-        <table className="vars-table">
-          <thead><tr><th>Key</th><th>Value</th><th /></tr></thead>
-          <tbody>
-            {env.variables.map((v, i) => (
-              <tr key={i}>
-                <td><input className="var-input" placeholder="key" value={v.key} onChange={e => updateVar(i,'key',e.target.value)} /></td>
-                <td><input className="var-input" placeholder="value" value={v.value} onChange={e => updateVar(i,'value',e.target.value)} /></td>
-                <td><button className="btn-icon" onClick={() => removeVar(i)}>×</button></td>
-              </tr>))}
-          </tbody>
-        </table>
-        <button className="add-var-btn" onClick={addVar}>+ Add Variable</button>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={onSave}>Save</button>
-        </div>
-      </div>
-    </div>);
-};
+

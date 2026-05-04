@@ -2,7 +2,7 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "AshishBhavsar",
   "engines": {
     "vscode": "^1.80.0"
@@ -13,7 +13,6 @@
   "activationEvents": [
     "onView:restify-history",
     "onView:restify-collections",
-    "onView:restify-environments",
     "onCommand:restify.openMain",
     "onCommand:restify.newRequest"
   ],
@@ -40,11 +39,6 @@
           "id": "restify-collections",
           "name": "Collections",
           "type": "webview"
-        },
-        {
-          "id": "restify-environments",
-          "name": "Environments",
-          "type": "webview"
         }
       ]
     },
@@ -65,12 +59,6 @@
         "title": "New Collection",
         "category": "Restify",
         "icon": "media/new-request.svg"
-      },
-      {
-        "command": "restify.newEnvironment",
-        "title": "New Environment",
-        "category": "Restify",
-        "icon": "media/new-request.svg"
       }
     ],
     "menus": {
@@ -83,11 +71,6 @@
         {
           "command": "restify.newCollection",
           "when": "view == restify-collections",
-          "group": "navigation"
-        },
-        {
-          "command": "restify.newEnvironment",
-          "when": "view == restify-environments",
           "group": "navigation"
         }
       ]

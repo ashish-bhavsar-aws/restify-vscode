@@ -84,14 +84,21 @@ Variables use `{{VARIABLE_NAME}}` syntax anywhere — in URLs, headers, body, an
 - Variable name turns **green** → found in active environment, will be resolved
 - Variable name turns **red** → not found; hover to debug
 
-### Creating an Environment
+### Managing Environments
 
-1. Open the **Environments** sidebar panel
-2. Click the **`+` button in the panel title bar** and give the environment a name
-3. Add key/value pairs (e.g. `baseUrl = https://api.example.com`, `token = abc123`)
-4. Select it as active by clicking the radio button next to its name in the panel
+Environments are managed directly from the **main request panel**:
 
-Switch environments per-request from the top bar. The active environment is saved with each history entry, so reopening a past request restores the same environment automatically.
+1. Click the **list icon (☰)** next to the environment selector in the top bar — this opens the **Manage Environments** modal.
+2. Click **+ New Environment**, give it a name, and add key/value pairs (e.g. `baseUrl = https://api.example.com`, `token = abc123`).
+3. Click **Save**.
+
+To edit or delete an existing environment, open the same modal and use the ✎ edit or × delete buttons on each row.
+
+### Selecting an Active Environment
+
+- Use the **environment dropdown** in the top bar to switch environments at any time.
+- Click the **radio button** next to an environment name inside the modal to set it as active (click again to deselect).
+- The active environment is saved with each history entry, so reopening a past request restores the same environment automatically.
 
 ---
 

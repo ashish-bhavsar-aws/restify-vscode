@@ -283,6 +283,24 @@ export class RestifyPanel {
       case 'setActiveEnvironment':
         this.storageManager.setActiveEnvironment(msg.id);
         break;
+      case 'saveEnvironment': {
+        const env = { ...msg.data };
+        if (Array.isArray(env.variables)) {
+          env.variables = env.variables.filter(
+            (v: any) =>
+              (v.key || '').toString().trim() !== '' ||
+              (v.value || '').toString().trim() !== ''
+          );
+        }
+        this.storageManager.saveEnvironment(env);
+        this._sendEnvironments();
+        break;
+      }
+      case 'deleteEnvironment': {
+        this.storageManager.deleteEnvironment(msg.id);
+        this._sendEnvironments();
+        break;
+      }
       case 'updateTitle':
         this.panel.title = msg.title || 'New Request';
         break;

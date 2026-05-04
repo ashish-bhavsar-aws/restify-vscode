@@ -9,6 +9,7 @@ interface TopBarProps {
   onNameChange: (name: string) => void;
   onEnvChange: (id: string | null) => void;
   onOpenSettings: () => void;
+  onManageEnvs: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -19,6 +20,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onNameChange,
   onEnvChange,
   onOpenSettings,
+  onManageEnvs,
 }) => (
   <div className="top-bar">
     <div className="brand">
@@ -49,6 +51,12 @@ export const TopBar: React.FC<TopBarProps> = ({
         </option>
       ))}
     </select>
+
+    <button className="manage-env-btn" title="Manage Environments" onClick={onManageEnvs}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+      </svg>
+    </button>
 
     <button className="gear-btn" title="Open Settings" onClick={onOpenSettings}>
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

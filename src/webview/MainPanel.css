@@ -190,6 +190,27 @@ body {
     color: var(--accent);
 }
 
+.manage-env-btn {
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: var(--radius);
+    opacity: 0.7;
+    flex-shrink: 0;
+    transition: all .15s;
+}
+
+.manage-env-btn:hover {
+    background: var(--surface-2);
+    opacity: 1;
+    color: var(--accent);
+}
+
 /* ─── Loading Bar ─────────────────────────────────────────── */
 .loading-bar {
     height: 2px;
@@ -1709,13 +1730,14 @@ body.vscode-light .xml-attr-value { color: #116329; }
 .meta-chip {
     font-size: 11px;
     color: var(--muted);
-    padding: 2px 8px;
+    padding: 3px 10px;
     background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 4px;
+    white-space: nowrap;
 }
 
 .copy-btn {
-    margin-left: auto;
     background: var(--surface-2);
     border: 1px solid var(--border);
     color: var(--muted);
@@ -1725,6 +1747,7 @@ body.vscode-light .xml-attr-value { color: #116329; }
     cursor: pointer;
     font-family: inherit;
     transition: all .15s;
+    white-space: nowrap;
 }
 
 .copy-btn:hover {
@@ -1736,6 +1759,14 @@ body.vscode-light .xml-attr-value { color: #116329; }
     background: color-mix(in srgb, var(--accent) 15%, transparent);
     border-color: var(--accent);
     color: var(--accent);
+}
+
+.response-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .response-body {
@@ -2117,4 +2148,228 @@ body.vscode-light .xml-attr-value { color: #116329; }
     align-items: center;
     gap: 6px;
 }
+
+/* ─── Env Manager Modal ───────────────────────────────────── */
+.env-manager-modal {
+    width: 480px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.modal-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    transition: color .15s;
+}
+
+.modal-close-btn:hover {
+    color: var(--fg);
+}
+
+.env-new-btn {
+    margin-bottom: 12px;
+    width: 100%;
+    text-align: center;
+}
+
+.env-manager-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 320px;
+    padding-right: 2px;
+}
+
+.env-manager-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    transition: border-color .15s;
+}
+
+.env-manager-item.active {
+    border-color: var(--accent);
+}
+
+.env-radio-btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    transition: all .15s;
+}
+
+.env-radio-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.env-item-info {
+    flex: 1;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.env-item-name {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.env-item-count {
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.env-empty {
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+    padding: 24px 0;
+    line-height: 1.6;
+}
+
+.env-empty code {
+    font-family: monospace;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+.btn-icon-sm {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: all .15s;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.btn-icon-sm:hover {
+    background: var(--hover);
+    color: var(--fg);
+}
+
+.btn-icon-sm.danger:hover {
+    color: var(--error);
+}
+
+.env-vars-label {
+    margin-top: 10px;
+}
+
+.env-vars-scroll {
+    overflow-y: auto;
+    max-height: 240px;
+    margin-bottom: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.env-vars-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.env-vars-table th {
+    text-align: left;
+    color: var(--muted);
+    font-size: 10px;
+    padding: 6px 8px 4px;
+    font-weight: normal;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--vscode-editor-background, #1e1e2e);
+}
+
+.env-vars-table td {
+    padding: 3px 4px;
+}
+
+.env-vars-table td:last-child {
+    width: 28px;
+    text-align: center;
+}
+
+.env-var-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    color: var(--fg);
+    padding: 4px 6px;
+    font-size: 11px;
+    outline: none;
+    font-family: monospace;
+    transition: border-color .15s;
+}
+
+.env-var-input:focus {
+    border-bottom-color: var(--accent);
+}
+
+.env-var-input::placeholder {
+    color: var(--muted);
+    opacity: 0.6;
+}
+
+.add-var-btn {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    width: 100%;
+    padding: 6px;
+    border-radius: var(--radius);
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    margin: 8px 0 12px;
+    transition: all .15s;
+}
+
+.add-var-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 

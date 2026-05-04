@@ -5,8 +5,9 @@ import { TopBar }       from './components/TopBar';
 import { UrlBar }       from './components/UrlBar';
 import { RequestPane }  from './components/RequestPane';
 import { ResponsePane } from './components/ResponsePane';
-import { SaveModal }    from './components/SaveModal';
-import { SettingsModal } from './components/SettingsModal';
+import { SaveModal }       from './components/SaveModal';
+import { SettingsModal }    from './components/SettingsModal';
+import { EnvManagerModal }  from './components/EnvManagerModal';
 
 import {
   DEFAULT_REQUEST,
@@ -31,6 +32,7 @@ export const MainPanel: React.FC = () => {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [envManagerOpen, setEnvManagerOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [savedCollectionName, setSavedCollectionName] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -262,6 +264,14 @@ export const MainPanel: React.FC = () => {
     post({ command: 'setActiveEnvironment', id });
   };
 
+  const handleSaveEnvironment = (env: Environment) => {
+    post({ command: 'saveEnvironment', data: env });
+  };
+
+  const handleDeleteEnvironment = (id: string) => {
+    post({ command: 'deleteEnvironment', id });
+  };
+
   const handleSaveSettings = (newSettings: SettingsState) => {
     setSettings(newSettings);
     post({ command: 'saveSettings', settings: newSettings });
@@ -297,6 +307,7 @@ export const MainPanel: React.FC = () => {
         activeEnvId={activeEnvId}
         onNameChange={(name) => updateRequest({ name })}
         onEnvChange={handleEnvChange}
+        onManageEnvs={() => setEnvManagerOpen(true)}
         onOpenSettings={() => setSettingsModalOpen(true)}
       />
 
@@ -365,6 +376,16 @@ export const MainPanel: React.FC = () => {
         initialSettings={settings}
         onSave={handleSaveSettings}
         onClose={() => setSettingsModalOpen(false)}
+      />
+
+      <EnvManagerModal
+        open={envManagerOpen}
+        environments={environments}
+        activeEnvId={activeEnvId}
+        onClose={() => setEnvManagerOpen(false)}
+        onSetActive={(id) => { handleEnvChange(id); }}
+        onSave={handleSaveEnvironment}
+        onDelete={handleDeleteEnvironment}
       />
     </div>
   );

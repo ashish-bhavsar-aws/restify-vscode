@@ -5,6 +5,20 @@ const LARGE_RESPONSE_THRESHOLD = 500 * 1024; // 500 KB
 
 function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Mark search term inside already-HTML-escaped/highlighted content.
+// Only replaces inside text nodes — skips content inside < … > to avoid breaking tags.
+function highlightInHtml(html: string, term: string): string {
+  if (!term) return html;
+  try {
+    const escaped = escapeRegex(term);
+    // Replace matches that are NOT inside an HTML tag (no unclosed < before them)
+    return html.replace(
+      new RegExp(`(${escaped})(?![^<]*>)`, 'gi'),
+      '<mark style="background:color-mix(in srgb,var(--accent,#89b4fa) 50%,transparent);color:var(--fg);border-radius:2px;outline:1px solid color-mix(in srgb,var(--accent,#89b4fa) 60%,transparent)">$1</mark>'
+    );
+  } catch { return html; }
+}
+
 // Helper: detect if response is JSON
 function isLikelyJson(body: string | undefined | null, headers?: Record<string, string>): boolean {
   if (!body) return false;
@@ -66,7 +80,7 @@ function syntaxHighlightXml(line: string): string {
     .replace(/\x00GT\x00/g, '&gt;').replace(/\x00LT\x00/g, '&lt;');
 }
 
-const XmlPrettyViewer: React.FC<{ text: string }> = ({ text }) => {
+const XmlPrettyViewer: React.FC<{ text: string; search?: string }> = ({ text, search }) => {
   const pretty = React.useMemo(() => {
     if (!text) return '';
     return prettyPrintXml(text);
@@ -76,12 +90,15 @@ const XmlPrettyViewer: React.FC<{ text: string }> = ({ text }) => {
 
   return (
     <div style={{ display: 'table', width: '100%', borderSpacing: 0 }}>
-      {lines.map((line, idx) => (
-        <div key={idx} style={{ display: 'table-row' }}>
-          <div style={{ display: 'table-cell', width: '3em', background: 'var(--line-number-bg)', color: 'var(--line-number-fg)', textAlign: 'right', paddingRight: '8px', borderRight: '1px solid var(--border)', fontFamily: "'Cascadia Code','Fira Code',Consolas,monospace", fontSize: 11, userSelect: 'none', whiteSpace: 'nowrap' }}>{idx + 1}</div>
-          <div style={{ display: 'table-cell', paddingLeft: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: syntaxHighlightXml(line) }} />
-        </div>
-      ))}
+      {lines.map((line, idx) => {
+        const highlighted = highlightInHtml(syntaxHighlightXml(line), search || '');
+        return (
+          <div key={idx} style={{ display: 'table-row' }}>
+            <div style={{ display: 'table-cell', width: '3em', background: 'var(--line-number-bg)', color: 'var(--line-number-fg)', textAlign: 'right', paddingRight: '8px', borderRight: '1px solid var(--border)', fontFamily: "'Cascadia Code','Fira Code',Consolas,monospace", fontSize: 11, userSelect: 'none', whiteSpace: 'nowrap' }}>{idx + 1}</div>
+            <div style={{ display: 'table-cell', paddingLeft: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: highlighted }} />
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -103,7 +120,7 @@ function syntaxHighlightJSON(jsonLine: string): string {
   });
 }
 
-const JsonPrettyViewer: React.FC<{ text: string }> = ({ text }) => {
+const JsonPrettyViewer: React.FC<{ text: string; search?: string }> = ({ text, search }) => {
   const pretty = React.useMemo(() => {
     if (!text) return '';
     try {
@@ -118,12 +135,15 @@ const JsonPrettyViewer: React.FC<{ text: string }> = ({ text }) => {
 
   return (
     <div style={{ display: 'table', width: '100%', borderSpacing: 0 }}>
-      {lines.map((line, idx) => (
-        <div key={idx} style={{ display: 'table-row' }}>
-          <div style={{ display: 'table-cell', width: '3em', background: 'var(--line-number-bg)', color: 'var(--line-number-fg)', textAlign: 'right', paddingRight: '8px', borderRight: '1px solid var(--border)', fontFamily: "'Cascadia Code','Fira Code',Consolas,monospace", fontSize: 11, userSelect: 'none', whiteSpace: 'nowrap' }}>{idx + 1}</div>
-          <div style={{ display: 'table-cell', paddingLeft: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: syntaxHighlightJSON(line) }} />
-        </div>
-      ))}
+      {lines.map((line, idx) => {
+        const highlighted = highlightInHtml(syntaxHighlightJSON(line), search || '');
+        return (
+          <div key={idx} style={{ display: 'table-row' }}>
+            <div style={{ display: 'table-cell', width: '3em', background: 'var(--line-number-bg)', color: 'var(--line-number-fg)', textAlign: 'right', paddingRight: '8px', borderRight: '1px solid var(--border)', fontFamily: "'Cascadia Code','Fira Code',Consolas,monospace", fontSize: 11, userSelect: 'none', whiteSpace: 'nowrap' }}>{idx + 1}</div>
+            <div style={{ display: 'table-cell', paddingLeft: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: highlighted }} />
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -206,21 +226,23 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
         <span className="status-text">{response.statusText}</span>
         <span className="meta-chip">{response.duration} ms</span>
         <span className="meta-chip">{formatSize(response.size)}</span>
-        {request && (
-          <button className="copy-btn" style={{ marginLeft: 0 }} onClick={handleCopyCurlStatus} title="Copy as cURL command">
-            {copiedCurl ? '✓ cURL' : 'cURL'}
-          </button>
-        )}
-        {response.body && (
-          <button className="copy-btn" onClick={handleCopy}>
-            {copied ? '✓ Copied' : 'Copy'}
-          </button>
-        )}
-        {response.body && (
-          <button className="copy-btn" title="Search in body (/)" onClick={() => setShowSearch(s => !s)}>
-            🔍
-          </button>
-        )}
+        <div className="response-actions">
+          {request && (
+            <button className="copy-btn" onClick={handleCopyCurlStatus} title="Copy as cURL command">
+              {copiedCurl ? '✓ cURL' : 'cURL'}
+            </button>
+          )}
+          {response.body && (
+            <button className="copy-btn" onClick={handleCopy}>
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          )}
+          {response.body && (
+            <button className="copy-btn" title="Search in body (/)" onClick={() => setShowSearch(s => !s)}>
+              🔍
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -273,12 +295,12 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           )}
           {/* Body content */}
           <div style={{ flex: 1, overflow: 'auto' }}>
-            {bodySearch ? (
-              <SearchableBody text={response.body} search={bodySearch} />
-            ) : isLikelyJson(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><JsonPrettyViewer text={response.body} /></div>
+            {isLikelyJson(response.body, response.headers) ? (
+              <div style={{ padding: 8 }}><JsonPrettyViewer text={response.body} search={bodySearch} /></div>
             ) : isLikelyXml(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><XmlPrettyViewer text={response.body} /></div>
+              <div style={{ padding: 8 }}><XmlPrettyViewer text={response.body} search={bodySearch} /></div>
+            ) : bodySearch ? (
+              <SearchableBody text={response.body} search={bodySearch} />
             ) : (
               <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }}>
                 {response.body}

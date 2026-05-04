@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from '../storage/StorageManager';
 import { getSidebarHtml } from '../webview/sidebarHtml';
 
-type SidebarType = 'history' | 'collections' | 'environments';
+type SidebarType = 'history' | 'collections';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
@@ -207,32 +207,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
-        case 'saveEnvironment':
-          // Sanitize variables: drop pairs where both key and value are empty
-          try {
-            const env = { ...msg.data };
-            if (Array.isArray(env.variables)) {
-              env.variables = env.variables.filter((v: any) => (v.key || '').toString().trim() !== '' || (v.value || '').toString().trim() !== '');
-            }
-            this.storageManager.saveEnvironment(env);
-          } catch (e) {
-            // Fallback: save as-is on error
-            this.storageManager.saveEnvironment(msg.data);
-          }
-          break;
-        case 'deleteEnvironment': {
-          const envs = this.storageManager.getEnvironments();
-          const env = envs.find((e) => String(e.id) === String(msg.id));
-          if (!env) break;
-          vscode.window.showWarningMessage(
-            `Delete environment "${env.name}"? This cannot be undone.`,
-            'Delete', 'Cancel'
-          ).then((sel) => { if (sel === 'Delete') this.storageManager.deleteEnvironment(msg.id); });
-          break;
-        }
-        case 'setActiveEnvironment':
-          this.storageManager.setActiveEnvironment(msg.id);
-          break;
         case 'requestData':
           this._sendData();
           break;
@@ -269,12 +243,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       data = {
         collections: this.storageManager.getCollections(),
         expansionStates: this.storageManager.getExpansionStates(),
-      };
-    } else if (this.type === 'environments') {
-      data = {
-        environments: this.storageManager.getEnvironments(),
-        activeEnvId:
-          this.storageManager.getActiveEnvironment()?.id || null,
       };
     }
     this._view.webview.postMessage({

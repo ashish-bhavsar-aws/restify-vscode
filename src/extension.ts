@@ -22,12 +22,6 @@ export function activate(context: vscode.ExtensionContext) {
     'collections',
     storageManager
   );
-  const environmentsProvider = new SidebarProvider(
-    context,
-    'environments',
-    storageManager
-  );
-
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       'restify-history',
@@ -36,10 +30,6 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(
       'restify-collections',
       collectionsProvider
-    ),
-    vscode.window.registerWebviewViewProvider(
-      'restify-environments',
-      environmentsProvider
     )
   );
 
@@ -59,7 +49,6 @@ export function activate(context: vscode.ExtensionContext) {
 
         historyProvider.refresh();
         collectionsProvider.refresh();
-        environmentsProvider.refresh();
       }
     )
   );
@@ -77,12 +66,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('restify.newEnvironment', () => {
-      environmentsProvider.postMessage({ command: 'openNewEnvironmentModal' });
-    })
-  );
-
-  context.subscriptions.push(
     vscode.commands.registerCommand('restify.openFromSidebar', (data) => {
       vscode.commands.executeCommand('restify.openMain', data);
     })
@@ -93,7 +76,6 @@ export function activate(context: vscode.ExtensionContext) {
   storageManager.onDidChange(() => {
     historyProvider.refresh();
     collectionsProvider.refresh();
-    environmentsProvider.refresh();
 
     openPanels.forEach((p) => {
       if (p.updateMetadata) p.updateMetadata();

@@ -85,7 +85,18 @@ body {
     flex-shrink: 0;
 }
 
+.brand-icon {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    display: block;
+    flex-shrink: 0;
+}
+
 .brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 14px;
     font-weight: 700;
     letter-spacing: -0.5px;

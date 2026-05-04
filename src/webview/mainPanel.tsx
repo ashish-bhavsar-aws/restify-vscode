@@ -47,8 +47,7 @@ export const MainPanel: React.FC = () => {
       const handler = (event: MessageEvent) => {
         const msg = event.data;
         try {
-          // Log raw incoming message for quick debugging in the browser console
-          console.log('webview message:', msg?.command, msg?.data ?? msg?.response ?? msg?.error ?? '');
+          // incoming message received
         } catch (e) {}
         switch (msg.command) {
           case 'loadRequest': {
@@ -121,7 +120,6 @@ export const MainPanel: React.FC = () => {
               const ts = new Date().toLocaleTimeString();
               const entry = `${ts} — ${msg.data?.stage || 'debug'}: ${JSON.stringify(msg.data?.info || {})}`;
               setRequestInfo((prev: any) => ({ ...(prev || {}), scriptLogs: [ ...(prev?.scriptLogs || []), entry ] }));
-              console.debug('[debugLog]', msg.data?.stage, msg.data?.info);
             } catch (e) { console.error('Failed to append debugLog', e); }
             break;
         }
@@ -209,6 +207,7 @@ export const MainPanel: React.FC = () => {
 
   // Normal send handler
   const handleSendGuarded = handleSend;
+
 
   // Safely decode a URI component, falling back to the raw string on malformed input
   const safeDecode = (s: string): string => {

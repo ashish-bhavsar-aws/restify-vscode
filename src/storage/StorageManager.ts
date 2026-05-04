@@ -313,22 +313,72 @@ export class StorageManager {
 
 
   clearHistory(): void {
+    const oldEntries = [...this.historyCache];
     this.historyCache = [];
-    this.globalState.update('restify.history', []).then(() => {}, (err: any) => console.error('Failed to clear history:', err));
-    if (this.storageDir) this.persistHistoryToFile().catch((err) => console.error('Failed to persist history file after clear:', err));
+    this.globalState.update('restify.history', []).then(() => {
+      if (this.storageDir) {
+        this.persistHistoryToFile().catch((err) => console.error('Failed to persist history file after clear:', err));
+      }
+      if (this.db && typeof this.db.getCollection === 'function') {
+        try {
+          const coll = this.db.getCollection('history');
+          if (coll) {
+            if (typeof coll.clear === 'function') {
+              coll.clear();
+            } else {
+              // Fallback: remove all docs via chain
+              const rows = coll.find();
+              rows.forEach((r: any) => coll.remove(r));
+            }
+            this.db.saveDatabase((err: any) => { if (err) console.error('Loki save error:', err); });
+          }
+        } catch (e) {
+          console.error('DB clear error:', e);
+        }
+      }
+    }, (err: any) => console.error('Failed to clear history:', err));
+
+    // Remove any persisted body files for the old entries
+    try {
+      if (this.storageDir && oldEntries && oldEntries.length) {
+        for (const toDelete of oldEntries) {
+          const respFile = toDelete.response?.bodyFile;
+          const reqFile = toDelete.request?.bodyFile;
+          if (respFile) {
+            const fp = path.join(this.storageDir, this.BODY_FILE_DIR, respFile);
+            fs.unlink(fp, () => {});
+          }
+          if (reqFile) {
+            const fp = path.join(this.storageDir, this.BODY_FILE_DIR, reqFile);
+            fs.unlink(fp, () => {});
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
     this.notifyChange();
   }
 
   deleteHistoryItem(id: string): void {
     const toDelete = this.historyCache.find((h) => h.id === id);
     this.historyCache = this.historyCache.filter((h) => h.id !== id);
-    this.globalState.update('restify.history', this.historyCache).then(() => {}, (err: any) => console.error('Failed to delete history item:', err));
-    if (this.storageDir) this.persistHistoryToFile().catch((err) => console.error('Failed to persist history after delete:', err));
-    if (this.db) {
+    this.globalState.update('restify.history', this.historyCache).then(() => {
+      if (this.storageDir) {
+        this.persistHistoryToFile().catch((err) => console.error('Failed to persist history after delete:', err));
+      }
+    }, (err: any) => console.error('Failed to delete history item:', err));
+    if (this.db && typeof this.db.getCollection === 'function') {
       try {
-        this.db.run('DELETE FROM history WHERE id = ?', id, (err: any) => {
-          if (err) console.error('Failed to delete history row from DB:', err);
-        });
+        const coll = this.db.getCollection('history');
+        if (coll) {
+          const item = coll.findOne({ id });
+          if (item) {
+            coll.remove(item);
+            this.db.saveDatabase((err: any) => { if (err) console.error('Loki save error:', err); });
+          }
+        }
       } catch (e) {
         console.error('DB delete error:', e);
       }
@@ -384,18 +434,20 @@ export class StorageManager {
 
   saveCollection(collection: Collection): void {
     const collections = this.getCollections();
-    const idx = collections.findIndex((c) => c.id === collection.id);
+    const newId = collection.id ? String(collection.id) : this.createId('collection');
+    const idx = collections.findIndex((c) => String(c.id) === newId);
+    const toSave = { ...collection, id: newId };
     if (idx >= 0) {
-      collections[idx] = collection;
+      collections[idx] = toSave;
     } else {
-      collections.push({ ...collection, id: collection.id ?? this.createId('collection') });
+      collections.push(toSave);
     }
     this.globalState.update('restify.collections', collections);
     this.notifyChange();
   }
 
   deleteCollection(id: string): void {
-    const collections = this.getCollections().filter((c) => c.id !== id);
+    const collections = this.getCollections().filter((c) => String(c.id) !== String(id));
     this.globalState.update('restify.collections', collections);
     this.notifyChange();
   }
@@ -405,11 +457,13 @@ export class StorageManager {
     const col = collections.find((c) => c.id === collectionId);
     if (col) {
       if (!col.requests) col.requests = [];
-      const existing = col.requests.findIndex((r) => r.id === request.id);
+      const reqId = request.id ? String(request.id) : this.createId('request');
+      const existing = col.requests.findIndex((r) => String(r.id) === reqId);
+      const toSaveReq = { ...request, id: reqId };
       if (existing >= 0) {
-        col.requests[existing] = request;
+        col.requests[existing] = toSaveReq;
       } else {
-        col.requests.push({ id: this.createId('request'), ...request });
+        col.requests.push(toSaveReq);
       }
       this.globalState.update('restify.collections', collections);
       this.notifyChange();
@@ -420,7 +474,7 @@ export class StorageManager {
     const collections = this.getCollections();
     const col = collections.find((c) => c.id === collectionId);
     if (col) {
-      col.requests = (col.requests || []).filter((r) => r.id !== requestId);
+      col.requests = (col.requests || []).filter((r) => String(r.id) !== String(requestId));
       this.globalState.update('restify.collections', collections);
       this.notifyChange();
     }

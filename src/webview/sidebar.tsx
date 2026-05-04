@@ -149,7 +149,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
     </div>
     <div className="list" onKeyDown={listNavKeyDown}>
       {filtered.length === 0
-        ? <div className="empty"><div className="empty-icon">⚡</div><div>No requests yet</div><div className="empty-sub">Execute a request to see it here</div></div>
+        ? <div className="empty">
+            <div className="empty-icon">
+              <img src={(window as any).restifyMedia?.sidebarIcon || ''} alt="Restify" />
+            </div>
+            <div>No requests yet</div>
+            <div className="empty-sub">Execute a request to see it here</div>
+          </div>
         : filtered.map(entry => {
             const sc = !entry.status || entry.status === 0 ? 'status-err' : entry.status < 300 ? 'status-ok' : entry.status < 400 ? 'status-warn' : 'status-err';
             return (
@@ -275,7 +281,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                   }
                   <span className="collection-count">{search ? `${filteredReqs.length}/` : ''}{reqs.length}</span>
                   <button className="btn-icon btn-rename-col" title="Rename" onClick={e => { e.stopPropagation(); setEditingCollection({ id: col.id, name: col.name }); }}>✎</button>
-                  <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); if (window.confirm(`Delete collection "${col.name}"? This cannot be undone.`)) onDeleteCollection(col.id); }}>×</button>
+                  <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDeleteCollection(col.id); }}>×</button>
                 </div>
                 {isOpen && (
                   <div className="collection-requests open">
@@ -321,7 +327,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                               }
                               <button className="btn-icon btn-copy" title="Copy request" onClick={e => { e.stopPropagation(); onCopyRequest(col.id, req.id!); }}>⎘</button>
                               <button className="btn-icon btn-rename-req" title="Rename" onClick={e => { e.stopPropagation(); setEditingRequest({ collectionId: col.id, requestId: req.id!, name: req.name || '' }); }}>✎</button>
-                              <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); if (window.confirm(`Delete "${req.name || req.url || 'this request'}"?`)) onDeleteRequest(col.id, req.id!); }}>×</button>
+                              <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDeleteRequest(col.id, req.id!); }}>×</button>
                             </div>
                             {dropIndicator?.collectionId === col.id && dropIndicator.insertIndex === reqs.length && idx === reqs.length - 1 && (
                               <div className="drop-indicator" />
@@ -369,16 +375,18 @@ const EnvironmentsPanel: React.FC<EnvironmentsPanelProps> = ({ environments, act
     <div className="list">
       {environments.length === 0
         ? <div className="empty"><div className="empty-icon">🌍</div><div>No environments</div><div className="empty-sub">{'Use {{variable}} in requests'}</div></div>
-        : environments.map(env => (
+            : environments.map(env => {
+            const visibleVars = (env.variables || []).filter(v => (v.key||'').trim() !== '' || (v.value||'').trim() !== '');
+            return (
             <div key={env.id} className="env-item" onClick={() => onSetActive(env.id)}>
               <div className={`env-radio ${env.id === activeEnvId ? 'active' : ''}`} />
               <div className="env-info">
                 <div className="env-name">{env.name}</div>
-                <div className="env-count">{(env.variables||[]).length} variable{(env.variables||[]).length!==1?'s':''}</div>
+                <div className="env-count">{visibleVars.length} variable{visibleVars.length!==1?'s':''}</div>
               </div>
               <button className="btn-icon" title="Edit" onClick={e => { e.stopPropagation(); setEditingEnv({ ...env }); }}>✎</button>
               <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDelete(env.id); }}>×</button>
-            </div>))}
+            </div>)} )}
     </div>
     {editingEnv && <EnvModal env={editingEnv} onChange={setEditingEnv}
       onSave={() => { onSave(editingEnv); setEditingEnv(null); }} onClose={() => setEditingEnv(null)} />}

@@ -68,15 +68,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'saveCollection':
           this.storageManager.saveCollection(msg.data);
           break;
-        case 'deleteCollection':
-          this.storageManager.deleteCollection(msg.id);
+        case 'deleteCollection': {
+          const cols = this.storageManager.getCollections();
+          const found = cols.find((c) => String(c.id) === String(msg.id));
+          if (!found) break;
+          vscode.window.showWarningMessage(
+            `Delete collection "${found.name}"? This cannot be undone.`,
+            'Delete', 'Cancel'
+          ).then((sel) => { if (sel === 'Delete') this.storageManager.deleteCollection(msg.id); });
           break;
-        case 'deleteCollectionRequest':
-          this.storageManager.deleteRequestFromCollection(
-            msg.collectionId,
-            msg.requestId
-          );
+        }
+        case 'deleteCollectionRequest': {
+          const cols = this.storageManager.getCollections();
+          const col = cols.find((c) => String(c.id) === String(msg.collectionId));
+          if (!col) break;
+          const req = (col.requests || []).find((r: any) => String(r.id) === String(msg.requestId));
+          if (!req) break;
+          this.storageManager.deleteRequestFromCollection(msg.collectionId, msg.requestId);
           break;
+        }
         case 'copyCollectionRequest': {
           const cols = this.storageManager.getCollections();
           const srcCol = cols.find((c) => c.id === msg.collectionId);
@@ -198,9 +208,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'saveEnvironment':
-        case 'deleteEnvironment':
-          this.storageManager.deleteEnvironment(msg.id);
+          // Sanitize variables: drop pairs where both key and value are empty
+          try {
+            const env = { ...msg.data };
+            if (Array.isArray(env.variables)) {
+              env.variables = env.variables.filter((v: any) => (v.key || '').toString().trim() !== '' || (v.value || '').toString().trim() !== '');
+            }
+            this.storageManager.saveEnvironment(env);
+          } catch (e) {
+            // Fallback: save as-is on error
+            this.storageManager.saveEnvironment(msg.data);
+          }
           break;
+        case 'deleteEnvironment': {
+          const envs = this.storageManager.getEnvironments();
+          const env = envs.find((e) => String(e.id) === String(msg.id));
+          if (!env) break;
+          vscode.window.showWarningMessage(
+            `Delete environment "${env.name}"? This cannot be undone.`,
+            'Delete', 'Cancel'
+          ).then((sel) => { if (sel === 'Delete') this.storageManager.deleteEnvironment(msg.id); });
+          break;
+        }
         case 'setActiveEnvironment':
           this.storageManager.setActiveEnvironment(msg.id);
           break;

@@ -21,7 +21,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenSettings,
 }) => (
   <div className="top-bar">
-    <div className="brand">⚡ Restify</div>
+    <div className="brand">
+      <img className="brand-icon" src={(window as any).restifyMedia?.sidebarIcon || ''} alt="Restify" />
+      <span className="brand-text">Restify</span>
+    </div>
 
     <div className="request-name-wrapper">
       <input

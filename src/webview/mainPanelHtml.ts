@@ -10,17 +10,22 @@ export function getMainPanelHtml(context: vscode.ExtensionContext, webview: vsco
 
   const nonce = getNonce();
 
+  const sidebarIconUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'media', 'sidebar-icon.svg')
+  );
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' 'unsafe-eval';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' 'unsafe-eval';" />
   <link rel="stylesheet" href="${cssUri}">
   <title>Restify</title>
 </head>
 <body>
   <div id="root"></div>
+  <script nonce="${nonce}">window.restifyMedia = { sidebarIcon: "${sidebarIconUri}" };<\/script>
   <script nonce="${nonce}" src="${scriptUri}"><\/script>
 </body>
 </html>`;

@@ -83,7 +83,7 @@ export class RestifyPanel {
   private onDispose: (instance: RestifyPanel) => void;
   private pendingRequest: RequestData | null = null;
   private webviewReady: boolean = false;
-
+  
   constructor(
     context: vscode.ExtensionContext,
     storageManager: StorageManager,

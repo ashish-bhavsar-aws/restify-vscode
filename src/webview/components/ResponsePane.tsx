@@ -40,21 +40,64 @@ function isLikelyXml(body: string | undefined | null, headers?: Record<string, s
 
 function prettyPrintXml(xml: string): string {
   try {
-    let formatted = '';
-    let indent = 0;
-    const lines = xml.replace(/>\s*</g, '>\n<').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      // Closing tag — dedent before printing
-      if (/^<\//.test(trimmed)) indent = Math.max(0, indent - 1);
-      formatted += '  '.repeat(indent) + trimmed + '\n';
-      // Open tag (not self-closing, not declaration, not comment, not closing) — indent after
-      if (!trimmed.startsWith('<?') && !trimmed.startsWith('<!--') && !trimmed.endsWith('/>') && !/^<\//.test(trimmed) && /<[^!][^>]*[^/]>$/.test(trimmed)) {
-        indent++;
-      }
+    // Use DOMParser for robust parsing in the browser environment
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'application/xml');
+
+    // Detect parse errors: browsers put parsererror elements in the returned document
+    if (doc.getElementsByTagName('parsererror').length > 0) {
+      return xml; // fallback to raw if parsing failed
     }
-    return formatted.trim();
+
+    // Escaping helper
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Recursively pretty-print nodes
+    const indentUnit = '  ';
+    const serialize = (node: Node, indentLevel = 0): string => {
+      const indent = indentUnit.repeat(indentLevel);
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.nodeValue || '';
+        if (text.trim() === '') return '';
+        return indent + esc(text.trim()) + '\n';
+      }
+      if (node.nodeType === Node.CDATA_SECTION_NODE) {
+        return indent + `<![CDATA[${(node as CDATASection).data}]]>` + '\n';
+      }
+      if (node.nodeType === Node.COMMENT_NODE) {
+        return indent + `<!--${(node as Comment).data}-->` + '\n';
+      }
+      if (node.nodeType === Node.DOCUMENT_NODE) {
+        let out = '';
+        node.childNodes.forEach((n) => { out += serialize(n, indentLevel); });
+        return out;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as Element;
+        const attrs: string[] = [];
+        for (let i = 0; i < el.attributes.length; i += 1) {
+          const a = el.attributes.item(i)!;
+          attrs.push(`${a.name}="${esc(a.value)}"`);
+        }
+        const open = attrs.length ? `<${el.tagName} ${attrs.join(' ')}>` : `<${el.tagName}>`;
+        // Single text child: render as one line: <tag>text</tag>
+        if (el.childNodes && el.childNodes.length === 1 && el.firstChild!.nodeType === Node.TEXT_NODE) {
+          const txt = (el.firstChild!.nodeValue || '').trim();
+          return indent + `${open.replace(/>$/, '')}>${esc(txt)}</${el.tagName}>` + '\n';
+        }
+        if (!el.childNodes || el.childNodes.length === 0) {
+          return indent + open.replace(/>$/, '/>') + '\n';
+        }
+        let out = indent + open + '\n';
+        el.childNodes.forEach((n) => { out += serialize(n, indentLevel + 1); });
+        out += indent + `</${el.tagName}>` + '\n';
+        return out;
+      }
+      return '';
+    };
+
+    const result = serialize(doc).trim();
+    return result || xml;
   } catch {
     return xml;
   }

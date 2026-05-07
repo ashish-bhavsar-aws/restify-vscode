@@ -8,3 +8,4 @@ output.zip
 test/**
 .vscode/**
 file.js
+dev/**

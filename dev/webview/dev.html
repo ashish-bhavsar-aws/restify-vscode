@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <link rel="stylesheet" href="./mainPanel.css">
+    <title>Restify Dev</title>
+    <script>
+      // Minimal mock of VS Code webview API used by the app
+      window.acquireVsCodeApi = function() {
+        return {
+          postMessage: (msg) => console.log('vscode.postMessage', msg),
+          getState: () => null,
+          setState: () => {}
+        };
+      };
+      // allow receiving messages like the extension would send
+      window.addEventListener('message', (ev) => {
+        console.log('dev window message', ev);
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="./mainPanel.js"></script>
+  </body>
+</html>
+

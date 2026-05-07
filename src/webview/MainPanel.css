@@ -1226,6 +1226,38 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     background: var(--input-bg);
 }
 
+.code-editor-content {
+    color: var(--input-fg);
+    overflow: auto;
+    margin: 0;
+    padding: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    tab-size: 2;
+    background: var(--input-bg);
+    position: absolute;
+    inset: 0;
+    outline: none;
+    border: none;
+    resize: none;
+}
+
+.code-editor-content[contenteditable="true"] {
+    caret-color: var(--input-fg);
+}
+
+.code-editor-content[contenteditable="false"] {
+    pointer-events: none;
+    color: color-mix(in srgb, var(--input-fg) 70%, transparent);
+}
+
+.code-editor-content::selection {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 .code-editor-syntax {
     color: var(--input-fg);
     pointer-events: none;
@@ -1278,6 +1310,40 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
 .code-editor-overlay.hidden-editor {
     opacity: 0;
     pointer-events: none;
+}
+
+.code-editor-ruler {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    visibility: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 10px 14px;
+    tab-size: 2;
+    overflow: hidden;
+    margin: 0;
+    border: none;
+}
+
+.pretty-body-ruler {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    visibility: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 8px 14px;
+    tab-size: 2;
+    overflow: hidden;
+    margin: 0;
+    border: none;
 }
 
 .code-editor-pretty-viewer {
@@ -1483,7 +1549,7 @@ body.vscode-light .syntax-xml-comment  { color: #6e7781; }
     overflow: hidden; /* synced via scrollTop in JS */
     background: var(--line-number-bg);
     border-right: 1px solid var(--border);
-    padding: 10px 0;
+    padding: 10px 5px 10px 10px;
     text-align: right;
     user-select: none;
     flex-shrink: 0;

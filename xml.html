@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>XML Editor (Perfect Line Number Alignment with Wrapping)</title>
+  <style>
+    body { background: #263238; color: #fff; font-family: Arial, sans-serif; padding: 20px; }
+    .editor-container {
+      display: flex;
+      align-items: flex-start;
+      background: #1e272c;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px #0002;
+      width: fit-content;
+      margin-bottom: 20px;
+    }
+    .line-numbers {
+      background: #222d32;
+      color: #90caf9;
+      font-family: monospace;
+      font-size: 15px;
+      text-align: right;
+      user-select: none;
+      padding: 10px 5px 10px 10px;
+      border-top-left-radius: 4px;
+      border-bottom-left-radius: 4px;
+      min-width: 30px;
+      height: 400px;
+      overflow: hidden;
+      box-sizing: border-box;
+      line-height: 1.4;
+      white-space: pre;
+    }
+    .editorcell {
+      position: relative;
+      width: 500px;
+      height: 400px;
+      border-top-right-radius: 4px;
+      border-bottom-right-radius: 4px;
+      box-sizing: border-box;
+      background: #1e272c;
+    }
+    #xmlInput {
+      width: 100%;
+      height: 100%;
+      font-family: monospace;
+      font-size: 15px;
+      padding: 10px;
+      border: none;
+      outline: none;
+      background: #1e272c;
+      color: #fff;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.4;
+      border-top-right-radius: 4px;
+      border-bottom-right-radius: 4px;
+      overflow: auto;
+      resize: none;
+      box-sizing: border-box;
+    }
+    #xmlInput:focus { outline: 1px solid #90caf9; }
+    .buttons { margin: 10px 0; }
+    .buttons button { margin-right: 10px; }
+    #error { color: #ff5252; margin-top: 10px; }
+    /* XML syntax highlighting */
+    .xml-tag { color: #64b5f6; }
+    .xml-attr { color: #ffb300; }
+    .xml-value { color: #81c784; }
+    .xml-comment { color: #b0bec5; font-style: italic; }
+    .xml-punct { color: #fff; }
+    /* Hidden ruler for measuring visual lines */
+    #ruler {
+      visibility: hidden;
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+      width: 480px; /* 500px - 2*10px padding */
+      font-family: monospace;
+      font-size: 15px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 0;
+      margin: 0;
+      border: none;
+      box-sizing: border-box;
+      background: #1e272c;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h2>XML Editor (Perfect Line Number Alignment with Wrapping)</h2>
+  <div class="editor-container">
+    <div class="line-numbers" id="lineNumbers"></div>
+    <div class="editorcell">
+      <div id="xmlInput" contenteditable="true" spellcheck="false">&lt;note&gt;
+  &lt;to&gt;Tove&lt;/to&gt;
+  &lt;from&gt;Jani&lt;/from&gt;
+  &lt;heading&gt;Reminder&lt;/heading&gt;
+  &lt;body&gt;Don&apos;t forget me this weekend!&lt;/body&gt;
+&lt;/note&gt;</div>
+      <div id="ruler"></div>
+    </div>
+  </div>
+  <div class="buttons">
+    <button onclick="beautifyXML()">Beautify</button>
+    <button onclick="minifyXML()">Minify</button>
+  </div>
+  <div id="error"></div>
+
+<script>
+const xmlInput = document.getElementById('xmlInput');
+const lineNumbers = document.getElementById('lineNumbers');
+const ruler = document.getElementById('ruler');
+
+// XML syntax highlighting
+function syntaxHighlightXML(xml) {
+  if (typeof xml !== 'string') xml = String(xml);
+  xml = xml.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Comments
+  xml = xml.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="xml-comment">$1</span>');
+  // Tags, attributes, values
+  xml = xml.replace(/(&lt;\/?)([\w\-\.:]+)([\s\S]*?)(&gt;)/g, function(_, p1, p2, p3, p4) {
+    // p3: attributes
+    let attrs = p3.replace(/([\w\-\.:]+)(\s*=\s*)("[^"]*"|'[^']*')/g,
+      '<span class="xml-attr">$1</span>$2<span class="xml-value">$3</span>');
+    return '<span class="xml-punct">' + p1 + '</span>' +
+           '<span class="xml-tag">' + p2 + '</span>' +
+           attrs +
+           '<span class="xml-punct">' + p4 + '</span>';
+  });
+  return xml;
+}
+
+function getPlainText() {
+  let html = xmlInput.innerHTML
+    .replace(/<div><br><\/div>/g, '\n')
+    .replace(/<div>/g, '\n')
+    .replace(/<\/div>/g, '')
+    .replace(/<br>/g, '\n');
+  let tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+// For each logical line, count how many visual lines it wraps into
+function getVisualLinesPerLogicalLine(text) {
+  ruler.innerHTML = '';
+  let lines = text.split('\n');
+  let result = [];
+  let lineHeight = parseFloat(getComputedStyle(ruler).lineHeight);
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i] || ' ';
+    let span = document.createElement('span');
+    span.textContent = line;
+    ruler.appendChild(span);
+    ruler.appendChild(document.createElement('br'));
+    let spanHeight = span.offsetHeight || lineHeight;
+    let visualLines = Math.round(spanHeight / lineHeight);
+    if (visualLines < 1) visualLines = 1;
+    result.push(visualLines);
+  }
+  return result;
+}
+
+function updateLineNumbers() {
+  const text = getPlainText();
+  const visualLinesArr = getVisualLinesPerLogicalLine(text);
+  let html = '';
+  for (let i = 0; i < visualLinesArr.length; i++) {
+    html += (i + 1);
+    for (let j = 1; j < visualLinesArr[i]; j++) {
+      html += '<br>&nbsp;';
+    }
+    if (i < visualLinesArr.length - 1) html += '<br>';
+  }
+  lineNumbers.innerHTML = html;
+  lineNumbers.scrollTop = xmlInput.scrollTop;
+}
+
+function highlightEditor() {
+  // Save caret position if focused and selection exists
+  let caretOffset = null;
+  const isFocused = document.activeElement === xmlInput;
+  if (isFocused) {
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const preCaretRange = range.cloneRange();
+      preCaretRange.selectNodeContents(xmlInput);
+      preCaretRange.setEnd(range.endContainer, range.endOffset);
+      caretOffset = preCaretRange.toString().length;
+    }
+  }
+  // Highlight
+  const text = getPlainText();
+  try {
+    // Try to parse XML for error checking
+    parseXML(text);
+    xmlInput.innerHTML = syntaxHighlightXML(text);
+    showError('');
+  } catch (e) {
+    xmlInput.innerHTML = syntaxHighlightXML(text);
+    showError('Invalid XML: ' + e.message);
+  }
+  // Restore caret
+  if (caretOffset !== null) setCaretPosition(xmlInput, caretOffset);
+  updateLineNumbers();
+}
+
+function setCaretPosition(el, chars) {
+  if (chars >= 0) {
+    const selection = window.getSelection();
+    let node = el;
+    let found = false;
+    let charCount = 0;
+    function traverse(node) {
+      if (found) return;
+      if (node.nodeType === 3) {
+        let nextCharCount = charCount + node.length;
+        if (!found && chars <= nextCharCount) {
+          let range = document.createRange();
+          range.setStart(node, chars - charCount);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          found = true;
+        }
+        charCount = nextCharCount;
+      } else {
+        for (let i = 0; i < node.childNodes.length; i++) {
+          traverse(node.childNodes[i]);
+          if (found) break;
+        }
+      }
+    }
+    traverse(el);
+  }
+}
+
+// XML parsing for error checking
+function parseXML(xmlStr) {
+  let parser = new DOMParser();
+  let doc = parser.parseFromString(xmlStr, "application/xml");
+  let parsererror = doc.getElementsByTagName("parsererror");
+  if (parsererror.length > 0) {
+    throw new Error(parsererror[0].textContent.replace(/\n/g, ' '));
+  }
+  return doc;
+}
+
+xmlInput.addEventListener('input', function() {
+  highlightEditor();
+});
+
+xmlInput.addEventListener('paste', function() {
+  setTimeout(highlightEditor, 0);
+});
+
+xmlInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    document.execCommand('insertText', false, '  ');
+  }
+});
+
+xmlInput.addEventListener('scroll', function() {
+  lineNumbers.scrollTop = xmlInput.scrollTop;
+});
+
+xmlInput.addEventListener('blur', function() {
+  highlightEditor();
+});
+
+function beautifyXML() {
+  const text = getPlainText();
+  try {
+    const formatted = formatXML(text);
+    xmlInput.innerHTML = syntaxHighlightXML(formatted);
+    showError('');
+  } catch (e) {
+    showError('Invalid XML: ' + e.message);
+  }
+  updateLineNumbers();
+}
+
+function minifyXML() {
+  const text = getPlainText();
+  try {
+    const minified = minifyXMLString(text);
+    xmlInput.innerHTML = syntaxHighlightXML(minified);
+    showError('');
+  } catch (e) {
+    showError('Invalid XML: ' + e.message);
+  }
+  updateLineNumbers();
+}
+
+function showError(msg) {
+  document.getElementById('error').textContent = msg;
+}
+
+// XML beautifier
+function formatXML(xml) {
+  let reg = /(>)(<)(\/*)/g;
+  xml = xml.replace(reg, '$1\n$2$3');
+  let pad = 0;
+  let formatted = '';
+  xml.split('\n').forEach(function(node) {
+    let indent = 0;
+    if (node.match(/.+<\/\w[^>]*>$/)) {
+      indent = 0;
+    } else if (node.match(/^<\/\w/)) {
+      if (pad !== 0) pad -= 1;
+    } else if (node.match(/^<\w([^>]*[^/])?>.*$/)) {
+      indent = 1;
+    } else {
+      indent = 0;
+    }
+    let padding = new Array(pad + 1).join('  ');
+    formatted += padding + node + '\n';
+    pad += indent;
+  });
+  return formatted.trim();
+}
+
+// XML minifier
+function minifyXMLString(xml) {
+  return xml.replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').replace(/\n/g, '');
+}
+
+// Initial setup
+highlightEditor();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# copy dev.html into dist/webview (if you created it in project root)
+cp dev/webview/dev.html dist/webview/dev.html
+
+# serve with http-server:
+npx http-server dist/webview -p 3000
+
+# or serve:
+npx serve dist/webview -p 3000

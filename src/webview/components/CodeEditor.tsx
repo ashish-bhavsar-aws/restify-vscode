@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { PrettyBodyViewer, formatJSON, minifyJSON, prettyPrintXml } from './PrettyBodyViewer';
+import { formatJSON, minifyJSON, prettyPrintXml } from './PrettyBodyViewer';
 
 type Language = 'json' | 'xml' | 'text' | 'javascript';
 type JsonFormatMode = 'formatted' | 'minified';
@@ -27,13 +27,14 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 }) => {
   const [isFormatting, setIsFormatting] = useState(false);
   const [cursorLine, setCursorLine] = useState(1);
-  const [cursorCol, setCursorCol]   = useState(1);
+  const [cursorCol, setCursorCol] = useState(1);
   const [editorValue, setEditorValue] = useState(value);
   const [isEditing, setIsEditing] = useState(false);
+  const [visualLines, setVisualLines] = useState<number[]>(() => [1]);
 
-  const syntaxRef  = useRef<HTMLPreElement | null>(null);
-  const gutterRef  = useRef<HTMLDivElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement | null>(null);
+  const rulerRef = useRef<HTMLDivElement | null>(null);
   const jsonFormatModeRef = useRef<JsonFormatMode>(jsonFormatMode);
 
   useEffect(() => {
@@ -54,19 +55,58 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     }
   }, [language, readOnly, onChange]);
 
-  useEffect(() => {
-    if (isEditing) return;
-    applyJsonFormat(editorValue);
-  }, [editorValue, isEditing, applyJsonFormat]);
+  // Compute visual lines (for line number wrapping alignment)
+  const computeVisualLines = useCallback(() => {
+    const text = editorValue || '';
+    const ruler = rulerRef.current;
+    const editor = editorRef.current;
+    if (!ruler || !editor) return;
+    
+    // Match ruler dimensions to editor
+    const editorWidth = editor.clientWidth;
+    ruler.style.width = `${editorWidth}px`;
+    
+    ruler.innerHTML = '';
+    const style = window.getComputedStyle(ruler);
+    const lineHeight = parseFloat(style.lineHeight) || 16;
+    const results: number[] = [];
+    const lines = text.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] || ' ';
+      const lineDiv = document.createElement('div');
+      lineDiv.textContent = line;
+      lineDiv.style.whiteSpace = 'pre-wrap';
+      lineDiv.style.wordBreak = 'break-word';
+      lineDiv.style.margin = '0';
+      lineDiv.style.padding = '0';
+      ruler.appendChild(lineDiv);
+      
+      // Measure height to determine how many visual lines this logical line takes
+      const height = lineDiv.offsetHeight;
+      let visual = Math.round(height / lineHeight);
+      if (visual < 1) visual = 1;
+      results.push(visual);
+    }
+    setVisualLines(results.length ? results : [1]);
+  }, [editorValue]);
 
-  /* ── Line numbers ─────────────────────────────────── */
-  const lineCount = useMemo(() => Math.max(1, (editorValue || '').split('\n').length), [editorValue]);
+  useEffect(() => {
+    computeVisualLines();
+    const ro = new ResizeObserver(() => computeVisualLines());
+    if (editorRef.current) ro.observe(editorRef.current);
+    window.addEventListener('resize', computeVisualLines);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', computeVisualLines);
+    };
+  }, [computeVisualLines]);
 
   /* ── Syntax highlight ─────────────────────────────── */
   const highlightedHtml = useMemo(() => {
-    if (!editorValue) return '';
-    if (language === 'json')       return highlightJson(editorValue);
-    if (language === 'xml')        return highlightXml(editorValue);
+    if (!editorValue) return '<span class="syntax-placeholder"> </span>';
+    if (language === 'json') return highlightJson(editorValue);
+    if (language === 'xml') return highlightXml(editorValue);
     if (language === 'javascript') return highlightJavascript(editorValue);
     return escapeHtml(editorValue);
   }, [editorValue, language]);
@@ -108,103 +148,146 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     } catch { /* keep as-is */ }
   }, [editorValue, language, onChange, onJsonFormatModeChange]);
 
-  /* ── Scroll sync ──────────────────────────────────── */
-  const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    const ta = e.currentTarget;
-    if (syntaxRef.current) {
-      syntaxRef.current.scrollTop = ta.scrollTop;
-      syntaxRef.current.scrollLeft = ta.scrollLeft;
-    }
-    if (gutterRef.current) {
-      gutterRef.current.scrollTop = ta.scrollTop;
-    }
+  // Get plain text from contenteditable div
+  const getPlainText = useCallback((): string => {
+    if (!editorRef.current) return '';
+    const html = editorRef.current.innerHTML
+      .replace(/<div><br><\/div>/g, '\n')
+      .replace(/<div>/g, '\n')
+      .replace(/<\/div>/g, '')
+      .replace(/<br>/g, '\n');
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
   }, []);
 
-  /* ── Cursor tracking ──────────────────────────────── */
-  const updateCursor = useCallback((ta: HTMLTextAreaElement) => {
-    const before = ta.value.slice(0, ta.selectionStart);
-    const lines  = before.split('\n');
-    setCursorLine(lines.length);
-    setCursorCol(lines[lines.length - 1].length + 1);
-  }, []);
+  // Save caret position and restore after updating innerHTML
+  const saveCaret = (): number | null => {
+    if (!editorRef.current || !window.getSelection) return null;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(editorRef.current);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+    return preCaretRange.toString().length;
+  };
 
-  /* ── Keyboard shortcuts ───────────────────────────── */
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const ta  = e.currentTarget;
-    const start = ta.selectionStart;
-    const end   = ta.selectionEnd;
+  const restoreCaret = (caretOffset: number) => {
+    if (!editorRef.current || caretOffset == null) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    let charCount = 0;
+    let found = false;
 
-    // Tab → 2 spaces
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const newVal = editorValue.slice(0, start) + '  ' + editorValue.slice(end);
-      setEditorValue(newVal);
-      onChange(newVal);
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2; });
-      return;
-    }
-
-    // Enter → preserve indentation of current line
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const before      = editorValue.slice(0, start);
-      const lineStart   = before.lastIndexOf('\n') + 1;
-      const currentLine = before.slice(lineStart);
-      const indent      = currentLine.match(/^(\s*)/)?.[1] ?? '';
-      const newVal = editorValue.slice(0, start) + '\n' + indent + editorValue.slice(end);
-      setEditorValue(newVal);
-      onChange(newVal);
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1 + indent.length; });
-      return;
-    }
-
-    // Auto-close pairs (only when no selection)
-    if (start === end) {
-      const pairs: Record<string, string> = { '{': '}', '[': ']', '(': ')' };
-      if (pairs[e.key]) {
-        e.preventDefault();
-        const newVal = editorValue.slice(0, start) + e.key + pairs[e.key] + editorValue.slice(end);
-        setEditorValue(newVal);
-        onChange(newVal);
-        requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
-        return;
-      }
-      // Auto-close quotes — only when next char is not same quote
-      if (e.key === '"' || e.key === "'") {
-        const nextChar = editorValue[start];
-        if (nextChar !== e.key) {
-          e.preventDefault();
-          const newVal = editorValue.slice(0, start) + e.key + e.key + editorValue.slice(end);
-          setEditorValue(newVal);
-          onChange(newVal);
-          requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
-          return;
+    const traverse = (node: Node) => {
+      if (found) return;
+      if (node.nodeType === 3) {
+        const textNode = node as Text;
+        const nextCharCount = charCount + textNode.length;
+        if (caretOffset <= nextCharCount) {
+          const range = document.createRange();
+          range.setStart(textNode, caretOffset - charCount);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          found = true;
+        }
+        charCount = nextCharCount;
+      } else {
+        for (let i = 0; i < node.childNodes.length; i++) {
+          traverse(node.childNodes[i]);
+          if (found) break;
         }
       }
-      // Skip over closing bracket / quote if already there
-      const skipOver = new Set(['}', ']', ')', '"', "'"]);
-      if (skipOver.has(e.key) && editorValue[start] === e.key) {
+    };
+    traverse(editorRef.current);
+  };
+
+  // Update highlight (visual sync without moving caret)
+  const updateHighlight = useCallback(() => {
+    if (!editorRef.current) return;
+    const caretOffset = saveCaret();
+    editorRef.current.innerHTML = highlightedHtml;
+    restoreCaret(caretOffset || 0);
+  }, [highlightedHtml]);
+
+  useEffect(() => {
+    updateHighlight();
+  }, [updateHighlight]);
+
+  // Keyboard shortcuts
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (readOnly) return;
+
+      // Tab → 2 spaces
+      if (e.key === 'Tab') {
         e.preventDefault();
-        requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
+        document.execCommand('insertText', false, '  ');
+        const newText = getPlainText();
+        setEditorValue(newText);
+        onChange(newText);
         return;
       }
-    }
 
-    // Format shortcut: Shift+Alt+F
-    if (e.key === 'F' && e.shiftKey && e.altKey) {
-      e.preventDefault();
-      formatCode();
+      // Format shortcut: Shift+Alt+F
+      if (e.key === 'F' && e.shiftKey && e.altKey) {
+        e.preventDefault();
+        formatCode();
+      }
+    },
+    [readOnly, getPlainText, onChange, formatCode]
+  );
+
+  const handlePaste = useCallback(() => {
+    setTimeout(() => {
+      const plainText = getPlainText();
+      setEditorValue(plainText);
+      onChange(plainText);
+    }, 0);
+  }, [getPlainText, onChange]);
+
+  const handleBlur = useCallback(() => {
+    const plainText = getPlainText();
+    applyJsonFormat(plainText);
+    setIsEditing(false);
+  }, [getPlainText, applyJsonFormat]);
+
+  const handleFocus = useCallback(() => {
+    setIsEditing(true);
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    if (editorRef.current && gutterRef.current) {
+      gutterRef.current.scrollTop = editorRef.current.scrollTop;
     }
-  }, [editorValue, onChange, formatCode]);
+  }, []);
+
+  // Update cursor position and content on input
+  const handleInput = useCallback(() => {
+    if (readOnly) return;
+    const plainText = getPlainText();
+    setEditorValue(plainText);
+    onChange(plainText);
+
+    // Update cursor position
+    const selection = window.getSelection();
+    if (selection && editorRef.current && selection.anchorNode) {
+      const range = selection.getRangeAt(0);
+      const preCaretRange = range.cloneRange();
+      preCaretRange.selectNodeContents(editorRef.current);
+      preCaretRange.setEnd(range.endContainer, range.endOffset);
+      const offset = preCaretRange.toString().length;
+      const lines = plainText.slice(0, offset).split('\n');
+      setCursorLine(lines.length);
+      setCursorCol(lines[lines.length - 1].length + 1);
+    }
+  }, [getPlainText, onChange, readOnly]);
 
   const canFormat = language === 'json' || language === 'xml';
   const langLabel = language === 'javascript' ? 'JS' : language.toUpperCase();
-  const showPrettyViewer = (language === 'json' || language === 'xml') && !readOnly && !isEditing;
-
-  const focusEditor = useCallback(() => {
-    setIsEditing(true);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, []);
+  const lineCount = (editorValue || '').split('\n').length;
 
   return (
     <div className="code-editor-wrapper">
@@ -227,60 +310,56 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
       {/* ── Editor body: gutter + shell ── */}
       <div className="code-editor-body" style={{ minHeight }}>
-        {/* Line number gutter */}
-        {!showPrettyViewer && (
-          <div className="code-editor-gutter" ref={gutterRef} aria-hidden="true">
-            {Array.from({ length: lineCount }, (_, i) => (
-              <div key={i + 1} className={i + 1 === cursorLine && !readOnly ? 'gutter-line active-gutter-line' : 'gutter-line'}>
-                {i + 1}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Line number gutter (xml.html pattern) */}
+        <div className="code-editor-gutter" ref={gutterRef} aria-hidden="true">
+          {visualLines.map((vl, idx) => {
+            const isCurrentLine = idx + 1 === cursorLine && !readOnly;
+            const items: React.ReactNode[] = [];
+            
+            // Add line number
+            items.push(
+              <span key={`num-${idx}`} className={isCurrentLine ? 'active-gutter-line' : ''}>
+                {idx + 1}
+              </span>
+            );
+            
+            // Add wrapped line spacing (&nbsp; on each visual line after the first)
+            for (let j = 1; j < vl; j++) {
+              items.push(
+                <React.Fragment key={`wrap-${idx}-${j}`}>
+                  <br />
+                  <span>&nbsp;</span>
+                </React.Fragment>
+              );
+            }
+            
+            // Add line break between logical lines (except after last line)
+            if (idx < visualLines.length - 1) {
+              items.push(<br key={`sep-${idx}`} />);
+            }
+            
+            return <>{items}</>;
+          })}
+        </div>
 
-        {/* Shell (syntax pre + textarea overlay) */}
+        {/* Shell (contenteditable div) */}
         <div className="code-editor-shell">
-          {showPrettyViewer ? (
-            <PrettyBodyViewer
-              text={editorValue}
-              language={language}
-              jsonMode={jsonFormatModeRef.current}
-              placeholder={placeholder}
-              className="code-editor-pretty-viewer"
-              onActivate={focusEditor}
-            />
-          ) : (
-            <pre
-              ref={syntaxRef}
-              aria-hidden="true"
-              className={`code-editor-syntax code-editor-${language} ${readOnly ? 'readonly' : ''}`}
-              dangerouslySetInnerHTML={{ __html: highlightedHtml || '<span class="syntax-placeholder"> </span>' }}
-            />
-          )}
-          {!readOnly && (
-            <>
-              {!editorValue && !showPrettyViewer && <div className="code-editor-placeholder">{placeholder}</div>}
-              <textarea
-                ref={textareaRef}
-                className={`code-editor code-editor-overlay code-editor-${language}${showPrettyViewer ? ' hidden-editor' : ''}`}
-                value={editorValue}
-                onChange={(e) => { setEditorValue(e.target.value); onChange(e.target.value); updateCursor(e.target); }}
-                onFocus={(e) => { setIsEditing(true); updateCursor(e.currentTarget); }}
-                onBlur={(e) => {
-                  applyJsonFormat(e.currentTarget.value);
-                  setIsEditing(false);
-                }}
-                onClick={(e)  => updateCursor(e.currentTarget)}
-                onKeyUp={(e)  => updateCursor(e.currentTarget)}
-                onKeyDown={handleKeyDown}
-                onScroll={handleScroll}
-                placeholder=""
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-              />
-            </>
-          )}
+          {!editorValue && !isEditing && <div className="code-editor-placeholder">{placeholder}</div>}
+          <div
+            ref={editorRef}
+            contentEditable={!readOnly}
+            suppressContentEditableWarning
+            className={`code-editor-content code-editor-${language} ${readOnly ? 'readonly' : ''}`}
+            onInput={handleInput}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onBlur={handleBlur}
+            onFocus={handleFocus}
+            onScroll={handleScroll}
+            spellCheck="false"
+            role="textbox"
+            aria-label={`${language} editor`}
+          />
         </div>
       </div>
 
@@ -289,14 +368,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         <div className="code-editor-statusbar">
           <span>Ln {cursorLine}, Col {cursorCol}</span>
           <span>{lineCount} lines</span>
-          {(language === 'json' || language === 'xml') && (
-            <span className="statusbar-hint">Shift+Alt+F to format</span>
-          )}
-          {language === 'javascript' && (
-            <span className="statusbar-hint">Tab = indent · {'{ [ ('} auto-close</span>
-          )}
+          {(language === 'json' || language === 'xml') && <span className="statusbar-hint">Shift+Alt+F to format</span>}
+          {language === 'javascript' && <span className="statusbar-hint">Tab = indent</span>}
         </div>
       )}
+
+      {/* Hidden ruler to measure visual wrapping */}
+      <div ref={rulerRef} className="code-editor-ruler" aria-hidden="true" />
     </div>
   );
 };
@@ -310,76 +388,65 @@ function escapeHtml(text: string): string {
 
 function highlightJson(text: string): string {
   const escaped = escapeHtml(text);
-  // eslint-disable-next-line no-useless-escape
   return escaped.replace(
-    /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")\s*(:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
-    (match, stringPart, isKeyColon, literal) => {
-      if (stringPart) {
-        return isKeyColon
-          ? `<span class="syntax-json-key">${stringPart}</span><span class="syntax-json-punctuation">:</span>`
-          : `<span class="syntax-json-string">${stringPart}</span>`;
-      }
-      if (literal === 'true' || literal === 'false') {
-        return `<span class="syntax-json-boolean">${match}</span>`;
-      }
-      if (literal === 'null') {
-        return `<span class="syntax-json-null">${match}</span>`;
-      }
-      return `<span class="syntax-json-number">${match}</span>`;
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    (match) => {
+      let cls = 'json-number';
+      if (/^"/.test(match)) cls = /:\s*$/.test(match) ? 'json-key' : 'json-string';
+      else if (/true|false/.test(match)) cls = 'json-boolean';
+      else if (/null/.test(match)) cls = 'json-null';
+      return `<span class="${cls}">${match}</span>`;
     }
   );
 }
 
 function highlightXml(text: string): string {
-  const escaped = escapeHtml(text);
-
-  return escaped
-    .replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="syntax-xml-comment">$1</span>')
-    .replace(
-      /(&lt;\/?)([a-zA-Z_][\w:.-]*)([^&]*?)(\/?&gt;)/g,
-      (_, open, tagName, attrs, close) => {
-        const highlightedAttrs = attrs.replace(
-          /\s+([a-zA-Z_:][\w:.-]*)(=)(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g,
-          ' <span class="syntax-xml-attr">$1</span><span class="syntax-xml-punctuation">$2</span><span class="syntax-xml-value">$3</span>'
-        );
-        return `<span class="syntax-xml-punctuation">${open}</span><span class="syntax-xml-tag">${tagName}</span>${highlightedAttrs}<span class="syntax-xml-punctuation">${close}</span>`;
-      }
-    );
+  if (typeof text !== 'string') text = String(text);
+  
+  // Escape HTML entities first
+  let xml = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  // Comments
+  xml = xml.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="syntax-xml-comment">$1</span>');
+  
+  // Tags, attributes, values (xml.html approach)
+  xml = xml.replace(/(&lt;\/?)([\w\-.:]+)([\s\S]*?)(&gt;)/g, (_, p1, p2, p3, p4) => {
+    // Highlight attributes and values in the attributes section
+    const attrs = p3.replace(/([\w\-.:]+)(\s*=\s*)("[^"]*"|'[^']*')/g,
+      '<span class="syntax-xml-attr">$1</span>$2<span class="syntax-xml-value">$3</span>');
+    return `<span class="syntax-xml-punctuation">${p1}</span><span class="syntax-xml-tag">${p2}</span>${attrs}<span class="syntax-xml-punctuation">${p4}</span>`;
+  });
+  
+  return xml;
 }
 
 function highlightJavascript(text: string): string {
-  // Process line-by-line to handle comments reliably
   const lines = text.split('\n');
   const result: string[] = [];
 
   for (const raw of lines) {
     const line = escapeHtml(raw);
-
-    // single-line comment (must run before string replacement)
     const commentIdx = findCommentStart(raw);
 
-    let codePart  = commentIdx === -1 ? line : escapeHtml(raw.slice(0, commentIdx));
-    const commentPart = commentIdx === -1 ? '' : `<span class="syntax-js-comment">${escapeHtml(raw.slice(commentIdx))}</span>`;
+    let codePart = commentIdx === -1 ? line : escapeHtml(raw.slice(0, commentIdx));
+    const commentPart =
+      commentIdx === -1 ? '' : `<span class="syntax-js-comment">${escapeHtml(raw.slice(commentIdx))}</span>`;
 
-    // strings: "...", '...', `...`
     codePart = codePart.replace(
       /(&quot;(?:[^&\\]|\\[\s\S])*?&quot;|&#39;(?:[^&\\]|\\[\s\S])*?&#39;|`[^`]*`)/g,
       '<span class="syntax-js-string">$1</span>'
     );
 
-    // keywords
     codePart = codePart.replace(
       /\b(const|let|var|function|return|if|else|else\s+if|for|while|do|break|continue|try|catch|finally|throw|new|this|typeof|instanceof|void|delete|in|of|switch|case|default|class|extends|super|import|export|from|async|await|null|undefined|true|false|NaN|Infinity)\b/g,
       '<span class="syntax-js-keyword">$1</span>'
     );
 
-    // numbers
     codePart = codePart.replace(
       /(?<![a-zA-Z_$])(\d+\.?\d*(?:[eE][+-]?\d+)?|0x[0-9a-fA-F]+)\b/g,
       '<span class="syntax-js-number">$1</span>'
     );
 
-    // built-ins / globals
     codePart = codePart.replace(
       /\b(console|Math|JSON|Object|Array|String|Number|Boolean|Promise|setTimeout|clearTimeout|setInterval|clearInterval|response|vars|set|log|headers|status|statusText)\b/g,
       '<span class="syntax-js-builtin">$1</span>'
@@ -391,16 +458,21 @@ function highlightJavascript(text: string): string {
   return result.join('\n');
 }
 
-/** Find position of `//` comment that isn't inside a string */
 function findCommentStart(raw: string): number {
   let inStr: string | null = null;
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
     if (inStr) {
-      if (ch === '\\') { i++; continue; }
+      if (ch === '\\') {
+        i++;
+        continue;
+      }
       if (ch === inStr) inStr = null;
     } else {
-      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        inStr = ch;
+        continue;
+      }
       if (ch === '/' && raw[i + 1] === '/') return i;
     }
   }

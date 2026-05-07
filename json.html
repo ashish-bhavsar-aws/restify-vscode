@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>JSON Editor (Perfect Line Number Alignment with Wrapping)</title>
+  <style>
+    body { background: #263238; color: #fff; font-family: Arial, sans-serif; padding: 20px; }
+    .editor-container {
+      display: flex;
+      align-items: flex-start;
+      background: #1e272c;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px #0002;
+      width: fit-content;
+      margin-bottom: 20px;
+    }
+    .line-numbers {
+      background: #222d32;
+      color: #90caf9;
+      font-family: monospace;
+      font-size: 15px;
+      text-align: right;
+      user-select: none;
+      padding: 10px 5px 10px 10px;
+      border-top-left-radius: 4px;
+      border-bottom-left-radius: 4px;
+      min-width: 30px;
+      height: 400px;
+      overflow: hidden;
+      box-sizing: border-box;
+      line-height: 1.4;
+      white-space: pre;
+    }
+    .editorcell {
+      position: relative;
+      width: 500px;
+      height: 400px;
+      border-top-right-radius: 4px;
+      border-bottom-right-radius: 4px;
+      box-sizing: border-box;
+      background: #1e272c;
+    }
+    #jsonInput {
+      width: 100%;
+      height: 100%;
+      font-family: monospace;
+      font-size: 15px;
+      padding: 10px;
+      border: none;
+      outline: none;
+      background: #1e272c;
+      color: #fff;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.4;
+      border-top-right-radius: 4px;
+      border-bottom-right-radius: 4px;
+      overflow: auto;
+      resize: none;
+      box-sizing: border-box;
+    }
+    #jsonInput:focus { outline: 1px solid #90caf9; }
+    .buttons { margin: 10px 0; }
+    .buttons button { margin-right: 10px; }
+    #error { color: #ff5252; margin-top: 10px; }
+    /* JSON syntax highlighting */
+    .key { color: #ffb300; }
+    .string { color: #81c784; }
+    .number { color: #64b5f6; }
+    .boolean { color: #f06292; }
+    .null { color: #e57373; }
+    .punctuation { color: #fff; }
+    /* Hidden ruler for measuring visual lines */
+    #ruler {
+      visibility: hidden;
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+      width: 480px; /* 500px - 2*10px padding */
+      font-family: monospace;
+      font-size: 15px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 0;
+      margin: 0;
+      border: none;
+      box-sizing: border-box;
+      background: #1e272c;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h2>JSON Editor (Perfect Line Number Alignment with Wrapping)</h2>
+  <div class="editor-container">
+    <div class="line-numbers" id="lineNumbers"></div>
+    <div class="editorcell">
+      <div id="jsonInput" contenteditable="true" spellcheck="false">{ "name": "Red", "role": "AI Assistant", "happy": true }</div>
+      <div id="ruler"></div>
+    </div>
+  </div>
+  <div class="buttons">
+    <button onclick="beautifyJSON()">Beautify</button>
+    <button onclick="minifyJSON()">Minify</button>
+  </div>
+  <div id="error"></div>
+<script>
+
+const jsonInput = document.getElementById('jsonInput');
+const lineNumbers = document.getElementById('lineNumbers');
+const ruler = document.getElementById('ruler');
+
+function syntaxHighlight(json) {
+  if (typeof json !== 'string') {
+    json = JSON.stringify(json, undefined, 2);
+  }
+  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?|[{}\[\],:])/g, function (match) {
+    let cls = 'number';
+    if (/^"/.test(match)) {
+      if (/:$/.test(match)) {
+        cls = 'key';
+      } else {
+        cls = 'string';
+      }
+    } else if (/true|false/.test(match)) {
+      cls = 'boolean';
+    } else if (/null/.test(match)) {
+      cls = 'null';
+    } else if (/[\{\}\[\],:]/.test(match)) {
+      cls = 'punctuation';
+    }
+    return '<span class="' + cls + '">' + match + '</span>';
+  });
+}
+
+function getPlainText() {
+  let html = jsonInput.innerHTML
+    .replace(/<div><br><\/div>/g, '\n')
+    .replace(/<div>/g, '\n')
+    .replace(/<\/div>/g, '')
+    .replace(/<br>/g, '\n');
+  let tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+// For each logical line, count how many visual lines it wraps into
+function getVisualLinesPerLogicalLine(text) {
+  ruler.innerHTML = '';
+  let lines = text.split('\n');
+  let result = [];
+  let lineHeight = parseFloat(getComputedStyle(ruler).lineHeight);
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i] || ' ';
+    let span = document.createElement('span');
+    span.textContent = line;
+    ruler.appendChild(span);
+    ruler.appendChild(document.createElement('br'));
+    // After appending, measure
+    let spanHeight = span.offsetHeight || lineHeight;
+    let visualLines = Math.round(spanHeight / lineHeight);
+    // For most browsers, offsetHeight will be a multiple of lineHeight
+    // But for long lines, it will be >1
+    // For empty lines, ensure at least 1
+    if (visualLines < 1) visualLines = 1;
+    result.push(visualLines);
+  }
+  return result;
+}
+
+function updateLineNumbers() {
+  const text = getPlainText();
+  const visualLinesArr = getVisualLinesPerLogicalLine(text);
+  let html = '';
+  for (let i = 0; i < visualLinesArr.length; i++) {
+    html += (i + 1);
+    for (let j = 1; j < visualLinesArr[i]; j++) {
+      html += '<br>&nbsp;';
+    }
+    if (i < visualLinesArr.length - 1) html += '<br>';
+  }
+  lineNumbers.innerHTML = html;
+  lineNumbers.scrollTop = jsonInput.scrollTop;
+}
+
+function highlightEditor() {
+  // Save caret position if focused and selection exists
+  let caretOffset = null;
+  const isFocused = document.activeElement === jsonInput;
+  if (isFocused) {
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const preCaretRange = range.cloneRange();
+      preCaretRange.selectNodeContents(jsonInput);
+      preCaretRange.setEnd(range.endContainer, range.endOffset);
+      caretOffset = preCaretRange.toString().length;
+    }
+  }
+  // Highlight
+  const text = getPlainText();
+  try {
+    const json = JSON.parse(text);
+    jsonInput.innerHTML = syntaxHighlight(JSON.stringify(json, null, 2));
+    showError('');
+  } catch (e) {
+    jsonInput.innerHTML = syntaxHighlight(text);
+    showError('Invalid JSON: ' + e.message);
+  }
+  // Restore caret
+  if (caretOffset !== null) setCaretPosition(jsonInput, caretOffset);
+  updateLineNumbers();
+}
+
+function setCaretPosition(el, chars) {
+  if (chars >= 0) {
+    const selection = window.getSelection();
+    let node = el;
+    let found = false;
+    let charCount = 0;
+    function traverse(node) {
+      if (found) return;
+      if (node.nodeType === 3) {
+        let nextCharCount = charCount + node.length;
+        if (!found && chars <= nextCharCount) {
+          let range = document.createRange();
+          range.setStart(node, chars - charCount);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          found = true;
+        }
+        charCount = nextCharCount;
+      } else {
+        for (let i = 0; i < node.childNodes.length; i++) {
+          traverse(node.childNodes[i]);
+          if (found) break;
+        }
+      }
+    }
+    traverse(el);
+  }
+}
+
+jsonInput.addEventListener('input', function() {
+  highlightEditor();
+});
+
+jsonInput.addEventListener('paste', function() {
+  setTimeout(highlightEditor, 0);
+});
+
+jsonInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    document.execCommand('insertText', false, '  ');
+  }
+});
+
+jsonInput.addEventListener('scroll', function() {
+  lineNumbers.scrollTop = jsonInput.scrollTop;
+});
+
+jsonInput.addEventListener('blur', function() {
+  highlightEditor();
+});
+
+function beautifyJSON() {
+  const text = getPlainText();
+  try {
+    jsonInput.innerHTML = syntaxHighlight(JSON.stringify(JSON.parse(text), null, 2));
+    showError('');
+  } catch (e) {
+    showError('Invalid JSON: ' + e.message);
+  }
+  updateLineNumbers();
+}
+
+function minifyJSON() {
+  const text = getPlainText();
+  try {
+    jsonInput.innerHTML = syntaxHighlight(JSON.stringify(JSON.parse(text)));
+    showError('');
+  } catch (e) {
+    showError('Invalid JSON: ' + e.message);
+  }
+  updateLineNumbers();
+}
+
+function showError(msg) {
+  document.getElementById('error').textContent = msg;
+}
+
+// Initial setup
+highlightEditor();
+</script>
+</body>
+</html>

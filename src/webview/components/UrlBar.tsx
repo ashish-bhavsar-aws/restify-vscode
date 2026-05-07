@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { METHODS, KVItem, Environment } from '../types';
 import VariableTextInput from './VariableTextInput';
+import { Icon } from './FaIcon';
+import { faFloppyDisk } from '@fortawesome/free-solid-svg-icons';
 
 interface UrlBarProps {
   method: string;
@@ -23,6 +25,7 @@ const METHOD_SHORT: Record<string, string> = {
 
 const MethodDropdown: React.FC<{ method: string; onChange: (m: string) => void }> = ({ method, onChange }) => {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,12 +37,38 @@ const MethodDropdown: React.FC<{ method: string; onChange: (m: string) => void }
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setActiveIndex(METHODS.indexOf(method));
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, METHODS.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      onChange(METHODS[activeIndex]);
+      setOpen(false);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
   return (
     <div className="method-dropdown" ref={ref}>
       <button
         className="method-trigger"
         data-method={method}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={handleKeyDown}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -52,18 +81,19 @@ const MethodDropdown: React.FC<{ method: string; onChange: (m: string) => void }
 
       {open && (
         <ul className="method-menu" role="listbox">
-          {METHODS.map((m) => (
+          {METHODS.map((m, idx) => (
             <li
               key={m}
               role="option"
               aria-selected={m === method}
-              className={`method-option${m === method ? ' selected' : ''}`}
+              className={`method-option${m === method ? ' selected' : ''}${idx === activeIndex ? ' highlighted' : ''}`}
               data-method={m}
               onMouseDown={(e) => {
                 e.preventDefault();
                 onChange(m);
                 setOpen(false);
               }}
+              onMouseEnter={() => setActiveIndex(idx)}
             >
               <span className="method-option-dot" />
               <span className="method-option-label">{m}</span>
@@ -115,7 +145,8 @@ export const UrlBar: React.FC<UrlBarProps> = ({
       </div>
 
       <button className="save-btn" onClick={onSave} title="Save to Collection">
-        💾 Save
+        <Icon icon={faFloppyDisk} size={13} style={{ marginRight: 5 }} />
+        Save
       </button>
 
       <button className="send-btn" disabled={loading || sendDisabled} onClick={onSend}>

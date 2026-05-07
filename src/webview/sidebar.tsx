@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Sidebar.css';
-interface KVItem { key: string; value: string; }
+import { Icon } from './components/FaIcon';
+import {
+  faMagnifyingGlass, faFloppyDisk, faTrash, faPen,
+  faFileExport, faFileImport, faCopy, faGripVertical,
+  faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
+} from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
   id: string; method: string; url: string; status: number;
   duration?: number; name: string; timestamp?: string;
 }
 interface CollectionRequest { id?: string; method: string; url: string; name?: string; }
-interface Collection { id: string; name: string; requests?: CollectionRequest[]; }
+interface CollectionGroup { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
+interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
 type SidebarType = 'history' | 'collections' | 'environments';
+interface DragState { requestId: string; collectionId: string; fromGroupId: string | null; }
 
 function relativeTime(iso?: string): string {
   if (!iso) return '';
@@ -84,7 +91,7 @@ export const Sidebar: React.FC = () => {
           onLoad={(id) => post({ command: 'loadHistoryItem', id })}
           onDelete={(id) => post({ command: 'deleteHistoryItem', id })}
           onClear={() => post({ command: 'clearHistory' })}
-          onSaveToCollection={(id, collectionName) => post({ command: 'saveHistoryToCollection', id, collectionName })} />
+          onSaveToCollection={(id, collectionName, groupId) => post({ command: 'saveHistoryToCollection', id, collectionName, groupId })} />
       )}
       {sidebarType === 'collections' && (
         <CollectionsPanel collections={collections} search={search}
@@ -99,8 +106,13 @@ export const Sidebar: React.FC = () => {
           onReorderRequest={(cid, rid, toIndex) => post({ command: 'reorderCollectionRequest', collectionId: cid, requestId: rid, toIndex })}
           onRenameCollection={(id, name) => post({ command: 'renameCollection', id, name })}
           onRenameRequest={(cid, rid, name) => post({ command: 'renameCollectionRequest', collectionId: cid, requestId: rid, name })}
-          onImportCollections={() => post({ command: 'importCollections' })}
-          onExportCollections={() => post({ command: 'exportCollections' })}
+          onImportCollections={() => post({ command: 'showImportOptions' })}
+          onExportCollection={(id: string) => post({ command: 'exportCollection', id })}
+          onSaveGroup={(cid, group, parentGroupId) => post({ command: 'saveGroup', collectionId: cid, group, parentGroupId })}
+          onDeleteGroup={(cid, gid, groupName) => post({ command: 'deleteGroup', collectionId: cid, groupId: gid, groupName })}
+          onRenameGroup={(cid, gid, name) => post({ command: 'renameGroup', collectionId: cid, groupId: gid, name })}
+          onDeleteGroupRequest={(cid, gid, rid) => post({ command: 'deleteRequestFromGroup', collectionId: cid, groupId: gid, requestId: rid })}
+          onMoveRequestToGroup={(cid, rid, fromGid, toGid) => post({ command: 'moveRequestToGroup', collectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid })}
           triggerNew={triggerNewCollection}
           onTriggerNewDone={() => setTriggerNewCollection(false)} />
       )}
@@ -112,24 +124,42 @@ interface HistoryPanelProps {
   history: HistoryEntry[]; search: string; collections: Collection[];
   onSearch(q: string): void; onLoad(id: string): void;
   onDelete(id: string): void; onClear(): void;
-  onSaveToCollection(id: string, collectionName: string): void;
+  onSaveToCollection(id: string, collectionName: string, groupId?: string): void;
 }
 const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onSaveToCollection }) => {
   const [saveTarget, setSaveTarget] = useState<HistoryEntry | null>(null);
   const [selectedCol, setSelectedCol] = useState('');
   const [newColName, setNewColName] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('__none__');
   const filtered = history.filter(h =>
     !search || (h.name||'').toLowerCase().includes(search.toLowerCase()) || (h.url||'').toLowerCase().includes(search.toLowerCase()));
+
+  const activeColl = collections.find((c) => c.name === selectedCol);
+  const availableGroups: Array<{id: string; label: string}> = [];
+  const flattenGroups = (groups: CollectionGroup[], prefix = '') => {
+    for (const g of groups) {
+      availableGroups.push({ id: g.id, label: `${prefix}${g.name}` });
+      if (g.groups?.length) flattenGroups(g.groups, `${prefix}\u00a0\u00a0`);
+    }
+  };
+  if (activeColl) flattenGroups(activeColl.groups || []);
 
   const handleSaveConfirm = () => {
     if (!saveTarget) return;
     const colName = selectedCol === '__new__' ? newColName.trim() : selectedCol;
-    if (colName) { onSaveToCollection(saveTarget.id, colName); setSaveTarget(null); }
+    if (colName) {
+      const groupId = selectedGroup !== '__none__' ? selectedGroup : undefined;
+      onSaveToCollection(saveTarget.id, colName, groupId);
+      setSaveTarget(null);
+    }
   };
 
   return (<>
     <div className="toolbar">
-      <input className="search-input" type="text" placeholder="Filter history..." value={search} onChange={e => onSearch(e.target.value)} />
+      <div className="search-wrapper">
+        <Icon icon={faMagnifyingGlass} size={13} className="search-icon" />
+        <input className="search-input" type="text" placeholder="Filter history..." value={search} onChange={e => onSearch(e.target.value)} />
+      </div>
       {history.length > 0 && <button className="btn-ghost" onClick={onClear}>Clear</button>}
     </div>
     <div className="list" onKeyDown={listNavKeyDown}>
@@ -155,9 +185,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
                   {entry.duration != null && <span className="time">{entry.duration}ms</span>}
                 </div>
                 <div className="item-actions">
-                  <button className="btn-icon btn-save-history" title="Save to collection" onClick={e => { e.stopPropagation(); setSaveTarget(entry); setSelectedCol(collections[0]?.name || '__new__'); setNewColName(''); }}>+</button>
+                  <button className="btn-icon btn-save-history" title="Save to collection" onClick={e => { e.stopPropagation(); setSaveTarget(entry); setSelectedCol(collections[0]?.name || '__new__'); setNewColName(''); setSelectedGroup('__none__'); }}><Icon icon={faFloppyDisk} size={12} /></button>
                 </div>
-                <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDelete(entry.id); }}>×</button>
+                <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDelete(entry.id); }}><Icon icon={faTrash} size={12} /></button>
               </div>);
           })}
     </div>
@@ -167,13 +197,22 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
           <h3>Save to Collection</h3>
           <div className="item-name" style={{ fontSize: 11, marginBottom: 8, color: 'var(--muted)' }}>{saveTarget.name || saveTarget.url}</div>
           <label className="modal-label">Collection</label>
-          <select className="modal-input" value={selectedCol} onChange={e => setSelectedCol(e.target.value)}>
+          <select className="modal-input" value={selectedCol} onChange={e => { setSelectedCol(e.target.value); setSelectedGroup('__none__'); }}>
             {collections.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             <option value="__new__">+ New collection…</option>
           </select>
           {selectedCol === '__new__' && (
             <input className="modal-input" style={{ marginTop: 6 }} placeholder="Collection name" value={newColName} autoFocus
               onChange={e => setNewColName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveConfirm()} />
+          )}
+          {availableGroups.length > 0 && (
+            <>
+              <label className="modal-label" style={{ marginTop: 6 }}>Folder (optional)</label>
+              <select className="modal-input" value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}>
+                <option value="__none__">— Root (no folder) —</option>
+                {availableGroups.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+              </select>
+            </>
           )}
           <div className="modal-actions">
             <button className="btn-ghost" onClick={() => setSaveTarget(null)}>Cancel</button>
@@ -195,131 +234,407 @@ interface CollectionsPanelProps {
   onRenameCollection(id: string, name: string): void;
   onRenameRequest(collectionId: string, requestId: string, name: string): void;
   onImportCollections(): void;
-  onExportCollections(): void;
+  onExportCollection(collectionId: string): void;
+  onSaveGroup(collectionId: string, group: CollectionGroup, parentGroupId?: string): void;
+  onDeleteGroup(collectionId: string, groupId: string, groupName: string): void;
+  onRenameGroup(collectionId: string, groupId: string, name: string): void;
+  onDeleteGroupRequest(collectionId: string, groupId: string, requestId: string): void;
+  onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null): void;
   triggerNew?: boolean;
   onTriggerNewDone?(): void;
 }
+
+// ─── Recursive request row ────────────────────────────────
+interface RequestRowProps {
+  req: CollectionRequest;
+  collectionName: string;
+  editing: boolean;
+  onLoad(): void;
+  onDelete(): void;
+  onCopy(): void;
+  onRename(): void;
+  onCommitRename(name: string): void;
+  onCancelRename(): void;
+  onDragStart?(e: React.DragEvent): void;
+  onDragEnd?(e: React.DragEvent): void;
+}
+const RequestRow: React.FC<RequestRowProps> = ({ req, collectionName: _collectionName, editing, onLoad, onDelete, onCopy, onRename, onCommitRename, onCancelRename, onDragStart, onDragEnd }) => (
+  <div className="sub-item" tabIndex={0} draggable
+    onClick={onLoad} onKeyDown={e => { if (e.key === 'Enter') onLoad(); }}
+    onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <span className="drag-handle"><Icon icon={faGripVertical} size={11} /></span>
+    <span className={`method-badge method-${req.method}`}>{req.method}</span>
+    {editing
+      ? <input className="inline-rename" autoFocus defaultValue={req.name || ''}
+          onBlur={e => { if (e.target.value.trim()) onCommitRename(e.target.value.trim()); else onCancelRename(); }}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) onCommitRename((e.target as HTMLInputElement).value.trim()); if (e.key === 'Escape') onCancelRename(); }}
+          onClick={e => e.stopPropagation()} />
+      : <span className="sub-name" title={req.name || req.url || 'Untitled'}
+          onDoubleClick={e => { e.stopPropagation(); onRename(); }}>
+          {req.name || req.url || 'Untitled'}
+        </span>
+    }
+    <button className="btn-icon btn-copy" title="Copy request" onClick={e => { e.stopPropagation(); onCopy(); }}><Icon icon={faCopy} size={12} /></button>
+    <button className="btn-icon btn-rename-req" title="Rename" onClick={e => { e.stopPropagation(); onRename(); }}><Icon icon={faPen} size={12} /></button>
+    <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDelete(); }}><Icon icon={faTrash} size={12} /></button>
+  </div>
+);
+
+// ─── Recursive group tree ─────────────────────────────────
+interface GroupTreeProps {
+  group: CollectionGroup;
+  collectionId: string;
+  collectionName: string;
+  depth: number;
+  search: string;
+  expansionStates: Record<string, boolean>;
+  editingRequest: { groupId: string; requestId: string } | null;
+  dragRef: React.MutableRefObject<DragState | null>;
+  onToggle(id: string, open: boolean): void;
+  onLoad(req: CollectionRequest): void;
+  onDeleteRequest(groupId: string, requestId: string): void;
+  onCopyRequest(requestId: string): void;
+  onStartRenameRequest(groupId: string, requestId: string): void;
+  onCommitRenameRequest(groupId: string, requestId: string, name: string): void;
+  onCancelRenameRequest(): void;
+  onSaveGroup(group: CollectionGroup, parentGroupId?: string): void;
+  onDeleteGroup(groupId: string, groupName: string): void;
+  onRenameGroup(groupId: string, name: string): void;
+  onMoveRequestToGroup(requestId: string, fromGroupId: string | null, toGroupId: string): void;
+}
+const GroupTree: React.FC<GroupTreeProps> = ({
+  group, collectionId, collectionName, depth, search, expansionStates,
+  editingRequest, dragRef, onToggle, onLoad, onDeleteRequest, onCopyRequest,
+  onStartRenameRequest, onCommitRenameRequest, onCancelRenameRequest,
+  onSaveGroup, onDeleteGroup, onRenameGroup, onMoveRequestToGroup
+}) => {
+  const [renamingGroup, setRenamingGroup] = useState(false);
+  const [renameVal, setRenameVal] = useState(group.name);
+  const [showNewSubGroup, setShowNewSubGroup] = useState(false);
+  const [newSubGroupName, setNewSubGroupName] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const autoExpandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isOpen = !!expansionStates[group.id];
+  const indent = depth * 12;
+
+  const reqs = group.requests || [];
+  const subGroups = group.groups || [];
+
+  // search filter
+  const matchesSearch = (r: CollectionRequest) =>
+    !search || (r.name||r.url||'').toLowerCase().includes(search.toLowerCase());
+  const groupMatchesSearch = !search ||
+    group.name.toLowerCase().includes(search.toLowerCase()) ||
+    reqs.some(matchesSearch) ||
+    subGroups.some(sg => sg.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (!groupMatchesSearch) return null;
+
+  const handleCreateSubGroup = () => {
+    if (!newSubGroupName.trim()) return;
+    onSaveGroup({
+      id: Date.now().toString() + Math.random().toString(36).slice(2),
+      name: newSubGroupName.trim(),
+      requests: [],
+      groups: [],
+    }, group.id);
+    setNewSubGroupName('');
+    setShowNewSubGroup(false);
+  };
+
+  const clearAutoExpand = () => {
+    if (autoExpandTimer.current) { clearTimeout(autoExpandTimer.current); autoExpandTimer.current = null; }
+  };
+
+  const handleGroupDragOver = (e: React.DragEvent) => {
+    const d = dragRef.current;
+    if (!d || d.collectionId !== collectionId || d.fromGroupId === group.id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOver(true);
+    if (!autoExpandTimer.current) {
+      autoExpandTimer.current = setTimeout(() => { onToggle(group.id, true); autoExpandTimer.current = null; }, 650);
+    }
+  };
+
+  const handleGroupDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+      clearAutoExpand();
+    }
+  };
+
+  const handleGroupDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    clearAutoExpand();
+    const d = dragRef.current;
+    if (!d || d.collectionId !== collectionId || d.fromGroupId === group.id) return;
+    onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id);
+    dragRef.current = null;
+  };
+
+  return (
+    <div className={`group-tree${isDragOver ? ' drag-over' : ''}`} style={{ marginLeft: indent }}
+      onDragOver={handleGroupDragOver}
+      onDragLeave={handleGroupDragLeave}
+      onDrop={handleGroupDrop}>
+      <div className="group-header" tabIndex={0}
+        onClick={() => onToggle(group.id, !isOpen)}
+        onKeyDown={e => { if (e.key === 'Enter') onToggle(group.id, !isOpen); }}>
+        <span className={`caret ${isOpen ? 'open' : ''}`}><Icon icon={faChevronRight} size={10} /></span>
+        <span className="group-folder-icon"><Icon icon={isOpen ? faFolderOpen : faFolder} size={12} /></span>
+        {renamingGroup
+          ? <input className="inline-rename" autoFocus value={renameVal}
+              onChange={e => setRenameVal(e.target.value)}
+              onBlur={() => { if (renameVal.trim()) onRenameGroup(group.id, renameVal.trim()); setRenamingGroup(false); }}
+              onKeyDown={e => { if (e.key === 'Enter' && renameVal.trim()) { onRenameGroup(group.id, renameVal.trim()); setRenamingGroup(false); } if (e.key === 'Escape') setRenamingGroup(false); }}
+              onClick={e => e.stopPropagation()} />
+          : <span className="group-name" title={group.name}
+              onDoubleClick={e => { e.stopPropagation(); setRenamingGroup(true); setRenameVal(group.name); }}>
+              {group.name}
+            </span>
+        }
+        <span className="collection-count">{reqs.length}</span>
+        <button className="btn-icon btn-add-group" title="New sub-folder"
+          onClick={e => { e.stopPropagation(); setShowNewSubGroup(true); onToggle(group.id, true); }}>
+          <Icon icon={faFolderPlus} size={11} />
+        </button>
+        <button className="btn-icon btn-rename-col" title="Rename folder"
+          onClick={e => { e.stopPropagation(); setRenamingGroup(true); setRenameVal(group.name); }}>
+          <Icon icon={faPen} size={11} />
+        </button>
+        <button className="btn-icon" title="Delete folder"
+          onClick={e => { e.stopPropagation(); onDeleteGroup(group.id, group.name); }}>
+          <Icon icon={faTrash} size={11} />
+        </button>
+      </div>
+      {isOpen && (
+        <div className="group-body">
+          {/* Sub-groups */}
+          {subGroups.map(sg => (
+            <GroupTree key={sg.id} group={sg} collectionId={collectionId} collectionName={collectionName}
+              depth={0} search={search} expansionStates={expansionStates}
+              editingRequest={editingRequest} dragRef={dragRef}
+              onToggle={onToggle} onLoad={onLoad}
+              onDeleteRequest={onDeleteRequest} onCopyRequest={onCopyRequest}
+              onStartRenameRequest={onStartRenameRequest}
+              onCommitRenameRequest={onCommitRenameRequest}
+              onCancelRenameRequest={onCancelRenameRequest}
+              onSaveGroup={(g, pId) => onSaveGroup(g, pId ?? sg.id)}
+              onDeleteGroup={onDeleteGroup}
+              onRenameGroup={onRenameGroup}
+              onMoveRequestToGroup={onMoveRequestToGroup} />
+          ))}
+          {/* New sub-group input */}
+          {showNewSubGroup && (
+            <div className="new-group-inline">
+              <input className="inline-rename" autoFocus placeholder="Folder name"
+                value={newSubGroupName} onChange={e => setNewSubGroupName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateSubGroup(); if (e.key === 'Escape') { setShowNewSubGroup(false); setNewSubGroupName(''); } }}
+                onBlur={() => { if (newSubGroupName.trim()) handleCreateSubGroup(); else { setShowNewSubGroup(false); setNewSubGroupName(''); } }} />
+            </div>
+          )}
+          {/* Requests */}
+          {reqs.filter(matchesSearch).map(req => (
+            <RequestRow key={req.id} req={req} collectionName={collectionName}
+              editing={editingRequest?.groupId === group.id && editingRequest?.requestId === req.id}
+              onLoad={() => onLoad(req)}
+              onDelete={() => onDeleteRequest(group.id, req.id!)}
+              onCopy={() => onCopyRequest(req.id!)}
+              onRename={() => onStartRenameRequest(group.id, req.id!)}
+              onCommitRename={name => onCommitRenameRequest(group.id, req.id!, name)}
+              onCancelRename={onCancelRenameRequest}
+              onDragStart={e => { dragRef.current = { requestId: req.id!, collectionId, fromGroupId: group.id }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
+              onDragEnd={e => { (e.currentTarget as HTMLElement).classList.remove('dragging'); }} />
+          ))}
+          {reqs.length === 0 && subGroups.length === 0 && !showNewSubGroup && (
+            <div className="sub-empty">Empty folder</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   collections, search, expansionStates, onSearch, onToggle, onLoad, onNewCollection, onDeleteCollection, onDeleteRequest,
-  onCopyRequest, onMoveRequest, onReorderRequest, onRenameCollection, onRenameRequest,
-  onImportCollections, onExportCollections, triggerNew, onTriggerNewDone
+  onCopyRequest, onMoveRequest: _onMoveRequest, onReorderRequest: _onReorderRequest, onRenameCollection, onRenameRequest,
+  onImportCollections, onExportCollection,
+  onSaveGroup, onDeleteGroup, onRenameGroup, onDeleteGroupRequest, onMoveRequestToGroup,
+  triggerNew, onTriggerNewDone
 }) => {
   const [showNew, setShowNew] = useState(false);
-  useEffect(() => { if (triggerNew) { setShowNew(true); onTriggerNewDone?.(); } }, [triggerNew]);
+  useEffect(() => { if (triggerNew) { setShowNew(true); onTriggerNewDone?.(); } }, [triggerNew, onTriggerNewDone]);
   const [newName, setNewName] = useState('');
-  const [dragOverCollectionId, setDragOverCollectionId] = useState<string | null>(null);
-  const [dropIndicator, setDropIndicator] = useState<{ collectionId: string; insertIndex: number } | null>(null);
   const [editingCollection, setEditingCollection] = useState<{ id: string; name: string } | null>(null);
-  const [editingRequest, setEditingRequest] = useState<{ collectionId: string; requestId: string; name: string } | null>(null);
-  const dragRef = useRef<{ requestId: string; fromCollectionId: string } | null>(null);
+  // top-level request rename (outside groups)
+  const [editingRequest, setEditingRequest] = useState<{ collectionId: string; requestId: string } | null>(null);
+  // group request rename  
+  const [editingGroupRequest, setEditingGroupRequest] = useState<{ groupId: string; requestId: string } | null>(null);
+  const [showNewGroupFor, setShowNewGroupFor] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState('');
+  // Shared drag state across the whole panel
+  const dragRef = useRef<DragState | null>(null);
+  const [topLevelDropTarget, setTopLevelDropTarget] = useState<string | null>(null); // collectionId being hovered
+
   const filtered = collections.filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.requests||[]).some(r => (r.name||r.url||'').toLowerCase().includes(search.toLowerCase())));
+    (c.requests||[]).some(r => (r.name||r.url||'').toLowerCase().includes(search.toLowerCase())) ||
+    (c.groups||[]).some(g => g.name.toLowerCase().includes(search.toLowerCase())));
   const handleCreate = () => { if (newName.trim()) { onNewCollection(newName.trim()); setNewName(''); setShowNew(false); } };
-  const clearDragState = () => { dragRef.current = null; setDragOverCollectionId(null); setDropIndicator(null); };
   const allOpen = filtered.length > 0 && filtered.every(c => !!expansionStates[c.id]);
   const toggleAll = () => filtered.forEach(c => onToggle(c.id, !allOpen));
+
+  const handleCreateGroup = (collectionId: string) => {
+    if (!newGroupName.trim()) return;
+    onSaveGroup(collectionId, {
+      id: Date.now().toString() + Math.random().toString(36).slice(2),
+      name: newGroupName.trim(),
+      requests: [],
+      groups: [],
+    });
+    setNewGroupName('');
+    setShowNewGroupFor(null);
+  };
+
   return (<>
     <div className="toolbar">
-      <input className="search-input" type="text" placeholder="Filter..." value={search} onChange={e => onSearch(e.target.value)} />
+      <div className="search-wrapper">
+        <Icon icon={faMagnifyingGlass} size={13} className="search-icon" />
+        <input className="search-input" type="text" placeholder="Filter..." value={search} onChange={e => onSearch(e.target.value)} />
+      </div>
       <div className="toolbar-icons">
-        <button className="btn-icon toolbar-expand" title={allOpen ? 'Collapse all' : 'Expand all'} onClick={toggleAll}>{allOpen ? '⊟' : '⊞'}</button>
-        <button className="btn-icon toolbar-expand" title="Import collections from JSON" onClick={onImportCollections}>📥</button>
-        <button className="btn-icon toolbar-expand" title="Export collections to JSON" onClick={onExportCollections}>📤</button>
+        <button className="btn-icon toolbar-expand" title={allOpen ? 'Collapse all' : 'Expand all'} onClick={toggleAll}><Icon icon={allOpen ? faAnglesUp : faAnglesDown} size={13} /></button>
+        <button className="btn-icon toolbar-expand" title="Import collections" onClick={onImportCollections}><Icon icon={faFileImport} size={13} /></button>
       </div>
     </div>
     <div className="list" onKeyDown={listNavKeyDown}>
       {filtered.length === 0
-        ? <div className="empty"><div className="empty-icon">📁</div><div>No collections</div><div className="empty-sub">Save requests to organize them</div></div>
-        : filtered.map(col => { // eslint-disable-line
-            const reqs = col.requests || [];
-            const filteredReqs = search
-              ? reqs.filter(r => (r.name||r.url||'').toLowerCase().includes(search.toLowerCase()))
-              : reqs;
+        ? <div className="empty"><div className="empty-icon"><Icon icon={faFolder} size={28} style={{ opacity: 0.4 }} /></div><div>No collections</div><div className="empty-sub">Save requests to organize them</div></div>
+        : filtered.map(col => {
+            const topReqs = col.requests || [];
+            const groups = col.groups || [];
             const isOpen = !!expansionStates[col.id];
-            const isDragOver = dragOverCollectionId === col.id;
+            const countRequests = (grps: CollectionGroup[]): number => grps.reduce((s, g) => s + (g.requests?.length || 0) + countRequests(g.groups || []), 0);
+            const totalCount = topReqs.length + countRequests(groups);
+            const filteredTopReqs = search ? topReqs.filter(r => (r.name||r.url||'').toLowerCase().includes(search.toLowerCase())) : topReqs;
+
             return (
-              <div key={col.id}
-                className={`collection-group${isDragOver ? ' drag-over' : ''}`}
-                onDragOver={(e) => {
-                  if (dragRef.current && dragRef.current.fromCollectionId !== col.id) {
-                    e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverCollectionId(col.id);
-                  }
-                }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setDragOverCollectionId(null); setDropIndicator(null); } }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (dragRef.current && dragRef.current.fromCollectionId !== col.id) {
-                    onMoveRequest(dragRef.current.requestId, dragRef.current.fromCollectionId, col.id);
-                  }
-                  clearDragState();
-                }}
-              >
-                <div className="collection-header" tabIndex={0} onClick={() => onToggle(col.id, !isOpen)} onKeyDown={(e) => { if (e.key === 'Enter') onToggle(col.id, !isOpen); }}>
-                  <span className={`caret ${isOpen ? 'open':''}`}>▶</span>
+              <div key={col.id} className="collection-group">
+                <div className="collection-header" tabIndex={0}
+                  onClick={() => onToggle(col.id, !isOpen)}
+                  onKeyDown={e => { if (e.key === 'Enter') onToggle(col.id, !isOpen); }}>
+                  <span className={`caret ${isOpen ? 'open' : ''}`}><Icon icon={faChevronRight} size={10} /></span>
                   {editingCollection?.id === col.id
                     ? <input className="inline-rename" autoFocus value={editingCollection.name}
                         onChange={e => setEditingCollection({ ...editingCollection, name: e.target.value })}
                         onBlur={() => { if (editingCollection.name.trim()) onRenameCollection(col.id, editingCollection.name.trim()); setEditingCollection(null); }}
                         onKeyDown={e => { if (e.key === 'Enter') { if (editingCollection.name.trim()) onRenameCollection(col.id, editingCollection.name.trim()); setEditingCollection(null); } if (e.key === 'Escape') setEditingCollection(null); }}
                         onClick={e => e.stopPropagation()} />
-                    : <span className="collection-name" title={col.name} onDoubleClick={e => { e.stopPropagation(); setEditingCollection({ id: col.id, name: col.name }); }}>{col.name}</span>
+                    : <span className="collection-name" title={col.name}
+                        onDoubleClick={e => { e.stopPropagation(); setEditingCollection({ id: col.id, name: col.name }); }}>
+                        {col.name}
+                      </span>
                   }
-                  <span className="collection-count">{search ? `${filteredReqs.length}/` : ''}{reqs.length}</span>
-                  <button className="btn-icon btn-rename-col" title="Rename" onClick={e => { e.stopPropagation(); setEditingCollection({ id: col.id, name: col.name }); }}>✎</button>
-                  <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDeleteCollection(col.id); }}>×</button>
+                  <span className="collection-count">{totalCount}</span>
+                  <button className="btn-icon btn-add-group" title="New folder"
+                    onClick={e => { e.stopPropagation(); setShowNewGroupFor(col.id); setNewGroupName(''); onToggle(col.id, true); }}>
+                    <Icon icon={faFolderPlus} size={12} />
+                  </button>
+                  <button className="btn-icon btn-rename-col" title="Rename" onClick={e => { e.stopPropagation(); setEditingCollection({ id: col.id, name: col.name }); }}><Icon icon={faPen} size={12} /></button>
+                  <button className="btn-icon btn-export" title="Export collection" onClick={e => { e.stopPropagation(); onExportCollection(col.id); }}><Icon icon={faFileExport} size={12} /></button>
+                  <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDeleteCollection(col.id); }}><Icon icon={faTrash} size={12} /></button>
                 </div>
                 {isOpen && (
-                  <div className="collection-requests open">
-                    {filteredReqs.length === 0
-                      ? <div className="sub-empty">{search ? 'No matching requests' : 'No requests saved'}</div>
-                      : filteredReqs.map((req, idx) => (
-                          <React.Fragment key={req.id}>
-                            {dropIndicator?.collectionId === col.id && dropIndicator.insertIndex === idx && (
-                              <div className="drop-indicator" />
-                            )}
-                            <div className="sub-item"
-                              draggable
-                              onDragStart={(e) => { dragRef.current = { requestId: req.id!, fromCollectionId: col.id }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
-                              onDragEnd={(e) => { (e.currentTarget as HTMLElement).classList.remove('dragging'); clearDragState(); }}
-                              onDragOver={(e) => {
-                                if (!dragRef.current || dragRef.current.fromCollectionId !== col.id) return;
-                                e.preventDefault(); e.stopPropagation();
-                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                setDropIndicator({ collectionId: col.id, insertIndex: e.clientY < rect.top + rect.height / 2 ? idx : idx + 1 });
-                              }}
-                              onDrop={(e) => {
-                                if (!dragRef.current || dragRef.current.fromCollectionId !== col.id) return;
-                                e.preventDefault(); e.stopPropagation();
-                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                onReorderRequest(col.id, dragRef.current.requestId, e.clientY < rect.top + rect.height / 2 ? idx : idx + 1);
-                                clearDragState();
-                              }}
-                              tabIndex={0}
-                              onClick={() => onLoad(req, col.name)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') onLoad(req, col.name); }}>
-                              <span className="drag-handle">⠿</span>
-                              <span className={`method-badge method-${req.method}`}>{req.method}</span>
-                              {editingRequest?.collectionId === col.id && editingRequest.requestId === req.id
-                                ? <input className="inline-rename" autoFocus value={editingRequest.name}
-                                    onChange={e => setEditingRequest({ ...editingRequest, name: e.target.value })}
-                                    onBlur={() => { if (editingRequest.name.trim()) onRenameRequest(col.id, req.id!, editingRequest.name.trim()); setEditingRequest(null); }}
-                                    onKeyDown={e => { if (e.key === 'Enter') { if (editingRequest.name.trim()) onRenameRequest(col.id, req.id!, editingRequest.name.trim()); setEditingRequest(null); } if (e.key === 'Escape') setEditingRequest(null); }}
-                                    onClick={e => e.stopPropagation()} />
-                                : <span className="sub-name" title={req.name || req.url || 'Untitled'}
-                                    onDoubleClick={e => { e.stopPropagation(); setEditingRequest({ collectionId: col.id, requestId: req.id!, name: req.name || '' }); }}>
-                                    {req.name || req.url || 'Untitled'}
-                                  </span>
-                              }
-                              <button className="btn-icon btn-copy" title="Copy request" onClick={e => { e.stopPropagation(); onCopyRequest(col.id, req.id!); }}>⎘</button>
-                              <button className="btn-icon btn-rename-req" title="Rename" onClick={e => { e.stopPropagation(); setEditingRequest({ collectionId: col.id, requestId: req.id!, name: req.name || '' }); }}>✎</button>
-                              <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDeleteRequest(col.id, req.id!); }}>×</button>
-                            </div>
-                            {dropIndicator?.collectionId === col.id && dropIndicator.insertIndex === reqs.length && idx === reqs.length - 1 && (
-                              <div className="drop-indicator" />
-                            )}
-                          </React.Fragment>))}
-                  </div>)}
-              </div>);
+                  <div className={`collection-requests open${topLevelDropTarget === col.id ? ' drag-over-toplevel' : ''}`}
+                    onDragOver={e => {
+                      const d = dragRef.current;
+                      if (!d || d.collectionId !== col.id || d.fromGroupId === null) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      setTopLevelDropTarget(col.id);
+                    }}
+                    onDragLeave={e => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setTopLevelDropTarget(null);
+                    }}
+                    onDrop={e => {
+                      setTopLevelDropTarget(null);
+                      const d = dragRef.current;
+                      if (!d || d.collectionId !== col.id || d.fromGroupId === null) return;
+                      e.preventDefault();
+                      onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null);
+                      dragRef.current = null;
+                    }}>
+                    {/* Groups (folders) */}
+                    {groups.map(grp => (
+                      <GroupTree key={grp.id}
+                        group={grp}
+                        collectionId={col.id}
+                        collectionName={col.name}
+                        depth={1}
+                        search={search}
+                        expansionStates={expansionStates}
+                        editingRequest={editingGroupRequest}
+                        dragRef={dragRef}
+                        onToggle={onToggle}
+                        onLoad={req => onLoad(req, col.name)}
+                        onDeleteRequest={(gid, rid) => onDeleteGroupRequest(col.id, gid, rid)}
+                        onCopyRequest={rid => onCopyRequest(col.id, rid)}
+                        onStartRenameRequest={(gid, rid) => setEditingGroupRequest({ groupId: gid, requestId: rid })}
+                        onCommitRenameRequest={(gid, rid, name) => {
+                          setEditingGroupRequest(null);
+                          (window as any).acquireVsCodeApi?.()?.postMessage?.({ command: 'renameGroupRequest', collectionId: col.id, groupId: gid, requestId: rid, name });
+                        }}
+                        onCancelRenameRequest={() => setEditingGroupRequest(null)}
+                        onSaveGroup={(g, pId) => onSaveGroup(col.id, g, pId ?? grp.id)}
+                        onDeleteGroup={(gid, gname) => onDeleteGroup(col.id, gid, gname)}
+                        onRenameGroup={(gid, name) => onRenameGroup(col.id, gid, name)}
+                        onMoveRequestToGroup={(rid, fromGid, toGid) => onMoveRequestToGroup(col.id, rid, fromGid, toGid)}
+                      />
+                    ))}
+                    {/* New group inline input */}
+                    {showNewGroupFor === col.id && (
+                      <div className="new-group-inline" style={{ paddingLeft: 12 }}>
+                        <Icon icon={faFolder} size={11} style={{ color: 'var(--muted)', marginRight: 4 }} />
+                        <input className="inline-rename" autoFocus placeholder="Folder name"
+                          value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleCreateGroup(col.id); if (e.key === 'Escape') { setShowNewGroupFor(null); setNewGroupName(''); } }}
+                          onBlur={() => { if (newGroupName.trim()) handleCreateGroup(col.id); else { setShowNewGroupFor(null); setNewGroupName(''); } }} />
+                      </div>
+                    )}
+                    {/* Top-level (ungrouped) requests */}
+                    {filteredTopReqs.map((req) => (
+                      <div key={req.id} className="sub-item" tabIndex={0} draggable
+                        onClick={() => onLoad(req, col.name)}
+                        onKeyDown={e => { if (e.key === 'Enter') onLoad(req, col.name); }}
+                        onDragStart={e => { dragRef.current = { requestId: req.id!, collectionId: col.id, fromGroupId: null }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
+                        onDragEnd={e => { (e.currentTarget as HTMLElement).classList.remove('dragging'); }}>
+                        <span className="drag-handle"><Icon icon={faGripVertical} size={11} /></span>
+                        <span className={`method-badge method-${req.method}`}>{req.method}</span>
+                        {editingRequest?.collectionId === col.id && editingRequest.requestId === req.id
+                          ? <input className="inline-rename" autoFocus defaultValue={req.name || ''}
+                              onBlur={e => { if (e.target.value.trim()) onRenameRequest(col.id, req.id!, e.target.value.trim()); setEditingRequest(null); }}
+                              onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { onRenameRequest(col.id, req.id!, (e.target as HTMLInputElement).value.trim()); setEditingRequest(null); } if (e.key === 'Escape') setEditingRequest(null); }}
+                              onClick={e => e.stopPropagation()} />
+                          : <span className="sub-name" title={req.name || req.url || 'Untitled'}
+                              onDoubleClick={e => { e.stopPropagation(); setEditingRequest({ collectionId: col.id, requestId: req.id! }); }}>
+                              {req.name || req.url || 'Untitled'}
+                            </span>
+                        }
+                        <button className="btn-icon btn-copy" title="Copy request" onClick={e => { e.stopPropagation(); onCopyRequest(col.id, req.id!); }}><Icon icon={faCopy} size={12} /></button>
+                        <button className="btn-icon btn-rename-req" title="Rename" onClick={e => { e.stopPropagation(); setEditingRequest({ collectionId: col.id, requestId: req.id! }); }}><Icon icon={faPen} size={12} /></button>
+                        <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); onDeleteRequest(col.id, req.id!); }}><Icon icon={faTrash} size={12} /></button>
+                      </div>
+                    ))}
+                    {topReqs.length === 0 && groups.length === 0 && !showNewGroupFor && (
+                      <div className="sub-empty">No requests saved</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
           })}
     </div>
     {showNew && (
@@ -328,13 +643,14 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
           <h3>New Collection</h3>
           <label className="modal-label">Name</label>
           <input className="modal-input" placeholder="My Collection" value={newName} autoFocus
-            onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key==='Enter' && handleCreate()} />
+            onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreate()} />
           <div className="modal-actions">
             <button className="btn-ghost" onClick={() => setShowNew(false)}>Cancel</button>
             <button className="btn" onClick={handleCreate}>Create</button>
           </div>
         </div>
-      </div>)}
+      </div>
+    )}
   </>);
 };
 

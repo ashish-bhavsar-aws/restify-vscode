@@ -1,5 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ResponseState, getStatusClass } from '../types';
+import { Icon } from './FaIcon';
+import {
+  faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
+  faClipboardList, faXmark, faChevronRight,
+  faArrowUp, faList, faLink, faFileCode, faDownload, faCode,
+} from '@fortawesome/free-solid-svg-icons';
 
 const LARGE_RESPONSE_THRESHOLD = 500 * 1024; // 500 KB
 
@@ -104,23 +110,22 @@ function prettyPrintXml(xml: string): string {
 }
 
 function syntaxHighlightXml(line: string): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // Escape first, then re-apply highlight spans on the escaped string.
   // We work on the raw line so we can safely colour XML tokens.
   return line
-    .replace(/&/g, '&amp;').replace(/</g, '\x00LT\x00').replace(/>/g, '\x00GT\x00')
+    .replace(/&/g, '&amp;').replace(/</g, '__LT__').replace(/>/g, '__GT__')
     .replace(
-      /(\x00LT\x00\/?)([A-Za-z][\w:.-]*)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)(\s*\/?(\x00GT\x00))/g,
+      /(__LT__\/?)([ A-Za-z][\w:.-]*)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)(\s*\/?(__ GT__))/g,
       (_, open, tag, attrs, close) => {
         const coloredAttrs = attrs.replace(
           /([\w:.-]+)(\s*=\s*)("[^"]*"|'[^']*')/g,
           `<span class="xml-attr-name">$1</span>$2<span class="xml-attr-value">$3</span>`
         );
-        return `<span class="xml-bracket">&lt;${open.includes('\x00LT\x00/') ? '/' : ''}</span><span class="xml-tag">${tag}</span>${coloredAttrs}<span class="xml-bracket">${close.replace('\x00GT\x00', '&gt;')}</span>`;
+        return `<span class="xml-bracket">&lt;${open.includes('__LT__/') ? '/' : ''}</span><span class="xml-tag">${tag}</span>${coloredAttrs}<span class="xml-bracket">${close.replace('__GT__', '&gt;')}</span>`;
       }
     )
-    .replace(/\x00LT\x00\?([\w]+)/g, '<span class="xml-bracket">&lt;?</span><span class="xml-tag">$1</span>')
-    .replace(/\x00GT\x00/g, '&gt;').replace(/\x00LT\x00/g, '&lt;');
+    .replace(/__LT__\?([\w]+)/g, '<span class="xml-bracket">&lt;?</span><span class="xml-tag">$1</span>')
+    .replace(/__GT__/g, '&gt;').replace(/__LT__/g, '&lt;');
 }
 
 const XmlPrettyViewer: React.FC<{ text: string; search?: string }> = ({ text, search }) => {
@@ -149,6 +154,7 @@ const XmlPrettyViewer: React.FC<{ text: string; search?: string }> = ({ text, se
 // Syntax highlight JSON (returns HTML string safe-ish for our controlled data)
 function syntaxHighlightJSON(jsonLine: string): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // eslint-disable-next-line no-useless-escape
   return esc(jsonLine).replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
     let cls = 'json-number';
     if (/^"/.test(match)) {
@@ -245,7 +251,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     return (
       <div className="response-pane" id="res-pane">
         <div className="response-empty">
-          <div className="icon">→</div>
+          <div className="icon"><Icon icon={faPaperPlane} size={28} style={{ opacity: 0.5 }} /></div>
           <div>Send a request to see the response</div>
           <div style={{ fontSize: 11, opacity: 0.5, marginTop: 8, lineHeight: 1.8 }}>
             <span style={{ display: 'block' }}>⏎ Enter — send request</span>
@@ -272,17 +278,19 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
         <div className="response-actions">
           {request && (
             <button className="copy-btn" onClick={handleCopyCurlStatus} title="Copy as cURL command">
-              {copiedCurl ? '✓ cURL' : 'cURL'}
+              <Icon icon={faTerminal} size={12} style={{ marginRight: 4 }} />
+              {copiedCurl ? 'cURL ✓' : 'cURL'}
             </button>
           )}
           {response.body && (
             <button className="copy-btn" onClick={handleCopy}>
-              {copied ? '✓ Copied' : 'Copy'}
+              <Icon icon={faCopy} size={12} style={{ marginRight: 4 }} />
+              {copied ? 'Copied ✓' : 'Copy'}
             </button>
           )}
           {response.body && (
             <button className="copy-btn" title="Search in body (/)" onClick={() => setShowSearch(s => !s)}>
-              🔍
+              <Icon icon={faMagnifyingGlass} size={12} />
             </button>
           )}
         </div>
@@ -296,7 +304,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             className={`tab ${activeTab === tab ? 'active' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'logs' ? '📋 Logs' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'logs' ? <><Icon icon={faClipboardList} size={12} style={{ marginRight: 5 }} />Logs</> : tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'headers' && (
               <span className="tab-badge">{Object.keys(response.headers).length}</span>
             )}
@@ -325,7 +333,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 </span>
               )}
               <button onClick={() => { setShowSearch(false); setBodySearch(''); }}
-                style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}><Icon icon={faXmark} size={13} /></button>
             </div>
           )}
           {/* Large response warning */}
@@ -427,7 +435,7 @@ const SearchableBody: React.FC<{ text: string; search: string }> = ({ text, sear
 
 /* ─── Collapsible Section ───────────────────────────── */
 interface CollapsibleSectionProps {
-  title: string;
+  title: React.ReactNode;
   defaultOpen?: boolean;
   children: React.ReactNode;
   badge?: string | number;
@@ -448,10 +456,10 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, defaultO
           background: 'color-mix(in srgb, var(--input-bg) 40%, transparent)',
         }}
       >
-        <span style={{ fontSize: 10, color: 'var(--muted)', transition: 'transform .15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+        <span style={{ fontSize: 10, color: 'var(--muted)', transition: 'transform .15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}><Icon icon={faChevronRight} size={9} /></span>
         <span className="log-title" style={{ margin: 0, flex: 1, color: accentColor }}>{title}</span>
         {badge !== undefined && (
-          <span style={{ fontSize: 10, background: 'var(--border)', borderRadius: 8, padding: '1px 6px', color: 'var(--muted)' }}>{badge}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, background: 'var(--border)', borderRadius: 9, minWidth: 18, height: 18, padding: '0 5px', color: 'var(--muted)', lineHeight: 1, fontWeight: 700 }}>{badge}</span>
         )}
       </div>
       {open && <div style={{ padding: '8px 10px' }}>{children}</div>}
@@ -479,7 +487,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
   return (
     <div className="request-log" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
 
-      <CollapsibleSection title="📤 Request" defaultOpen={true}>
+      <CollapsibleSection title={<><Icon icon={faArrowUp} size={11} style={{ marginRight: 5 }} />Request</>} defaultOpen={true}>
         <LogEntry label="Method" value={request?.method || 'N/A'} />
         <LogEntry label="URL" value={request?.url || 'N/A'} monospace />
         <LogEntry label="Protocol" value={request?.url?.startsWith('https') ? 'HTTPS' : 'HTTP'} />
@@ -498,7 +506,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       </CollapsibleSection>
 
       {enabledRequestHeaders.length > 0 && (
-        <CollapsibleSection title="📨 Request Headers" defaultOpen={false} badge={enabledRequestHeaders.length}>
+        <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Request Headers</>} defaultOpen={false} badge={enabledRequestHeaders.length}>
           {enabledRequestHeaders.map((h: any, idx: number) => (
             <LogEntry key={idx} label={h.key} value={h.value} monospace small />
           ))}
@@ -506,7 +514,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       )}
 
       {enabledQueryParams.length > 0 && (
-        <CollapsibleSection title="🔗 Query Parameters" defaultOpen={false} badge={enabledQueryParams.length}>
+        <CollapsibleSection title={<><Icon icon={faLink} size={11} style={{ marginRight: 5 }} />Query Parameters</>} defaultOpen={false} badge={enabledQueryParams.length}>
           {enabledQueryParams.map((p: any, idx: number) => (
             <LogEntry key={idx} label={p.key} value={p.value} monospace small />
           ))}
@@ -514,33 +522,33 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       )}
 
       {request?.body && (
-        <CollapsibleSection title="📝 Request Body" defaultOpen={false}>
+        <CollapsibleSection title={<><Icon icon={faFileCode} size={11} style={{ marginRight: 5 }} />Request Body</>} defaultOpen={false}>
           <pre style={{ fontSize: 11, color: 'var(--input-fg)', background: 'color-mix(in srgb, var(--input-bg) 50%, transparent)', padding: '8px 10px', borderRadius: '4px', overflow: 'auto', maxHeight: '150px', margin: '0', border: '1px solid var(--border)' }}>{request.body}</pre>
         </CollapsibleSection>
       )}
 
-      <CollapsibleSection title="📥 Response" defaultOpen={true}>
+      <CollapsibleSection title={<><Icon icon={faDownload} size={11} style={{ marginRight: 5 }} />Response</>} defaultOpen={true}>
         <LogEntry label="Status Code" value={`${response.status} ${response.statusText}`} highlight={response.status >= 400} />
         <LogEntry label="Duration" value={`${response.duration}ms`} />
         <LogEntry label="Response Size" value={formatSize(response.size)} />
-        <div style={{ fontSize: 10, color: 'var(--muted)', paddingTop: 6 }}>📅 {new Date().toLocaleString()}</div>
+        <div style={{ fontSize: 10, color: 'var(--muted)', paddingTop: 6 }}>{new Date().toLocaleString()}</div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="📨 Response Headers" defaultOpen={false} badge={Object.keys(response.headers).length}>
+      <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Response Headers</>} defaultOpen={false} badge={Object.keys(response.headers).length}>
         {Object.entries(response.headers).map(([key, val]) => (
           <LogEntry key={key} label={key} value={String(val)} monospace small />
         ))}
       </CollapsibleSection>
 
       {request?.scriptLogs && request.scriptLogs.length > 0 && (
-        <CollapsibleSection title="🧩 Script Logs" defaultOpen={true} badge={request.scriptLogs.length}>
+        <CollapsibleSection title={<><Icon icon={faCode} size={11} style={{ marginRight: 5 }} />Script Logs</>} defaultOpen={true} badge={request.scriptLogs.length}>
           {request.scriptLogs.map((ln: string, idx: number) => (
             <div key={idx} style={{ fontFamily: "'Cascadia Code', 'Fira Code', monospace", padding: '3px 0', fontSize: 11, color: 'var(--input-fg)' }}>{ln}</div>
           ))}
         </CollapsibleSection>
       )}
 
-      <CollapsibleSection title="🐚 cURL Command" defaultOpen={false}>
+      <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />cURL Command</>} defaultOpen={false}>
         <CurlCommandGenerator request={request} response={response} />
       </CollapsibleSection>
 
@@ -595,7 +603,7 @@ const CurlCommandGenerator: React.FC<CurlCommandGeneratorProps> = ({ request }) 
           fontWeight: 600,
         }}
       >
-        📋 Copy cURL Command
+        <Icon icon={faCopy} size={11} style={{ marginRight: 4 }} /> Copy cURL Command
       </button>
     </div>
   );

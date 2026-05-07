@@ -1,5 +1,5 @@
-import React from 'react';
-import { Environment, METHODS, METHOD_COLORS } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Environment } from '../types';
 
 interface TopBarProps {
   name: string;
@@ -11,6 +11,89 @@ interface TopBarProps {
   onOpenSettings: () => void;
   onManageEnvs: () => void;
 }
+
+const EnvDropdown: React.FC<{ environments: Environment[]; activeEnvId: string | null; onChange: (id: string | null) => void }> = ({ environments, activeEnvId, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const allOptions = [{ id: null as any, name: 'No Environment' }, ...environments];
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setActiveIndex(allOptions.findIndex((o) => o.id === activeEnvId));
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, allOptions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      onChange(allOptions[activeIndex].id);
+      setOpen(false);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  const activeEnv = activeEnvId ? environments.find((e) => e.id === activeEnvId) : null;
+
+  return (
+    <div className="env-dropdown" ref={ref}>
+      <button
+        className="env-trigger"
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={handleKeyDown}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="env-trigger-label">{activeEnv?.name || 'No Environment'}</span>
+        <svg className={`env-chevron${open ? ' open' : ''}`} viewBox="0 0 10 6" width="10" height="6">
+          <path d="M0 0l5 6 5-6z" />
+        </svg>
+      </button>
+
+      {open && (
+        <ul className="env-menu" role="listbox">
+          {allOptions.map((opt, idx) => (
+            <li
+              key={opt.id || '__none__'}
+              role="option"
+              aria-selected={opt.id === activeEnvId}
+              className={`env-option${opt.id === activeEnvId ? ' selected' : ''}${idx === activeIndex ? ' highlighted' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(opt.id);
+                setOpen(false);
+              }}
+              onMouseEnter={() => setActiveIndex(idx)}
+            >
+              <span className="env-option-label">{opt.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
 
 export const TopBar: React.FC<TopBarProps> = ({
   name,
@@ -39,18 +122,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {isDirty && <span className="dirty-dot" title="Unsaved changes" />}
     </div>
 
-    <select
-      className="env-selector"
-      value={activeEnvId || ''}
-      onChange={(e) => onEnvChange(e.target.value || null)}
-    >
-      <option value="">No Environment</option>
-      {environments.map((env) => (
-        <option key={env.id} value={env.id}>
-          {env.name}
-        </option>
-      ))}
-    </select>
+    <EnvDropdown environments={environments} activeEnvId={activeEnvId} onChange={onEnvChange} />
 
     <button className="manage-env-btn" title="Manage Environments" onClick={onManageEnvs}>
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">

@@ -11,7 +11,7 @@ export function getMainPanelHtml(context: vscode.ExtensionContext, webview: vsco
   const nonce = getNonce();
 
   const sidebarIconUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'media', 'sidebar-icon.svg')
+    vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.svg')
   );
 
   return `<!DOCTYPE html>
@@ -25,8 +25,10 @@ export function getMainPanelHtml(context: vscode.ExtensionContext, webview: vsco
 </head>
 <body>
   <div id="root"></div>
-  <script nonce="${nonce}">window.restifyMedia = { sidebarIcon: "${sidebarIconUri}" };<\/script>
-  <script nonce="${nonce}" src="${scriptUri}"><\/script>
+  <script nonce="${nonce}">window.restifyMedia = {
+    sidebarIcon: "${sidebarIconUri}"
+  };</script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }

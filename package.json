@@ -2,7 +2,7 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "publisher": "AshishBhavsar",
   "engines": {
     "vscode": "^1.80.0"
@@ -24,7 +24,7 @@
         {
           "id": "restify-container",
           "title": "Restify API Client",
-          "icon": "media/sidebar-icon.svg"
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -52,13 +52,19 @@
         "command": "restify.newRequest",
         "title": "New Request",
         "category": "Restify",
-        "icon": "media/new-request.svg"
+        "icon": "$(add)"
       },
       {
         "command": "restify.newCollection",
         "title": "New Collection",
         "category": "Restify",
-        "icon": "media/new-request.svg"
+        "icon": "$(add)"
+      },
+      {
+        "command": "restify.importCollection",
+        "title": "Import Collection",
+        "category": "Restify",
+        "icon": "$(cloud-download)"
       }
     ],
     "menus": {
@@ -70,6 +76,11 @@
         },
         {
           "command": "restify.newCollection",
+          "when": "view == restify-collections",
+          "group": "navigation"
+        },
+        {
+          "command": "restify.importCollection",
           "when": "view == restify-collections",
           "group": "navigation"
         }
@@ -129,12 +140,23 @@
     }
   },
   "devDependencies": {
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-regular-svg-icons": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.3.1",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
     "@vscode/webview-ui-toolkit": "^1.2.0",
     "css-loader": "^7.1.4",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-unused-imports": "^3.1.0",
     "mini-css-extract-plugin": "^2.10.2",
     "prettier": "^3.8.3",
     "react": "^18.2.0",
@@ -154,6 +176,9 @@
     "compile": "webpack --mode development",
     "watch": "webpack --mode development --watch",
     "build": "webpack --mode production",
-    "package": "vsce package"
+    "package": "vsce package",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "lint:unused": "eslint . --ext .ts,.tsx --rule 'unused-imports/no-unused-imports: error' --rule '@typescript-eslint/no-unused-vars: error'"
   }
 }

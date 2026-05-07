@@ -15,7 +15,7 @@ export function getSidebarHtml(
   const nonce = getNonce();
 
   const sidebarIconUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'media', 'sidebar-icon.svg')
+    vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.svg')
   );
 
   return `<!DOCTYPE html>
@@ -29,8 +29,8 @@ export function getSidebarHtml(
 </head>
 <body>
   <div id="root" data-type="${type}"></div>
-  <script nonce="${nonce}">window.restifyMedia = { sidebarIcon: "${sidebarIconUri}" };<\/script>
-  <script nonce="${nonce}" src="${scriptUri}"><\/script>
+  <script nonce="${nonce}">window.restifyMedia = { sidebarIcon: "${sidebarIconUri}" };</script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }

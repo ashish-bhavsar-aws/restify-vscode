@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { KVItem, Environment } from '../types';
-import { VariableDisplay } from './VariableDisplay';
+import { Icon } from './FaIcon';
+import { faTrash } from '@fortawesome/free-solid-svg-icons';
 import VariableTextInput from './VariableTextInput';
 import { getPredefinedHeaderNames, getHeaderSuggestions } from '../constants/predefinedHeaders';
 
@@ -26,8 +27,22 @@ interface KeyValueTableProps {
   onAdd: () => void;
   onUpdate: (index: number, field: keyof KVItem, value: any) => void;
   onRemove: (index: number) => void;
-  environment?: Environment | null; // Current environment for variable resolution
-  isHeaderTable?: boolean; // Show header autocomplete
+  environment?: Environment | null;
+  isHeaderTable?: boolean;
+}
+
+/** Scroll the highlighted item into view inside the dropdown container. */
+function scrollItemIntoView(container: HTMLDivElement | null, activeIndex: number) {
+  if (!container) return;
+  const item = container.children[activeIndex] as HTMLElement | undefined;
+  if (!item) return;
+  const { offsetTop, offsetHeight } = item;
+  const { scrollTop, clientHeight } = container;
+  if (offsetTop < scrollTop) {
+    container.scrollTop = offsetTop;
+  } else if (offsetTop + offsetHeight > scrollTop + clientHeight) {
+    container.scrollTop = offsetTop + offsetHeight - clientHeight;
+  }
 }
 
 export const KeyValueTable: React.FC<KeyValueTableProps> = ({
@@ -40,14 +55,16 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   isHeaderTable = false,
 }) => {
   const variables = environment?.variables || [];
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [focusedIndex, _setFocusedIndex] = useState<number | null>(null);
   const [showKeyAutocomplete, setShowKeyAutocomplete] = useState<number | null>(null);
   const [showValueAutocomplete, setShowValueAutocomplete] = useState<number | null>(null);
   const [keyInput, setKeyInput] = useState<string>('');
   const [valueInput, setValueInput] = useState<string>('');
-  const autocompleteRef = useRef<HTMLDivElement>(null);
+  const [keyActiveIndex, setKeyActiveIndex] = useState<number>(-1);
+  const [valueActiveIndex, setValueActiveIndex] = useState<number>(-1);
+  const keyDropdownRef = useRef<HTMLDivElement>(null);
+  const valueDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Function to resolve variables in text
   const resolveVariables = (text: string): string => {
     if (!text || !text.includes('{{')) return text;
     let resolved = text;
@@ -58,13 +75,78 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
     return resolved;
   };
 
+  const handleKeyKeyDown = useCallback((
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowIndex: number,
+    suggestions: string[]
+  ) => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = Math.min(keyActiveIndex + 1, suggestions.length - 1);
+      setKeyActiveIndex(next);
+      scrollItemIntoView(keyDropdownRef.current, next);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = Math.max(keyActiveIndex - 1, 0);
+      setKeyActiveIndex(next);
+      scrollItemIntoView(keyDropdownRef.current, next);
+    } else if (e.key === 'Enter' && keyActiveIndex >= 0) {
+      e.preventDefault();
+      const selected = suggestions[keyActiveIndex];
+      onUpdate(rowIndex, 'key', selected);
+      setKeyInput(selected);
+      setShowKeyAutocomplete(null);
+      setKeyActiveIndex(-1);
+    } else if (e.key === 'Escape') {
+      setShowKeyAutocomplete(null);
+      setKeyActiveIndex(-1);
+    }
+  }, [keyActiveIndex, onUpdate]);
+
+  const handleValueKeyDown = useCallback((
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowIndex: number,
+    suggestions: string[]
+  ) => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = Math.min(valueActiveIndex + 1, suggestions.length - 1);
+      setValueActiveIndex(next);
+      scrollItemIntoView(valueDropdownRef.current, next);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = Math.max(valueActiveIndex - 1, 0);
+      setValueActiveIndex(next);
+      scrollItemIntoView(valueDropdownRef.current, next);
+    } else if (e.key === 'Enter' && valueActiveIndex >= 0) {
+      e.preventDefault();
+      const selected = suggestions[valueActiveIndex];
+      onUpdate(rowIndex, 'value', selected);
+      setValueInput(selected);
+      setShowValueAutocomplete(null);
+      setValueActiveIndex(-1);
+    } else if (e.key === 'Escape') {
+      setShowValueAutocomplete(null);
+      setValueActiveIndex(-1);
+    }
+  }, [valueActiveIndex, onUpdate]);
+
   return (
     <div className="kv-wrap">
       {items.map((item, i) => {
         const hasUnresolvedVars = hasUnresolvedVariables(item.value, variables);
-        const resolvedValue = resolveVariables(item.value);
+        const _resolvedValue = resolveVariables(item.value);
         const isFocused = focusedIndex === i;
-        const showResolved = !isFocused && item.value && item.value.includes('{{');
+        const _showResolved = !isFocused && item.value && item.value.includes('{{');
+
+        const keySuggestions = isHeaderTable && showKeyAutocomplete === i && keyInput.length > 0
+          ? getPredefinedHeaderNames().filter((n) => n.toLowerCase().includes(keyInput.toLowerCase()))
+          : [];
+        const valueSuggestions = isHeaderTable && showValueAutocomplete === i && item.key && valueInput.length > 0
+          ? getHeaderSuggestions(item.key).filter((v) => v.toLowerCase().includes(valueInput.toLowerCase()))
+          : [];
 
         return (
           <div key={i} className={`kv-row ${hasUnresolvedVars ? 'has-unresolved-vars' : ''}`}>
@@ -75,7 +157,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                 onChange={(e) => onUpdate(i, 'enabled', e.target.checked)}
               />
             </div>
-            <div style={{ position: 'relative', flex: 1 }}>
+            <div style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex' }}>
               <input
                 type="text"
                 className="kv-input"
@@ -86,6 +168,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   onUpdate(i, 'key', val);
                   if (isHeaderTable) {
                     setKeyInput(val);
+                    setKeyActiveIndex(-1);
                     setShowKeyAutocomplete(val.length > 0 ? i : null);
                   }
                 }}
@@ -93,15 +176,17 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   if (isHeaderTable && item.key.length > 0) {
                     setShowKeyAutocomplete(i);
                     setKeyInput(item.key);
+                    setKeyActiveIndex(-1);
                   }
                 }}
                 onBlur={() => {
-                  setTimeout(() => setShowKeyAutocomplete(null), 200);
+                  setTimeout(() => { setShowKeyAutocomplete(null); setKeyActiveIndex(-1); }, 200);
                 }}
+                onKeyDown={(e) => handleKeyKeyDown(e, i, keySuggestions)}
               />
-              {isHeaderTable && showKeyAutocomplete === i && keyInput.length > 0 && (
+              {keySuggestions.length > 0 && (
                 <div
-                  ref={autocompleteRef}
+                  ref={keyDropdownRef}
                   className="autocomplete-dropdown"
                   style={{
                     position: 'absolute',
@@ -118,35 +203,29 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                   }}
                 >
-                  {getPredefinedHeaderNames()
-                    .filter((name) =>
-                      name.toLowerCase().includes(keyInput.toLowerCase())
-                    )
-                    .map((name) => (
-                      <div
-                        key={name}
-                        style={{
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          borderBottom: '1px solid var(--border)',
-                          color: 'var(--fg)',
-                        }}
-                        onMouseDown={() => {
-                          onUpdate(i, 'key', name);
-                          setShowKeyAutocomplete(null);
-                          setKeyInput(name);
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--hover)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent';
-                        }}
-                      >
-                        {name}
-                      </div>
-                    ))}
+                  {keySuggestions.map((name, idx) => (
+                    <div
+                      key={name}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        borderBottom: '1px solid var(--border)',
+                        color: 'var(--fg)',
+                        background: idx === keyActiveIndex ? 'var(--hover)' : 'transparent',
+                      }}
+                      onMouseDown={() => {
+                        onUpdate(i, 'key', name);
+                        setShowKeyAutocomplete(null);
+                        setKeyInput(name);
+                        setKeyActiveIndex(-1);
+                      }}
+                      onMouseEnter={() => setKeyActiveIndex(idx)}
+                      onMouseLeave={() => setKeyActiveIndex(-1)}
+                    >
+                      {name}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -158,15 +237,18 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   onUpdate(i, 'value', v);
                   if (isHeaderTable && item.key) {
                     setValueInput(v);
+                    setValueActiveIndex(-1);
                     setShowValueAutocomplete(v.length > 0 ? i : null);
                   }
                 }}
                 className={`${hasUnresolvedVars ? 'has-unresolved-vars' : ''} ${item.value.includes('{{') ? (hasUnresolvedVars ? 'kv-unresolved-var' : 'kv-resolved-var') : ''}`}
                 variables={variables}
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleValueKeyDown(e, i, valueSuggestions)}
               />
 
-              {isHeaderTable && showValueAutocomplete === i && item.key && valueInput.length > 0 && (
+              {valueSuggestions.length > 0 && (
                 <div
+                  ref={valueDropdownRef}
                   className="autocomplete-dropdown"
                   style={{
                     position: 'absolute',
@@ -183,41 +265,34 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                   }}
                 >
-                  {getHeaderSuggestions(item.key)
-                    .filter((val) =>
-                      val.toLowerCase().includes(valueInput.toLowerCase())
-                    )
-                    .map((val) => (
-                      <div
-                        key={val}
-                        style={{
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          borderBottom: '1px solid var(--border)',
-                          color: 'var(--fg)',
-                        }}
-                        onMouseDown={() => {
-                          onUpdate(i, 'value', val);
-                          setShowValueAutocomplete(null);
-                          setValueInput(val);
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--hover)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent';
-                        }}
-                      >
-                        {val}
-                      </div>
-                    ))}
+                  {valueSuggestions.map((val, idx) => (
+                    <div
+                      key={val}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        borderBottom: '1px solid var(--border)',
+                        color: 'var(--fg)',
+                        background: idx === valueActiveIndex ? 'var(--hover)' : 'transparent',
+                      }}
+                      onMouseDown={() => {
+                        onUpdate(i, 'value', val);
+                        setShowValueAutocomplete(null);
+                        setValueInput(val);
+                        setValueActiveIndex(-1);
+                      }}
+                      onMouseEnter={() => setValueActiveIndex(idx)}
+                      onMouseLeave={() => setValueActiveIndex(-1)}
+                    >
+                      {val}
+                    </div>
+                  ))}
                 </div>
               )}
-              
             </div>
             <button className="kv-del" onClick={() => onRemove(i)}>
-              ×
+              <Icon icon={faTrash} size={12} />
             </button>
           </div>
         );

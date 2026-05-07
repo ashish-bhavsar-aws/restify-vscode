@@ -23,10 +23,18 @@ export interface HistoryEntry {
   activeEnvironmentId?: string | null; // Environment used when this request was made
 }
 
+export interface CollectionGroup {
+  id: string;
+  name: string;
+  requests?: any[];
+  groups?: CollectionGroup[];
+}
+
 export interface Collection {
   id: string;
   name: string;
   requests?: any[];
+  groups?: CollectionGroup[];
 }
 
 export interface CertEntry {
@@ -83,7 +91,9 @@ export class StorageManager {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           const LokiFsStructuredAdapter = require('lokijs/src/loki-fs-structured-adapter');
           adapter = new LokiFsStructuredAdapter();
-        } catch {}
+        } catch {
+          /* empty */
+        }
 
         this.db = new Loki(dbPath, {
           adapter,
@@ -184,7 +194,11 @@ export class StorageManager {
       await fs.promises.rename(tmpFile, histFile);
     } catch (err) {
       console.error('Failed to persist history to file:', err);
-      try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch {}
+      try {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      } catch {
+        /* empty */
+      }
     }
   }
 
@@ -480,6 +494,123 @@ export class StorageManager {
     }
   }
 
+  // ─── Groups (folders within a collection) ─────────────────
+
+  /** Upsert a group inside a collection. */
+  saveGroup(collectionId: string, group: CollectionGroup, parentGroupId?: string): void {
+    const collections = this.getCollections();
+    const col = collections.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+    const container = parentGroupId ? _findGroup(col.groups || [], parentGroupId) : col;
+    if (!container) return;
+    if (!container.groups) container.groups = [];
+    const idx = container.groups.findIndex((g) => String(g.id) === String(group.id));
+    if (idx >= 0) {
+      container.groups[idx] = group;
+    } else {
+      container.groups.push(group);
+    }
+    this.globalState.update('restify.collections', collections);
+    this.notifyChange();
+  }
+
+  /** Delete a group (and all its contents) from a collection. */
+  deleteGroup(collectionId: string, groupId: string): void {
+    const collections = this.getCollections();
+    const col = collections.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+    _removeGroup(col, groupId);
+    this.globalState.update('restify.collections', collections);
+    this.notifyChange();
+  }
+
+  /** Rename a group. */
+  renameGroup(collectionId: string, groupId: string, name: string): void {
+    const collections = this.getCollections();
+    const col = collections.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+    const grp = _findGroup(col.groups || [], groupId);
+    if (grp && name.trim()) {
+      grp.name = name.trim();
+      this.globalState.update('restify.collections', collections);
+      this.notifyChange();
+    }
+  }
+
+  /** Add a request into a group inside a collection. */
+  addRequestToGroup(collectionId: string, groupId: string, request: any): void {
+    const collections = this.getCollections();
+    const col = collections.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+    const grp = _findGroup(col.groups || [], groupId);
+    if (!grp) return;
+    if (!grp.requests) grp.requests = [];
+    const reqId = request.id ? String(request.id) : this.createId('request');
+    const idx = grp.requests.findIndex((r: any) => String(r.id) === reqId);
+    const toSave = { ...request, id: reqId };
+    if (idx >= 0) { grp.requests[idx] = toSave; } else { grp.requests.push(toSave); }
+    this.globalState.update('restify.collections', collections);
+    this.notifyChange();
+  }
+
+  /** Delete a request from a group. */
+  deleteRequestFromGroup(collectionId: string, groupId: string, requestId: string): void {
+    const collections = this.getCollections();
+    const col = collections.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+    const grp = _findGroup(col.groups || [], groupId);
+    if (!grp) return;
+    grp.requests = (grp.requests || []).filter((r: any) => String(r.id) !== String(requestId));
+    this.globalState.update('restify.collections', collections);
+    this.notifyChange();
+  }
+
+  /**
+   * Move a request from its current location (top-level or a group) into
+   * another location (a group or back to top-level).
+   * fromGroupId / toGroupId = null means the collection's top-level requests array.
+   */
+  moveRequestToGroup(
+    collectionId: string,
+    requestId: string,
+    fromGroupId: string | null,
+    toGroupId: string | null
+  ): void {
+    if (fromGroupId === toGroupId) return;
+    const collections = this.getCollections();
+    const col = collections.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+
+    // Remove from source
+    let request: any;
+    if (fromGroupId) {
+      const src = _findGroup(col.groups || [], fromGroupId);
+      if (!src?.requests) return;
+      const idx = src.requests.findIndex((r: any) => String(r.id) === String(requestId));
+      if (idx === -1) return;
+      [request] = src.requests.splice(idx, 1);
+    } else {
+      if (!col.requests) return;
+      const idx = col.requests.findIndex((r) => String(r.id) === String(requestId));
+      if (idx === -1) return;
+      [request] = col.requests.splice(idx, 1);
+    }
+
+    // Add to destination
+    if (toGroupId) {
+      const dst = _findGroup(col.groups || [], toGroupId);
+      if (!dst) return;
+      if (!dst.requests) dst.requests = [];
+      dst.requests.push(request);
+    } else {
+      if (!col.requests) col.requests = [];
+      col.requests.push(request);
+    }
+
+    this.globalState.update('restify.collections', collections);
+    this.notifyChange();
+  }
+
   // ─── Environments ─────────────────────────────────────────
   getEnvironments(): Environment[] {
     return this.globalState.get('restify.environments', []);
@@ -575,4 +706,27 @@ export class StorageManager {
   notifyChange(): void {
     this.listeners.forEach((cb) => cb());
   }
+}
+
+// ─── Module-level group tree helpers ──────────────────────────────────────────
+
+export function _findGroup(groups: CollectionGroup[], id: string): CollectionGroup | undefined {
+  for (const g of groups) {
+    if (String(g.id) === String(id)) return g;
+    if (g.groups?.length) {
+      const found = _findGroup(g.groups, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+function _removeGroup(container: { groups?: CollectionGroup[] }, id: string): boolean {
+  if (!container.groups) return false;
+  const idx = container.groups.findIndex((g) => String(g.id) === String(id));
+  if (idx >= 0) { container.groups.splice(idx, 1); return true; }
+  for (const g of container.groups) {
+    if (_removeGroup(g, id)) return true;
+  }
+  return false;
 }

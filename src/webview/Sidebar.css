@@ -50,9 +50,16 @@ body {
   background: var(--surface); flex-shrink: 0; overflow: hidden;
 }
 .toolbar-label { flex: 1; font-size: 11px; color: var(--muted); }
+.search-wrapper {
+  position: relative; display: flex; align-items: center; flex: 1; min-width: 0;
+}
+.search-icon {
+  position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); pointer-events: none; font-size: 11px;
+}
 .search-input {
-  flex: 1; min-width: 0; background: var(--input-bg); border: 1px solid var(--border);
-  color: var(--fg); padding: 4px 8px; border-radius: var(--radius);
+  flex: 1; min-width: 0; width: 100%; background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--fg); padding: 4px 8px 4px 26px; border-radius: var(--radius);
   font-size: 11px; outline: none; font-family: inherit;
 }
 .search-input:focus { border-color: var(--accent); }
@@ -233,13 +240,45 @@ body {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   outline: 1px dashed var(--accent);
 }
+/* ─── Group tree (nested folders) ──── */
+.group-tree {
+  border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  margin-left: 12px;
+}
+.group-header {
+  display: flex; align-items: center; gap: 5px; padding: 5px 8px;
+  cursor: pointer; transition: background .1s; user-select: none;
+}
+.group-header:hover { background: var(--hover); }
+.group-folder-icon { color: var(--muted); flex-shrink: 0; opacity: 0.8; }
+.group-name { flex: 1; font-size: 11px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.group-body { }
+.new-group-inline {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px 4px 20px;
+}
+.group-tree.drag-over > .group-header {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: 1px dashed var(--accent);
+  border-radius: 3px;
+}
+.collection-requests.drag-over-toplevel {
+  outline: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.btn-add-group { opacity: 0; transition: opacity .15s; }
+.collection-header:hover .btn-add-group,
+.group-header:hover .btn-add-group { opacity: 1; }
+.btn-add-group:hover { color: var(--accent) !important; }
+/* ─── Export button ──── */
 /* ─── Copy button ──── */
 .btn-copy { opacity: 0; transition: opacity .15s; }
 .sub-item:hover .btn-copy { opacity: 1; }
 .btn-copy:hover { color: var(--accent) !important; }
 /* ─── Rename buttons ──── */
 .btn-rename-col { opacity: 0; transition: opacity .15s; }
-.collection-header:hover .btn-rename-col { opacity: 1; }
+.collection-header:hover .btn-rename-col,
+.group-header:hover .btn-rename-col { opacity: 1; }
 .btn-rename-col:hover { color: var(--accent) !important; }
 .btn-rename-req { opacity: 0; transition: opacity .15s; }
 .sub-item:hover .btn-rename-req { opacity: 1; }

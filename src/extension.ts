@@ -66,6 +66,12 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('restify.importCollection', () => {
+      collectionsProvider.importCollection();
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('restify.openFromSidebar', (data) => {
       vscode.commands.executeCommand('restify.openMain', data);
     })

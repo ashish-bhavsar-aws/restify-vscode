@@ -141,32 +141,103 @@ body {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--warning);
     flex-shrink: 0;
     margin-left: 2px;
     opacity: 0.85;
 }
 
-.env-selector {
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    color: var(--fg);
-    padding: 4px 28px 4px 10px;
-    border-radius: var(--radius);
-    font-size: 11px;
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-    outline: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236c7086'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    font-family: inherit;
+/* ─── Custom env dropdown ──────────────────────────────────── */
+.env-dropdown {
+    position: relative;
     flex-shrink: 0;
 }
 
-.env-selector:focus {
+.env-trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    height: 28px;
+    min-width: 140px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--fg);
+    transition: border-color .15s, background .15s;
+    outline: none;
+}
+
+.env-trigger:hover {
+    background: var(--hover);
     border-color: var(--accent);
+}
+
+.env-trigger-label {
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.env-chevron {
+    fill: var(--muted);
+    transition: transform .18s;
+    flex-shrink: 0;
+}
+
+.env-chevron.open {
+    transform: rotate(180deg);
+}
+
+.env-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 160px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    list-style: none;
+    padding: 4px;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    margin: 0;
+}
+
+.env-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--fg);
+    transition: background .1s;
+    user-select: none;
+}
+
+.env-option:hover,
+.env-option.highlighted {
+    background: var(--hover);
+}
+
+.env-option.selected {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.env-option-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .gear-btn {
@@ -285,6 +356,7 @@ body {
     flex-shrink: 0;
 }
 
+/* ─── Custom method dropdown ──────────────────────────────── */
 .method-dropdown {
     position: relative;
     flex-shrink: 0;
@@ -362,7 +434,8 @@ body {
     user-select: none;
 }
 
-.method-option:hover {
+.method-option:hover,
+.method-option.highlighted {
     background: var(--hover);
 }
 
@@ -591,20 +664,27 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
 }
 
 .tab-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
     background: var(--accent);
     color: var(--accent-fg);
     font-size: 9px;
+    min-width: 18px;
+    height: 18px;
     padding: 0 4px;
-    border-radius: 8px;
+    border-radius: 9px;
     margin-left: 4px;
     font-weight: 700;
     vertical-align: middle;
+    line-height: 1;
 }
 
 .tab-badge-dot {
     width: 6px;
     height: 6px;
+    min-width: 6px;
     border-radius: 50%;
     padding: 0;
     vertical-align: middle;
@@ -770,7 +850,7 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
 }
 
 .kv-value-wrapper {
-    flex: 1;
+    flex: 1 1 0;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -1149,8 +1229,7 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
 .code-editor-syntax {
     color: var(--input-fg);
     pointer-events: none;
-    flex: 1;
-    overflow: auto;
+    overflow: hidden;
     margin: 0;
     padding: 10px 14px;
     white-space: pre-wrap;
@@ -1160,7 +1239,8 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     line-height: 1.6;
     tab-size: 2;
     background: var(--input-bg);
-    position: relative;
+    position: absolute;
+    inset: 0;
 }
 
 .code-editor-syntax.readonly {
@@ -1590,19 +1670,204 @@ body.vscode-light .xml-attr-value { color: #116329; }
     background: var(--surface-2);
     border: 1px solid var(--border);
     color: var(--fg);
-    padding: 6px 10px;
+    padding: 6px 28px 6px 10px;
     border-radius: var(--radius);
     font-size: 12px;
     outline: none;
     margin-bottom: 12px;
     font-family: inherit;
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236c7086'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
 }
 
 .auth-select:focus {
     border-color: var(--accent);
-    background: var(--surface-2);
+    background-color: var(--surface-2);
     color: var(--fg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236c7086'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+}
+
+/* ─── Custom auth type dropdown ────────────────────────────── */
+.auth-type-dropdown {
+    position: relative;
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+.auth-type-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 6px 10px;
+    height: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    transition: border-color .15s, background .15s;
+    outline: none;
+    text-align: left;
+}
+
+.auth-type-trigger:hover {
+    background: var(--hover);
+    border-color: var(--accent);
+}
+
+.auth-type-trigger-label {
+    flex: 1;
+}
+
+.auth-type-chevron {
+    fill: var(--muted);
+    transition: transform .18s;
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+
+.auth-type-chevron.open {
+    transform: rotate(180deg);
+}
+
+.auth-type-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    list-style: none;
+    padding: 4px;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    margin: 0;
+}
+
+.auth-type-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--fg);
+    transition: background .1s;
+    user-select: none;
+}
+
+.auth-type-option:hover,
+.auth-type-option.highlighted {
+    background: var(--hover);
+}
+
+.auth-type-option.selected {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.auth-type-option-label {
+    flex: 1;
+}
+
+/* ─── Custom add-to dropdown ──────────────────────────────── */
+.add-to-dropdown {
+    position: relative;
+    width: 100%;
+}
+
+.add-to-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 6px 10px;
+    height: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    transition: border-color .15s, background .15s;
+    outline: none;
+    text-align: left;
+}
+
+.add-to-trigger:hover {
+    background: var(--hover);
+    border-color: var(--accent);
+}
+
+.add-to-trigger-label {
+    flex: 1;
+}
+
+.add-to-chevron {
+    fill: var(--muted);
+    transition: transform .18s;
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+
+.add-to-chevron.open {
+    transform: rotate(180deg);
+}
+
+.add-to-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    list-style: none;
+    padding: 4px;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    margin: 0;
+}
+
+.add-to-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--fg);
+    transition: background .1s;
+    user-select: none;
+}
+
+.add-to-option:hover,
+.add-to-option.highlighted {
+    background: var(--hover);
+}
+
+.add-to-option.selected {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.add-to-option-label {
+    flex: 1;
 }
 
 .auth-fields {

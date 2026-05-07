@@ -232,8 +232,9 @@ function escapeHtml(text: string): string {
 
 function highlightJson(text: string): string {
   const escaped = escapeHtml(text);
+  // eslint-disable-next-line no-useless-escape
   return escaped.replace(
-    /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")\s*(:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?/g,
+    /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")\s*(:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
     (match, stringPart, isKeyColon, literal) => {
       if (stringPart) {
         return isKeyColon
@@ -283,7 +284,7 @@ function highlightJavascript(text: string): string {
   const result: string[] = [];
 
   for (const raw of lines) {
-    let line = escapeHtml(raw);
+    const line = escapeHtml(raw);
 
     // single-line comment (must run before string replacement)
     const commentIdx = findCommentStart(raw);
@@ -305,7 +306,7 @@ function highlightJavascript(text: string): string {
 
     // numbers
     codePart = codePart.replace(
-      /(?<![a-zA-Z_$])(\d+\.?\d*(?:[eE][+\-]?\d+)?|0x[0-9a-fA-F]+)\b/g,
+      /(?<![a-zA-Z_$])(\d+\.?\d*(?:[eE][+-]?\d+)?|0x[0-9a-fA-F]+)\b/g,
       '<span class="syntax-js-number">$1</span>'
     );
 

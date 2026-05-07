@@ -9,6 +9,7 @@ import { getMainPanelHtml } from '../webview/mainPanelHtml';
 // Load https-proxy-agent at runtime to avoid module resolution issues
 let HttpProxyAgent: any;
 try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const proxyModule = require('https-proxy-agent');
   // Support different export shapes across versions:
   // - module.exports = HttpsProxyAgent (function/class)
@@ -36,6 +37,7 @@ const noProxyAgentHttp = new NoProxyAgent();
 const noProxyAgentHttps = new NoProxyAgentHttps();
 
 interface RequestData {
+  id?: string;
   name?: string;
   method: string;
   url: string;
@@ -120,6 +122,17 @@ export class RestifyPanel {
     this.panel.onDidDispose(() => {
       this.onDispose(this);
     });
+
+    // Post theme kind and listen for changes so webview can adapt icon coloring
+    try {
+      this.panel.webview.postMessage({ command: 'setTheme', kind: vscode.window.activeColorTheme.kind });
+    } catch (e) {
+      /* empty */
+    }
+    const themeListener = vscode.window.onDidChangeActiveColorTheme((t) => {
+      this.panel.webview.postMessage({ command: 'setTheme', kind: t.kind });
+    });
+    this.panel.onDidDispose(() => themeListener.dispose());
 
     this.updateMetadata();
   }
@@ -266,7 +279,7 @@ export class RestifyPanel {
         }
         break;
       case 'saveToCollection':
-        this._saveToCollection(msg.request, msg.collectionName);
+        this._saveToCollection(msg.request, msg.collectionName, msg.groupId);
         break;
       case 'getCollections':
         this.updateMetadata();
@@ -304,13 +317,14 @@ export class RestifyPanel {
       case 'updateTitle':
         this.panel.title = msg.title || 'New Request';
         break;
-      case 'resolveTooltip':
+      case 'resolveTooltip': {
         const resolved = this.storageManager.resolveVariables(msg.text);
         this.panel.webview.postMessage({
           command: 'setTooltipValue',
           value: resolved,
         });
         break;
+      }
       case 'saveSettings':
         this.storageManager.saveSettings(msg.settings);
         // Send confirmation back with the saved settings
@@ -560,6 +574,7 @@ export class RestifyPanel {
         : [];
       
       // Log for debugging
+      // eslint-disable-next-line no-console
       console.log('Proxy check:', {
         proxyConfigured: !!settings.proxy,
         hostname: parsedUrl.hostname.toLowerCase(),
@@ -572,11 +587,14 @@ export class RestifyPanel {
           proxy: settings.proxy,
           auth: settings.proxyAuthorization,
         };
+        // eslint-disable-next-line no-console
         console.log('✓ Proxy is ENABLED for this request');
       } else {
+        // eslint-disable-next-line no-console
         console.log('✗ Proxy is DISABLED (hostname in noProxy list)');
       }
     } else {
+      // eslint-disable-next-line no-console
       console.log('⚠ No proxy configured in settings');
     }
 
@@ -599,7 +617,11 @@ export class RestifyPanel {
       );
       try {
         this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'receivedResponse', info: { status: result.status, size: Buffer.byteLength(result.body || '', 'utf8') } } });
-      } catch (e) {}
+      } catch (e) {
+        /* empty */
+      
+        /* empty */
+      }
       timings.network = Date.now() - netStart;
 
       const duration = Date.now() - startTime;
@@ -672,7 +694,11 @@ export class RestifyPanel {
         const pmStart = Date.now();
         // measure approximate size
         let size = 0;
-        try { size = Buffer.byteLength(JSON.stringify({ response: safeResponse, requestInfo: safeRequestInfo }), 'utf8'); } catch {}
+        try {
+          size = Buffer.byteLength(JSON.stringify({ response: safeResponse, requestInfo: safeRequestInfo }), 'utf8');
+        } catch {
+          /* empty */
+        }
         this.panel.webview.postMessage({
           command: 'requestComplete',
           response: safeResponse,
@@ -681,7 +707,7 @@ export class RestifyPanel {
         timings.postMessageMs = Date.now() - pmStart;
         timings.postMessageSize = size;
       } catch (pmErr) {
-        console.error('postMessage failed:', pmErr);
+        /* empty */
       }
 
       // Measure history add time
@@ -703,6 +729,7 @@ export class RestifyPanel {
       }
 
       // Log timings for diagnostics
+      // eslint-disable-next-line no-console
       console.log('Restify: request timings', {
         url: finalUrl,
         status: result.status,
@@ -711,7 +738,9 @@ export class RestifyPanel {
     } catch (err: any) {
       try {
         this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'requestError', info: { message: err?.message || String(err) } } });
-      } catch (e) {}
+      } catch (e) {
+        /* empty */
+      }
       const duration = Date.now() - startTime;
       this.panel.webview.postMessage({
         command: 'requestError',
@@ -763,12 +792,12 @@ export class RestifyPanel {
               proxyAuthCredentials = decoded;
             }
           } catch {
-            // Ignore malformed auth and continue without credentials.
+            /* empty */
           }
         }
       }
 
-      let options: https.RequestOptions & http.RequestOptions = {
+      const options: https.RequestOptions & http.RequestOptions = {
         method,
         headers,
         rejectUnauthorized,
@@ -824,6 +853,7 @@ export class RestifyPanel {
               (options.headers as Record<string, string>)['Proxy-Authorization'] = `Basic ${proxyAuthToken}`;
             }
 
+            // eslint-disable-next-line no-console
             console.log('Using proxy agent:', {
               proxyHost: parsedProxyUrl.hostname,
               proxyPort: parsedProxyUrl.port || (isProxyHttps ? '443' : '80'),
@@ -869,12 +899,15 @@ export class RestifyPanel {
       // IMPORTANT: If no proxy is configured, explicitly set agent to disable system proxy detection
       // This prevents Node.js from using environment variables or system-wide proxy settings
       if (!proxyOpts || !proxyOpts.proxy) {
+        // eslint-disable-next-line no-console
         console.log('🔒 CRITICAL: Disabling system proxy - using direct connection ONLY');
         options.agent = isHttps ? noProxyAgentHttps : noProxyAgentHttp;
       }
       try {
         this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-start', info: { hostname: parsedUrl.hostname, port: options.port, isHttps } } });
-      } catch (e) {}
+      } catch (e) {
+        /* empty */
+      }
 
       const lib = isHttps ? https : http;
       const req = lib.request(options, (res) => {
@@ -885,7 +918,9 @@ export class RestifyPanel {
         res.on('end', () => {
           try {
             this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-end', info: { status: res.statusCode, size: Buffer.byteLength(data || '', 'utf8') } } });
-          } catch (e) {}
+          } catch (e) {
+            /* empty */
+          }
           resolve({
             status: res.statusCode || 0,
             statusText: res.statusMessage || '',
@@ -895,7 +930,11 @@ export class RestifyPanel {
         });
       });
       req.on('error', (err) => {
-        try { this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-error', info: { message: err?.message || String(err) } } }); } catch (e) {}
+        try {
+          this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-error', info: { message: err?.message || String(err) } } });
+        } catch (e) {
+          /* empty */
+        }
         reject(err);
       });
       req.setTimeout(30000, () => {
@@ -917,13 +956,19 @@ export class RestifyPanel {
   ): void {
     try {
       this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-start', info: { proxyOpts: !!options.agent, path: options.path } } });
-    } catch (e) {}
+    } catch (e) {
+      /* empty */
+    }
 
     const req = lib.request(options, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => (data += chunk.toString()));
       res.on('end', () => {
-        try { this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-end', info: { status: res.statusCode, size: Buffer.byteLength(data || '', 'utf8') } } }); } catch (e) {}
+        try {
+          this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-end', info: { status: res.statusCode, size: Buffer.byteLength(data || '', 'utf8') } } });
+        } catch (e) {
+          /* empty */
+        }
         resolve({
           status: res.statusCode || 0,
           statusText: res.statusMessage || 'Unknown',
@@ -934,12 +979,20 @@ export class RestifyPanel {
     });
 
     req.on('error', (err) => {
-      try { this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-error', info: { message: err?.message || String(err) } } }); } catch (e) {}
+      try {
+        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-error', info: { message: err?.message || String(err) } } });
+      } catch (e) {
+        /* empty */
+      }
       reject(err);
     });
     req.setTimeout(30000, () => {
       req.destroy();
-      try { this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-timeout', info: { timeoutMs: 30000 } } }); } catch (e) {}
+      try {
+        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-timeout', info: { timeoutMs: 30000 } } });
+      } catch (e) {
+        /* empty */
+      }
       reject(new Error('Request timed out after 30 seconds'));
     });
 
@@ -947,7 +1000,7 @@ export class RestifyPanel {
     req.end();
   }
 
-  private _saveToCollection(request: RequestData, collectionName: string): void {
+  private _saveToCollection(request: RequestData, collectionName: string, groupId?: string): void {
     const collections = this.storageManager.getCollections();
     let col = collections.find((c) => c.name === collectionName);
 
@@ -965,22 +1018,35 @@ export class RestifyPanel {
 
     if (col) {
       const requestName = request.name || `${request.method} ${request.url}`;
-      
-      // Check if request with the same name already exists
-      const existingRequest = col.requests?.find((r) => r.name === requestName);
-      
-      const requestToSave = {
-        ...request,
-        name: requestName,
-        id: existingRequest?.id || Date.now().toString(), // Use existing ID or create new
-      };
 
-      this.storageManager.addRequestToCollection(col.id, requestToSave);
-      
-      const action = existingRequest ? 'Updated' : 'Saved';
-      vscode.window.showInformationMessage(
-        `✓ ${action} "${requestName}" in collection "${collectionName}"`
-      );
+      if (groupId) {
+        // Save into a specific folder within the collection
+        const requestToSave = {
+          ...request,
+          name: requestName,
+          id: request.id || Date.now().toString(),
+        };
+        this.storageManager.addRequestToGroup(col.id, groupId, requestToSave);
+        vscode.window.showInformationMessage(
+          `✓ Saved "${requestName}" in collection "${collectionName}"`
+        );
+      } else {
+        // Save to collection root
+        const existingRequest = col.requests?.find((r) => r.name === requestName);
+
+        const requestToSave = {
+          ...request,
+          name: requestName,
+          id: existingRequest?.id || Date.now().toString(),
+        };
+
+        this.storageManager.addRequestToCollection(col.id, requestToSave);
+
+        const action = existingRequest ? 'Updated' : 'Saved';
+        vscode.window.showInformationMessage(
+          `✓ ${action} "${requestName}" in collection "${collectionName}"`
+        );
+      }
     }
   }
 }

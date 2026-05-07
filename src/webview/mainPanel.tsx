@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './MainPanel.css';
 
 import { TopBar }       from './components/TopBar';
@@ -19,7 +19,6 @@ import {
   Collection,
   SettingsState,
 } from './types';
-import { getScriptTemplate } from './components/scriptExecutor';
 
 export const MainPanel: React.FC = () => {
   /* ── State ───────────────────────────────────────── */
@@ -35,11 +34,13 @@ export const MainPanel: React.FC = () => {
   const [envManagerOpen, setEnvManagerOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [savedCollectionName, setSavedCollectionName] = useState<string | null>(null);
+  const [savedGroupId, setSavedGroupId] = useState<string | undefined>(undefined);
   const [isDirty, setIsDirty] = useState(false);
 
   const vscodeApi = useRef<any>(null);
   const requestRef = useRef<RequestState>(request);
   const savedCollectionNameRef = useRef<string | null>(null);
+  const savedGroupIdRef = useRef<string | undefined>(undefined);
   const activeEnvIdRef = useRef<string | null>(null);
 
   /* ── VS Code API bootstrap ───────────────────────── */
@@ -50,12 +51,15 @@ export const MainPanel: React.FC = () => {
         const msg = event.data;
         try {
           // incoming message received
-        } catch (e) {}
+        } catch (e) {
+          /* empty */
+        }
         switch (msg.command) {
           case 'loadRequest': {
-            const { _collectionName, ...reqData } = msg.data;
+            const { _collectionName, _groupId, ...reqData } = msg.data;
             setRequest((prev: RequestState) => ({ ...prev, ...reqData }));
             setSavedCollectionName(_collectionName ?? null);
+            setSavedGroupId(_groupId ?? undefined);
             setIsDirty(false);
             // If the request has an activeEnvironmentId, set that environment
             if (reqData.activeEnvironmentId) {
@@ -139,33 +143,8 @@ export const MainPanel: React.FC = () => {
   // keep refs in sync with latest state for use in event handlers
   useEffect(() => { requestRef.current = request; }, [request]);
   useEffect(() => { savedCollectionNameRef.current = savedCollectionName; }, [savedCollectionName]);
+  useEffect(() => { savedGroupIdRef.current = savedGroupId; }, [savedGroupId]);
   useEffect(() => { activeEnvIdRef.current = activeEnvId; }, [activeEnvId]);
-
-  // Ctrl+S / Cmd+S — silent save if already in a collection, otherwise open SaveModal
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        const colName = savedCollectionNameRef.current;
-        if (colName) {
-          vscodeApi.current?.postMessage({
-            command: 'saveToCollection',
-            request: { ...requestRef.current, activeEnvironmentId: activeEnvIdRef.current },
-            collectionName: colName,
-          });
-          setIsDirty(false);
-        } else {
-          setSaveModalOpen(true);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleSend();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
 
   /* ── Helpers ─────────────────────────────────────── */
   const post = (message: any) => vscodeApi.current?.postMessage(message);
@@ -198,17 +177,43 @@ export const MainPanel: React.FC = () => {
     return { ...request, headers, queryParams };
   };
 
-  // Send the built payload (with injected auth headers) for execution, but also
-  // send the original `request` state so the extension saves it to history WITHOUT
-  // the injected headers. Otherwise every reload from history duplicates auth headers.
-  const handleSend = () => post({
+  // Send the built payload (with injected auth headers) for execution
+  const handleSend = useCallback(() => post({
     command: 'executeRequest',
     request: buildPayload(),
     savedRequest: request,
-  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [request]);
 
   // Normal send handler
   const handleSendGuarded = handleSend;
+
+  // Ctrl+S / Cmd+S — silent save if already in a collection, otherwise open SaveModal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        const colName = savedCollectionNameRef.current;
+        if (colName) {
+          vscodeApi.current?.postMessage({
+            command: 'saveToCollection',
+            request: { ...requestRef.current, activeEnvironmentId: activeEnvIdRef.current },
+            collectionName: colName,
+            groupId: savedGroupIdRef.current,
+          });
+          setIsDirty(false);
+        } else {
+          setSaveModalOpen(true);
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSend();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleSend]);
 
 
   // Safely decode a URI component, falling back to the raw string on malformed input
@@ -247,13 +252,15 @@ export const MainPanel: React.FC = () => {
     updateRequest({ url: baseUrl, queryParams: [...parsedParams, ...disabledParams] });
   };
 
-  const handleSave = (reqName: string, collectionName: string) => {
+  const handleSave = (reqName: string, collectionName: string, groupId?: string) => {
     post({ 
       command: 'saveToCollection', 
       request: { ...request, name: reqName, activeEnvironmentId: activeEnvId }, 
-      collectionName 
+      collectionName,
+      groupId,
     });
     setSavedCollectionName(collectionName);
+    setSavedGroupId(groupId);
     updateRequest({ name: reqName });
     setIsDirty(false);
     setSaveModalOpen(false);

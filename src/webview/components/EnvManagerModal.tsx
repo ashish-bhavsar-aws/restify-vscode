@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Environment, KVItem } from '../types';
+import { Environment } from '../types';
+import { Icon } from './FaIcon';
+import { faXmark, faPen, faTrash } from '@fortawesome/free-solid-svg-icons';
 
 interface EnvManagerModalProps {
   open: boolean;
@@ -80,7 +82,7 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                 className="modal-close-btn"
                 onClick={() => setEditingEnv(null)}
               >
-                ×
+                <Icon icon={faXmark} size={14} />
               </button>
             </div>
 
@@ -133,7 +135,7 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                           onClick={() => removeVar(i)}
                           title="Remove variable"
                         >
-                          ×
+                          <Icon icon={faTrash} size={12} />
                         </button>
                       </td>
                     </tr>
@@ -165,7 +167,7 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
             <div className="modal-header">
               <h3>Manage Environments</h3>
               <button className="modal-close-btn" onClick={onClose}>
-                ×
+                <Icon icon={faXmark} size={14} />
               </button>
             </div>
 
@@ -212,14 +214,14 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                         title="Edit"
                         onClick={() => setEditingEnv({ ...env })}
                       >
-                        ✎
+                        <Icon icon={faPen} size={13} />
                       </button>
                       <button
                         className="btn-icon-sm danger"
                         title="Delete"
                         onClick={() => onDelete(env.id)}
                       >
-                        ×
+                        <Icon icon={faTrash} size={13} />
                       </button>
                     </div>
                   );

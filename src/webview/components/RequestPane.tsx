@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { KVItem, FormDataItem, RequestState, Environment } from '../types';
 import { KeyValueTable } from './KeyValueTable';
 import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
+import { Icon, faEye, faEyeSlash } from './FaIcon';
 
 interface RequestPaneProps {
   request: RequestState;
@@ -14,6 +15,179 @@ interface RequestPaneProps {
 type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth';
 type BodyType = RequestState['bodyType'];
 type AuthType = RequestState['authType'];
+
+const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
+  { value: 'none', label: 'None' },
+  { value: 'bearer', label: 'Bearer Token' },
+  { value: 'basic', label: 'Basic Auth' },
+  { value: 'apikey', label: 'API Key' },
+];
+
+const AddToDropdown: React.FC<{ value: 'header' | 'query'; onChange: (v: 'header' | 'query') => void }> = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const options = [
+    { val: 'header' as const, label: 'Header' },
+    { val: 'query' as const, label: 'Query Param' },
+  ];
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setActiveIndex(options.findIndex((o) => o.val === value));
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, options.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      onChange(options[activeIndex].val);
+      setOpen(false);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  const label = value === 'header' ? 'Header' : 'Query Param';
+
+  return (
+    <div className="add-to-dropdown" ref={ref}>
+      <button
+        className="add-to-trigger"
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={handleKeyDown}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="add-to-trigger-label">{label}</span>
+        <svg className={`add-to-chevron${open ? ' open' : ''}`} viewBox="0 0 10 6" width="10" height="6">
+          <path d="M0 0l5 6 5-6z" />
+        </svg>
+      </button>
+
+      {open && (
+        <ul className="add-to-menu" role="listbox">
+          {options.map((opt, idx) => (
+            <li
+              key={opt.val}
+              role="option"
+              aria-selected={opt.val === value}
+              className={`add-to-option${opt.val === value ? ' selected' : ''}${idx === activeIndex ? ' highlighted' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(opt.val);
+                setOpen(false);
+              }}
+              onMouseEnter={() => setActiveIndex(idx)}
+            >
+              <span className="add-to-option-label">{opt.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType) => void }> = ({ authType, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setActiveIndex(AUTH_TYPES.findIndex((t) => t.value === authType));
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, AUTH_TYPES.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      onChange(AUTH_TYPES[activeIndex].value);
+      setOpen(false);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  const label = AUTH_TYPES.find((t) => t.value === authType)?.label || 'None';
+
+  return (
+    <div className="auth-type-dropdown" ref={ref}>
+      <button
+        className="auth-type-trigger"
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={handleKeyDown}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="auth-type-trigger-label">{label}</span>
+        <svg className={`auth-type-chevron${open ? ' open' : ''}`} viewBox="0 0 10 6" width="10" height="6">
+          <path d="M0 0l5 6 5-6z" />
+        </svg>
+      </button>
+
+      {open && (
+        <ul className="auth-type-menu" role="listbox">
+          {AUTH_TYPES.map((t, idx) => (
+            <li
+              key={t.value}
+              role="option"
+              aria-selected={t.value === authType}
+              className={`auth-type-option${t.value === authType ? ' selected' : ''}${idx === activeIndex ? ' highlighted' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(t.value);
+                setOpen(false);
+              }}
+              onMouseEnter={() => setActiveIndex(idx)}
+            >
+              <span className="auth-type-option-label">{t.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
 
 const BODY_TYPES: BodyType[] = ['none', 'json', 'form', 'urlencoded', 'text', 'xml', 'graphql'];
 
@@ -372,19 +546,12 @@ interface AuthPanelProps {
 }
 
 
-const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, onAuthTypeChange, onAuthDataChange }) => (
+const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, onAuthTypeChange, onAuthDataChange }) => {
+  const [showPassword, setShowPassword] = useState(false);
+  return (
   <div style={{ padding: 12 }}>
     <label className="field-label">Auth Type</label>
-    <select
-      className="auth-select"
-      value={authType}
-      onChange={(e) => onAuthTypeChange(e.target.value as AuthType)}
-    >
-      <option value="none">None</option>
-      <option value="bearer">Bearer Token</option>
-      <option value="basic">Basic Auth</option>
-      <option value="apikey">API Key</option>
-    </select>
+    <AuthTypeDropdown authType={authType} onChange={onAuthTypeChange} />
 
     {authType === 'bearer' && (
       <div className="auth-fields">
@@ -421,8 +588,20 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, 
             onChange={(v) => onAuthDataChange({ password: v })}
             variables={environment?.variables}
             className="auth-input"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            title={showPassword ? 'Hide password' : 'Show password'}
+            style={{
+              position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--muted)', padding: 2, lineHeight: 1,
+            }}
+          >
+            <Icon icon={showPassword ? faEyeSlash : faEye} size={12} />
+          </button>
         </div>
       </div>
     )}
@@ -448,15 +627,9 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, 
           />
         </div>
         <label className="field-label" style={{ marginTop: 8 }}>Add To</label>
-        <select
-          className="auth-select"
-          value={authData.addTo || 'header'}
-          onChange={(e) => onAuthDataChange({ addTo: e.target.value as 'header' | 'query' })}
-        >
-          <option value="header">Header</option>
-          <option value="query">Query Param</option>
-        </select>
+        <AddToDropdown value={authData.addTo || 'header'} onChange={(v) => onAuthDataChange({ addTo: v })} />
       </div>
-    )}
+)}
   </div>
-);
+  );
+};

@@ -51,10 +51,18 @@ export interface Environment {
   variables: KVItem[];
 }
 
+export interface CollectionGroup {
+  id: string;
+  name: string;
+  requests?: any[];
+  groups?: CollectionGroup[];
+}
+
 export interface Collection {
   id: string;
   name: string;
   requests?: any[];
+  groups?: CollectionGroup[];
 }
 
 export const METHOD_COLORS: Record<string, string> = {

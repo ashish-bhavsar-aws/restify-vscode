@@ -6,23 +6,12 @@ import {
   faClipboardList, faXmark, faChevronRight,
   faArrowUp, faList, faLink, faFileCode, faDownload, faCode,
 } from '@fortawesome/free-solid-svg-icons';
+import { PrettyBodyViewer } from './PrettyBodyViewer';
 
 const LARGE_RESPONSE_THRESHOLD = 500 * 1024; // 500 KB
 
-function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
-// Mark search term inside already-HTML-escaped/highlighted content.
-// Only replaces inside text nodes — skips content inside < … > to avoid breaking tags.
-function highlightInHtml(html: string, term: string): string {
-  if (!term) return html;
-  try {
-    const escaped = escapeRegex(term);
-    // Replace matches that are NOT inside an HTML tag (no unclosed < before them)
-    return html.replace(
-      new RegExp(`(${escaped})(?![^<]*>)`, 'gi'),
-      '<mark style="background:color-mix(in srgb,var(--accent,#89b4fa) 50%,transparent);color:var(--fg);border-radius:2px;outline:1px solid color-mix(in srgb,var(--accent,#89b4fa) 60%,transparent)">$1</mark>'
-    );
-  } catch { return html; }
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Helper: detect if response is JSON
@@ -43,159 +32,6 @@ function isLikelyXml(body: string | undefined | null, headers?: Record<string, s
   const trimmed = body.trimStart();
   return trimmed.startsWith('<') && !trimmed.startsWith('<!DOCTYPE html');
 }
-
-function prettyPrintXml(xml: string): string {
-  try {
-    // Use DOMParser for robust parsing in the browser environment
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'application/xml');
-
-    // Detect parse errors: browsers put parsererror elements in the returned document
-    if (doc.getElementsByTagName('parsererror').length > 0) {
-      return xml; // fallback to raw if parsing failed
-    }
-
-    // Escaping helper
-    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    // Recursively pretty-print nodes
-    const indentUnit = '  ';
-    const serialize = (node: Node, indentLevel = 0): string => {
-      const indent = indentUnit.repeat(indentLevel);
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.nodeValue || '';
-        if (text.trim() === '') return '';
-        return indent + esc(text.trim()) + '\n';
-      }
-      if (node.nodeType === Node.CDATA_SECTION_NODE) {
-        return indent + `<![CDATA[${(node as CDATASection).data}]]>` + '\n';
-      }
-      if (node.nodeType === Node.COMMENT_NODE) {
-        return indent + `<!--${(node as Comment).data}-->` + '\n';
-      }
-      if (node.nodeType === Node.DOCUMENT_NODE) {
-        let out = '';
-        node.childNodes.forEach((n) => { out += serialize(n, indentLevel); });
-        return out;
-      }
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as Element;
-        const attrs: string[] = [];
-        for (let i = 0; i < el.attributes.length; i += 1) {
-          const a = el.attributes.item(i)!;
-          attrs.push(`${a.name}="${esc(a.value)}"`);
-        }
-        const open = attrs.length ? `<${el.tagName} ${attrs.join(' ')}>` : `<${el.tagName}>`;
-        // Single text child: render as one line: <tag>text</tag>
-        if (el.childNodes && el.childNodes.length === 1 && el.firstChild!.nodeType === Node.TEXT_NODE) {
-          const txt = (el.firstChild!.nodeValue || '').trim();
-          return indent + `${open.replace(/>$/, '')}>${esc(txt)}</${el.tagName}>` + '\n';
-        }
-        if (!el.childNodes || el.childNodes.length === 0) {
-          return indent + open.replace(/>$/, '/>') + '\n';
-        }
-        let out = indent + open + '\n';
-        el.childNodes.forEach((n) => { out += serialize(n, indentLevel + 1); });
-        out += indent + `</${el.tagName}>` + '\n';
-        return out;
-      }
-      return '';
-    };
-
-    const result = serialize(doc).trim();
-    return result || xml;
-  } catch {
-    return xml;
-  }
-}
-
-function syntaxHighlightXml(line: string): string {
-  // Escape first, then re-apply highlight spans on the escaped string.
-  // We work on the raw line so we can safely colour XML tokens.
-  return line
-    .replace(/&/g, '&amp;').replace(/</g, '__LT__').replace(/>/g, '__GT__')
-    .replace(
-      /(__LT__\/?)([ A-Za-z][\w:.-]*)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)(\s*\/?(__ GT__))/g,
-      (_, open, tag, attrs, close) => {
-        const coloredAttrs = attrs.replace(
-          /([\w:.-]+)(\s*=\s*)("[^"]*"|'[^']*')/g,
-          `<span class="xml-attr-name">$1</span>$2<span class="xml-attr-value">$3</span>`
-        );
-        return `<span class="xml-bracket">&lt;${open.includes('__LT__/') ? '/' : ''}</span><span class="xml-tag">${tag}</span>${coloredAttrs}<span class="xml-bracket">${close.replace('__GT__', '&gt;')}</span>`;
-      }
-    )
-    .replace(/__LT__\?([\w]+)/g, '<span class="xml-bracket">&lt;?</span><span class="xml-tag">$1</span>')
-    .replace(/__GT__/g, '&gt;').replace(/__LT__/g, '&lt;');
-}
-
-const XmlPrettyViewer: React.FC<{ text: string; search?: string }> = ({ text, search }) => {
-  const pretty = React.useMemo(() => {
-    if (!text) return '';
-    return prettyPrintXml(text);
-  }, [text]);
-
-  const lines = React.useMemo(() => (pretty || '').split('\n'), [pretty]);
-
-  return (
-    <div style={{ display: 'table', width: '100%', borderSpacing: 0 }}>
-      {lines.map((line, idx) => {
-        const highlighted = highlightInHtml(syntaxHighlightXml(line), search || '');
-        return (
-          <div key={idx} style={{ display: 'table-row' }}>
-            <div style={{ display: 'table-cell', width: '3em', background: 'var(--line-number-bg)', color: 'var(--line-number-fg)', textAlign: 'right', paddingRight: '8px', borderRight: '1px solid var(--border)', fontFamily: "'Cascadia Code','Fira Code',Consolas,monospace", fontSize: 11, userSelect: 'none', whiteSpace: 'nowrap' }}>{idx + 1}</div>
-            <div style={{ display: 'table-cell', paddingLeft: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: highlighted }} />
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// Syntax highlight JSON (returns HTML string safe-ish for our controlled data)
-function syntaxHighlightJSON(jsonLine: string): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // eslint-disable-next-line no-useless-escape
-  return esc(jsonLine).replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
-    let cls = 'json-number';
-    if (/^"/.test(match)) {
-      if (/:$/.test(match)) cls = 'json-key';
-      else cls = 'json-string';
-    } else if (/true|false/.test(match)) {
-      cls = 'json-boolean';
-    } else if (/null/.test(match)) {
-      cls = 'json-null';
-    }
-    return `<span class="${cls}">${match}</span>`;
-  });
-}
-
-const JsonPrettyViewer: React.FC<{ text: string; search?: string }> = ({ text, search }) => {
-  const pretty = React.useMemo(() => {
-    if (!text) return '';
-    try {
-      const parsed = JSON.parse(text);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return text;
-    }
-  }, [text]);
-
-  const lines = React.useMemo(() => (pretty || '').split('\n'), [pretty]);
-
-  return (
-    <div style={{ display: 'table', width: '100%', borderSpacing: 0 }}>
-      {lines.map((line, idx) => {
-        const highlighted = highlightInHtml(syntaxHighlightJSON(line), search || '');
-        return (
-          <div key={idx} style={{ display: 'table-row' }}>
-            <div style={{ display: 'table-cell', width: '3em', background: 'var(--line-number-bg)', color: 'var(--line-number-fg)', textAlign: 'right', paddingRight: '8px', borderRight: '1px solid var(--border)', fontFamily: "'Cascadia Code','Fira Code',Consolas,monospace", fontSize: 11, userSelect: 'none', whiteSpace: 'nowrap' }}>{idx + 1}</div>
-            <div style={{ display: 'table-cell', paddingLeft: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: highlighted }} />
-          </div>
-        );
-      })}
-    </div>
-  );
-};
 
 interface ResponsePaneProps {
   response: ResponseState | null;
@@ -347,9 +183,9 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           {/* Body content */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             {isLikelyJson(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><JsonPrettyViewer text={response.body} search={bodySearch} /></div>
+              <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="json" search={bodySearch} /></div>
             ) : isLikelyXml(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><XmlPrettyViewer text={response.body} search={bodySearch} /></div>
+              <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></div>
             ) : bodySearch ? (
               <SearchableBody text={response.body} search={bodySearch} />
             ) : (
@@ -816,4 +652,3 @@ const LogEntry: React.FC<LogEntryProps> = ({
     </span>
   </div>
 );
-

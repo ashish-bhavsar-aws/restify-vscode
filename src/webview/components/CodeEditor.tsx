@@ -1,11 +1,15 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { PrettyBodyViewer, formatJSON, minifyJSON, prettyPrintXml } from './PrettyBodyViewer';
 
 type Language = 'json' | 'xml' | 'text' | 'javascript';
+type JsonFormatMode = 'formatted' | 'minified';
 
 interface CodeEditorProps {
   value: string;
   onChange: (value: string) => void;
   language: Language;
+  jsonFormatMode?: JsonFormatMode;
+  onJsonFormatModeChange?: (mode: JsonFormatMode) => void;
   placeholder?: string;
   readOnly?: boolean;
   minHeight?: string;
@@ -15,6 +19,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   value,
   onChange,
   language,
+  jsonFormatMode = 'formatted',
+  onJsonFormatModeChange,
   placeholder = 'Enter content...',
   readOnly = false,
   minHeight = '200px',
@@ -22,41 +28,85 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [isFormatting, setIsFormatting] = useState(false);
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol]   = useState(1);
+  const [editorValue, setEditorValue] = useState(value);
+  const [isEditing, setIsEditing] = useState(false);
 
   const syntaxRef  = useRef<HTMLPreElement | null>(null);
   const gutterRef  = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const jsonFormatModeRef = useRef<JsonFormatMode>(jsonFormatMode);
+
+  useEffect(() => {
+    if (isEditing) return;
+    setEditorValue(value);
+  }, [value, isEditing]);
+
+  useEffect(() => {
+    jsonFormatModeRef.current = jsonFormatMode;
+  }, [jsonFormatMode]);
+
+  const applyJsonFormat = useCallback((rawValue: string) => {
+    if (language !== 'json' || readOnly || !rawValue.trim()) return;
+    const nextValue = jsonFormatModeRef.current === 'minified' ? minifyJSON(rawValue) : formatJSON(rawValue);
+    if (nextValue !== rawValue) {
+      setEditorValue(nextValue);
+      onChange(nextValue);
+    }
+  }, [language, readOnly, onChange]);
+
+  useEffect(() => {
+    if (isEditing) return;
+    applyJsonFormat(editorValue);
+  }, [editorValue, isEditing, applyJsonFormat]);
 
   /* ── Line numbers ─────────────────────────────────── */
-  const lineCount = useMemo(() => Math.max(1, (value || '').split('\n').length), [value]);
+  const lineCount = useMemo(() => Math.max(1, (editorValue || '').split('\n').length), [editorValue]);
 
   /* ── Syntax highlight ─────────────────────────────── */
   const highlightedHtml = useMemo(() => {
-    if (!value) return '';
-    if (language === 'json')       return highlightJson(value);
-    if (language === 'xml')        return highlightXml(value);
-    if (language === 'javascript') return highlightJavascript(value);
-    return escapeHtml(value);
-  }, [value, language]);
+    if (!editorValue) return '';
+    if (language === 'json')       return highlightJson(editorValue);
+    if (language === 'xml')        return highlightXml(editorValue);
+    if (language === 'javascript') return highlightJavascript(editorValue);
+    return escapeHtml(editorValue);
+  }, [editorValue, language]);
 
   /* ── Format / Minify ──────────────────────────────── */
   const formatCode = useCallback(() => {
-    if (!value.trim()) return;
+    if (!editorValue.trim()) return;
     setIsFormatting(true);
     try {
-      if (language === 'json') onChange(formatJSON(value));
-      else if (language === 'xml') onChange(formatXML(value));
+      if (language === 'json') {
+        const formatted = formatJSON(editorValue);
+        jsonFormatModeRef.current = 'formatted';
+        onJsonFormatModeChange?.('formatted');
+        setEditorValue(formatted);
+        onChange(formatted);
+      } else if (language === 'xml') {
+        const formatted = prettyPrintXml(editorValue);
+        setEditorValue(formatted);
+        onChange(formatted);
+      }
     } catch { /* keep as-is */ }
     finally { setIsFormatting(false); }
-  }, [value, language, onChange]);
+  }, [editorValue, language, onChange, onJsonFormatModeChange]);
 
   const minifyCode = useCallback(() => {
-    if (!value.trim()) return;
+    if (!editorValue.trim()) return;
     try {
-      if (language === 'json') onChange(JSON.stringify(JSON.parse(value)));
-      else if (language === 'xml') onChange(value.replace(/>\s+</g, '><').trim());
+      if (language === 'json') {
+        const minified = minifyJSON(editorValue);
+        jsonFormatModeRef.current = 'minified';
+        onJsonFormatModeChange?.('minified');
+        setEditorValue(minified);
+        onChange(minified);
+      } else if (language === 'xml') {
+        const minified = editorValue.replace(/>\s+</g, '><').trim();
+        setEditorValue(minified);
+        onChange(minified);
+      }
     } catch { /* keep as-is */ }
-  }, [value, language, onChange]);
+  }, [editorValue, language, onChange, onJsonFormatModeChange]);
 
   /* ── Scroll sync ──────────────────────────────────── */
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -87,7 +137,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     // Tab → 2 spaces
     if (e.key === 'Tab') {
       e.preventDefault();
-      const newVal = value.slice(0, start) + '  ' + value.slice(end);
+      const newVal = editorValue.slice(0, start) + '  ' + editorValue.slice(end);
+      setEditorValue(newVal);
       onChange(newVal);
       requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2; });
       return;
@@ -96,11 +147,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     // Enter → preserve indentation of current line
     if (e.key === 'Enter') {
       e.preventDefault();
-      const before      = value.slice(0, start);
+      const before      = editorValue.slice(0, start);
       const lineStart   = before.lastIndexOf('\n') + 1;
       const currentLine = before.slice(lineStart);
       const indent      = currentLine.match(/^(\s*)/)?.[1] ?? '';
-      const newVal = value.slice(0, start) + '\n' + indent + value.slice(end);
+      const newVal = editorValue.slice(0, start) + '\n' + indent + editorValue.slice(end);
+      setEditorValue(newVal);
       onChange(newVal);
       requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1 + indent.length; });
       return;
@@ -111,17 +163,19 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       const pairs: Record<string, string> = { '{': '}', '[': ']', '(': ')' };
       if (pairs[e.key]) {
         e.preventDefault();
-        const newVal = value.slice(0, start) + e.key + pairs[e.key] + value.slice(end);
+        const newVal = editorValue.slice(0, start) + e.key + pairs[e.key] + editorValue.slice(end);
+        setEditorValue(newVal);
         onChange(newVal);
         requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
         return;
       }
       // Auto-close quotes — only when next char is not same quote
       if (e.key === '"' || e.key === "'") {
-        const nextChar = value[start];
+        const nextChar = editorValue[start];
         if (nextChar !== e.key) {
           e.preventDefault();
-          const newVal = value.slice(0, start) + e.key + e.key + value.slice(end);
+          const newVal = editorValue.slice(0, start) + e.key + e.key + editorValue.slice(end);
+          setEditorValue(newVal);
           onChange(newVal);
           requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
           return;
@@ -129,7 +183,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       }
       // Skip over closing bracket / quote if already there
       const skipOver = new Set(['}', ']', ')', '"', "'"]);
-      if (skipOver.has(e.key) && value[start] === e.key) {
+      if (skipOver.has(e.key) && editorValue[start] === e.key) {
         e.preventDefault();
         requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
         return;
@@ -141,10 +195,16 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       e.preventDefault();
       formatCode();
     }
-  }, [value, onChange, formatCode]);
+  }, [editorValue, onChange, formatCode]);
 
   const canFormat = language === 'json' || language === 'xml';
   const langLabel = language === 'javascript' ? 'JS' : language.toUpperCase();
+  const showPrettyViewer = (language === 'json' || language === 'xml') && !readOnly && !isEditing;
+
+  const focusEditor = useCallback(() => {
+    setIsEditing(true);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
 
   return (
     <div className="code-editor-wrapper">
@@ -153,10 +213,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         <div className="toolbar-buttons">
           {canFormat && (
             <>
-              <button className="editor-btn" onClick={formatCode} disabled={isFormatting || !value.trim() || readOnly} title="Format (Shift+Alt+F)">
+              <button className="editor-btn" onClick={formatCode} disabled={isFormatting || !editorValue.trim() || readOnly} title="Format (Shift+Alt+F)">
                 {isFormatting ? '⏳' : '✨'} Format
               </button>
-              <button className="editor-btn" onClick={minifyCode} disabled={!value.trim() || readOnly} title="Minify">
+              <button className="editor-btn" onClick={minifyCode} disabled={!editorValue.trim() || readOnly} title="Minify">
                 📦 Minify
               </button>
             </>
@@ -168,30 +228,48 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       {/* ── Editor body: gutter + shell ── */}
       <div className="code-editor-body" style={{ minHeight }}>
         {/* Line number gutter */}
-        <div className="code-editor-gutter" ref={gutterRef} aria-hidden="true">
-          {Array.from({ length: lineCount }, (_, i) => (
-            <div key={i + 1} className={i + 1 === cursorLine && !readOnly ? 'gutter-line active-gutter-line' : 'gutter-line'}>
-              {i + 1}
-            </div>
-          ))}
-        </div>
+        {!showPrettyViewer && (
+          <div className="code-editor-gutter" ref={gutterRef} aria-hidden="true">
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div key={i + 1} className={i + 1 === cursorLine && !readOnly ? 'gutter-line active-gutter-line' : 'gutter-line'}>
+                {i + 1}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Shell (syntax pre + textarea overlay) */}
         <div className="code-editor-shell">
-          <pre
-            ref={syntaxRef}
-            aria-hidden="true"
-            className={`code-editor-syntax code-editor-${language} ${readOnly ? 'readonly' : ''}`}
-            dangerouslySetInnerHTML={{ __html: highlightedHtml || '<span class="syntax-placeholder"> </span>' }}
-          />
+          {showPrettyViewer ? (
+            <PrettyBodyViewer
+              text={editorValue}
+              language={language}
+              jsonMode={jsonFormatModeRef.current}
+              placeholder={placeholder}
+              className="code-editor-pretty-viewer"
+              onActivate={focusEditor}
+            />
+          ) : (
+            <pre
+              ref={syntaxRef}
+              aria-hidden="true"
+              className={`code-editor-syntax code-editor-${language} ${readOnly ? 'readonly' : ''}`}
+              dangerouslySetInnerHTML={{ __html: highlightedHtml || '<span class="syntax-placeholder"> </span>' }}
+            />
+          )}
           {!readOnly && (
             <>
-              {!value && <div className="code-editor-placeholder">{placeholder}</div>}
+              {!editorValue && !showPrettyViewer && <div className="code-editor-placeholder">{placeholder}</div>}
               <textarea
                 ref={textareaRef}
-                className={`code-editor code-editor-overlay code-editor-${language}`}
-                value={value}
-                onChange={(e) => { onChange(e.target.value); updateCursor(e.target); }}
+                className={`code-editor code-editor-overlay code-editor-${language}${showPrettyViewer ? ' hidden-editor' : ''}`}
+                value={editorValue}
+                onChange={(e) => { setEditorValue(e.target.value); onChange(e.target.value); updateCursor(e.target); }}
+                onFocus={(e) => { setIsEditing(true); updateCursor(e.currentTarget); }}
+                onBlur={(e) => {
+                  applyJsonFormat(e.currentTarget.value);
+                  setIsEditing(false);
+                }}
                 onClick={(e)  => updateCursor(e.currentTarget)}
                 onKeyUp={(e)  => updateCursor(e.currentTarget)}
                 onKeyDown={handleKeyDown}
@@ -269,15 +347,6 @@ function highlightXml(text: string): string {
     );
 }
 
-function formatJSON(json: string): string {
-  try {
-    const parsed = JSON.parse(json);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return json;
-  }
-}
-
 function highlightJavascript(text: string): string {
   // Process line-by-line to handle comments reliably
   const lines = text.split('\n');
@@ -337,85 +406,3 @@ function findCommentStart(raw: string): number {
   }
   return -1;
 }
-
-function formatXML(xml: string): string {
-  try {
-    // Split the XML into tags and text nodes, preserving text content between tags.
-    const tab = '  ';
-    const compact = xml.replace(/>\s+</g, '><').trim();
-    // Split into an array where tags (e.g. <tag>...</tag>) and text nodes are separate items
-    const parts = compact.split(/(<[^>]+>)/g).filter(Boolean);
-
-    let formatted = '';
-    let indent = 0;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (!part) continue;
-
-      // Closing tag
-      if (/^<\//.test(part)) {
-        indent = Math.max(0, indent - 1);
-        formatted += `${tab.repeat(indent)}${part}\n`;
-        continue;
-      }
-
-      // Declaration, comment, DOCTYPE
-      if (/^<\?/.test(part) || /^<!/.test(part)) {
-        formatted += `${tab.repeat(indent)}${part}\n`;
-        continue;
-      }
-
-      // Self-closing tag
-      if (/^<[^>]+\/>$/.test(part)) {
-        formatted += `${tab.repeat(indent)}${part}\n`;
-        continue;
-      }
-
-      // Opening tag
-      if (/^</.test(part)) {
-        // If next part is a text node and the following part is the matching closing tag,
-        // render them on one line: <tag>text</tag>
-        const next = parts[i + 1];
-        const next2 = parts[i + 2];
-
-        const openMatch = part.match(/^<\s*([^\s/>]+)/);
-        const openName = openMatch ? openMatch[1] : null;
-
-        if (
-          next !== undefined &&
-          next2 !== undefined &&
-          !next.startsWith('<') &&
-          /^<\s*\/\s*[^>]+>/.test(next2)
-        ) {
-          const closeMatch = String(next2).match(/^<\s*\/\s*([^\s>]+)/);
-          const closeName = closeMatch ? closeMatch[1] : null;
-
-          if (openName && closeName && openName === closeName) {
-            // Inline single-text element
-            const text = String(next).replace(/^\s+|\s+$/g, '');
-            formatted += `${tab.repeat(indent)}${part}${text}${next2}\n`;
-            i += 2; // skip next and next2
-            continue;
-          }
-        }
-
-        // Otherwise, normal opening tag on its own line
-        formatted += `${tab.repeat(indent)}${part}\n`;
-        indent += 1;
-        continue;
-      }
-
-      // Text node between tags - preserve its content (trim only surrounding whitespace)
-      const text = part.replace(/^\s+|\s+$/g, '');
-      if (text) {
-        formatted += `${tab.repeat(indent)}${text}\n`;
-      }
-    }
-
-    return formatted.trim() || xml;
-  } catch {
-    return xml;
-  }
-}
-

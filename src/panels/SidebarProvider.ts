@@ -762,6 +762,229 @@ function _postmanV1Request(req: any): any {
   };
 }
 
+interface OpenApiBodySeed {
+  bodyType: 'none' | 'json' | 'text' | 'xml' | 'form' | 'urlencoded';
+  body: string;
+  formData?: Array<{ key: string; value: string; enabled: boolean; formType?: 'text' | 'file'; contentType?: string }>;
+  urlencoded?: Array<{ key: string; value: string; enabled: boolean }>;
+  contentType?: string;
+}
+
+function _resolveOpenApiRef(doc: any, ref: string): any {
+  if (!ref.startsWith('#/')) return undefined;
+  return ref
+    .slice(2)
+    .split('/')
+    .reduce((obj: any, part: string) => obj?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], doc);
+}
+
+function _resolveOpenApiSchema(doc: any, schema: any, seen = new Set<string>()): any {
+  if (!schema || typeof schema !== 'object') return schema;
+
+  if (schema.$ref) {
+    if (seen.has(schema.$ref)) return {};
+    seen.add(schema.$ref);
+    const resolved = _resolveOpenApiRef(doc, schema.$ref);
+    return _resolveOpenApiSchema(doc, resolved, seen) || {};
+  }
+
+  if (Array.isArray(schema.allOf)) {
+    return schema.allOf.reduce((merged: any, part: any) => {
+      const resolved = _resolveOpenApiSchema(doc, part, new Set(seen)) || {};
+      return {
+        ...merged,
+        ...resolved,
+        properties: { ...(merged.properties || {}), ...(resolved.properties || {}) },
+        required: [...(merged.required || []), ...(resolved.required || [])],
+      };
+    }, { ...schema, allOf: undefined });
+  }
+
+  const alternative = schema.oneOf?.[0] || schema.anyOf?.[0];
+  if (alternative) return _resolveOpenApiSchema(doc, alternative, seen);
+
+  return schema;
+}
+
+function _resolveOpenApiObject(doc: any, obj: any): any {
+  return obj?.$ref ? (_resolveOpenApiRef(doc, obj.$ref) || obj) : obj;
+}
+
+function _sampleFromOpenApiSchema(doc: any, schema: any, seen = new Set<any>()): any {
+  schema = _resolveOpenApiSchema(doc, schema);
+  if (!schema || typeof schema !== 'object') return null;
+  if (seen.has(schema)) return null;
+  seen.add(schema);
+
+  if (schema.example !== undefined) return schema.example;
+  if (schema.default !== undefined) return schema.default;
+  if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
+  if (schema.const !== undefined) return schema.const;
+
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const inferredType = type || (schema.properties ? 'object' : schema.items ? 'array' : undefined);
+
+  switch (inferredType) {
+    case 'object': {
+      const out: Record<string, any> = {};
+      for (const [key, propSchema] of Object.entries(schema.properties || {})) {
+        out[key] = _sampleFromOpenApiSchema(doc, propSchema, new Set(seen));
+      }
+      if (Object.keys(out).length === 0 && schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+        out.property = _sampleFromOpenApiSchema(doc, schema.additionalProperties, new Set(seen));
+      }
+      return out;
+    }
+    case 'array':
+      return [_sampleFromOpenApiSchema(doc, schema.items || {}, new Set(seen))];
+    case 'integer':
+    case 'number':
+      return schema.minimum ?? 0;
+    case 'boolean':
+      return false;
+    case 'string':
+      if (schema.format === 'date-time') return new Date(0).toISOString();
+      if (schema.format === 'date') return '1970-01-01';
+      if (schema.format === 'email') return 'user@example.com';
+      if (schema.format === 'uuid') return '00000000-0000-0000-0000-000000000000';
+      if (schema.format === 'binary') return '';
+      return '';
+    default:
+      return null;
+  }
+}
+
+function _openApiSchemaToKv(doc: any, schema: any): Array<{ key: string; value: string; enabled: boolean }> {
+  const resolved = _resolveOpenApiSchema(doc, schema);
+  const sample = _sampleFromOpenApiSchema(doc, resolved);
+  const obj = sample && typeof sample === 'object' && !Array.isArray(sample) ? sample : {};
+  const keys = Object.keys(obj).length ? Object.keys(obj) : Object.keys(resolved?.properties || {});
+  return keys.map((key) => {
+    const value = obj[key] !== undefined ? obj[key] : _sampleFromOpenApiSchema(doc, resolved.properties?.[key]);
+    return {
+      key,
+      value: typeof value === 'string' ? value : JSON.stringify(value ?? ''),
+      enabled: true,
+    };
+  });
+}
+
+function _openApiSchemaToFormData(
+  doc: any,
+  schema: any
+): Array<{ key: string; value: string; enabled: boolean; formType: 'text' | 'file'; contentType?: string }> {
+  const resolved = _resolveOpenApiSchema(doc, schema);
+  return _openApiSchemaToKv(doc, resolved).map((item) => {
+    const propSchema = _resolveOpenApiSchema(doc, resolved?.properties?.[item.key]);
+    const isFile = propSchema?.type === 'string' && (propSchema.format === 'binary' || propSchema.format === 'base64');
+    return {
+      ...item,
+      value: isFile ? '' : item.value,
+      formType: isFile ? 'file' : 'text',
+      contentType: isFile ? 'application/octet-stream' : undefined,
+    };
+  });
+}
+
+function _sampleToXml(value: any, tagName = 'root'): string {
+  const safeTag = tagName.replace(/[^A-Za-z0-9_.-]/g, '') || 'item';
+  if (Array.isArray(value)) {
+    return value.map((item) => _sampleToXml(item, safeTag)).join('');
+  }
+  if (value && typeof value === 'object') {
+    const children = Object.entries(value)
+      .map(([key, child]) => _sampleToXml(child, key))
+      .join('');
+    return `<${safeTag}>${children}</${safeTag}>`;
+  }
+  return `<${safeTag}>${String(value ?? '')}</${safeTag}>`;
+}
+
+function _pickOpenApiContent(content: Record<string, any> = {}): { contentType: string; media: any } | null {
+  const contentTypes = Object.keys(content);
+  const normalized = (ct: string) => ct.toLowerCase().split(';')[0].trim();
+  const preferred =
+    contentTypes.find((ct) => normalized(ct).includes('json')) ||
+    contentTypes.find((ct) => normalized(ct) === 'application/x-www-form-urlencoded') ||
+    contentTypes.find((ct) => normalized(ct) === 'multipart/form-data') ||
+    contentTypes.find((ct) => normalized(ct).includes('xml')) ||
+    contentTypes.find((ct) => normalized(ct).startsWith('text/')) ||
+    contentTypes[0];
+  return preferred ? { contentType: preferred, media: content[preferred] } : null;
+}
+
+function _bodySeedFromContent(doc: any, contentType: string, media: any): OpenApiBodySeed {
+  const normalizedContentType = contentType.toLowerCase().split(';')[0].trim();
+  const schema = media?.schema;
+  const firstNamedExample = Object.values(media?.examples || {})[0] as any;
+  const mediaExample = media?.example ?? firstNamedExample?.value;
+  const sample = mediaExample !== undefined ? mediaExample : _sampleFromOpenApiSchema(doc, schema);
+
+  if (normalizedContentType === 'application/x-www-form-urlencoded') {
+    return { bodyType: 'urlencoded', body: '', urlencoded: _openApiSchemaToKv(doc, schema), contentType };
+  }
+  if (normalizedContentType === 'multipart/form-data') {
+    return {
+      bodyType: 'form',
+      body: '',
+      formData: _openApiSchemaToFormData(doc, schema),
+      contentType,
+    };
+  }
+  if (normalizedContentType.includes('json')) {
+    return { bodyType: 'json', body: JSON.stringify(sample ?? {}, null, 2), contentType };
+  }
+  if (normalizedContentType.includes('xml')) {
+    const root = schema?.xml?.name || 'root';
+    return { bodyType: 'xml', body: typeof sample === 'string' ? sample : _sampleToXml(sample ?? {}, root), contentType };
+  }
+  if (normalizedContentType.startsWith('text/')) {
+    return { bodyType: 'text', body: typeof sample === 'string' ? sample : JSON.stringify(sample ?? ''), contentType };
+  }
+  return { bodyType: 'text', body: typeof sample === 'string' ? sample : JSON.stringify(sample ?? {}, null, 2), contentType };
+}
+
+function _buildOpenApiRequestBody(doc: any, op: any, pathItem: any, isOpenApi3: boolean): OpenApiBodySeed {
+  const requestBody = _resolveOpenApiObject(doc, op.requestBody);
+  if (isOpenApi3 && requestBody?.content) {
+    const picked = _pickOpenApiContent(requestBody.content);
+    if (picked) return _bodySeedFromContent(doc, picked.contentType, picked.media);
+  }
+
+  const parameters = [...(pathItem?.parameters || []), ...(op.parameters || [])].map((p) => _resolveOpenApiObject(doc, p));
+  const consumes = op.consumes || doc.consumes || [];
+  const contentType = consumes[0] || 'application/json';
+  const bodyParam = parameters.find((p: any) => p?.in === 'body' && p.schema);
+  if (bodyParam) {
+    return _bodySeedFromContent(doc, contentType, { schema: bodyParam.schema, example: bodyParam.example });
+  }
+
+  const formParams = parameters.filter((p: any) => p?.in === 'formData');
+  if (formParams.length > 0) {
+    const normalizedContentType = contentType.toLowerCase().split(';')[0].trim();
+    const items = formParams.map((p: any) => {
+      const value = p.example ?? p.default ?? (Array.isArray(p.enum) ? p.enum[0] : '');
+      return { key: p.name || '', value: String(value ?? ''), enabled: true };
+    });
+    if (normalizedContentType === 'multipart/form-data') {
+      return {
+        bodyType: 'form',
+        body: '',
+        formData: formParams.map((p: any, index: number) => ({
+          ...items[index],
+          formType: p.type === 'file' ? 'file' as const : 'text' as const,
+          contentType: p.type === 'file' ? 'application/octet-stream' : undefined,
+        })),
+        contentType,
+      };
+    }
+    return { bodyType: 'urlencoded', body: '', urlencoded: items, contentType: 'application/x-www-form-urlencoded' };
+  }
+
+  return { bodyType: 'none', body: '' };
+}
+
 function _parseOpenApiCollection(data: any): { id: string; name: string; requests: any[]; groups: any[] } | null {
   const isOpenApi3 = typeof data?.openapi === 'string' && data.openapi.startsWith('3');
   const isSwagger2 = data?.swagger === '2.0';
@@ -793,12 +1016,10 @@ function _parseOpenApiCollection(data: any): { id: string; name: string; request
       const reqName = op.summary || op.operationId || `${method.toUpperCase()} ${path}`;
       const url = `${baseUrl}${path}`;
       const headers: { key: string; value: string }[] = [];
+      const bodySeed = _buildOpenApiRequestBody(data, op, methods, isOpenApi3);
 
-      if (isOpenApi3 && op.requestBody?.content) {
-        const ct = Object.keys(op.requestBody.content)[0];
-        if (ct) headers.push({ key: 'Content-Type', value: ct });
-      } else if (isSwagger2 && op.consumes?.length) {
-        headers.push({ key: 'Content-Type', value: op.consumes[0] });
+      if (bodySeed.contentType) {
+        headers.push({ key: 'Content-Type', value: bodySeed.contentType });
       }
 
       const req = {
@@ -807,8 +1028,10 @@ function _parseOpenApiCollection(data: any): { id: string; name: string; request
         method: method.toUpperCase(),
         url,
         headers,
-        body: '',
-        bodyType: 'none',
+        body: bodySeed.body,
+        bodyType: bodySeed.bodyType,
+        formData: bodySeed.formData || [],
+        urlencoded: bodySeed.urlencoded || [],
       };
 
       const tag = (op.tags?.[0] as string | undefined) || '';
@@ -834,4 +1057,3 @@ function _parseOpenApiCollection(data: any): { id: string; name: string; request
 
   return { id: Date.now().toString(), name, requests: untagged, groups };
 }
-

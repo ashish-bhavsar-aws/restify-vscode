@@ -1275,6 +1275,56 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+.code-editor-overlay.hidden-editor {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.code-editor-pretty-viewer {
+    position: absolute;
+    inset: 0;
+    cursor: text;
+}
+
+.pretty-body-viewer {
+    overflow: auto;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.pretty-body-table {
+    display: table;
+    width: 100%;
+    border-spacing: 0;
+}
+
+.pretty-body-row {
+    display: table-row;
+}
+
+.pretty-body-gutter {
+    display: table-cell;
+    width: 3em;
+    background: var(--line-number-bg);
+    color: var(--line-number-fg);
+    text-align: right;
+    padding-right: 8px;
+    border-right: 1px solid var(--border);
+    font-size: 11px;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.pretty-body-code {
+    display: table-cell;
+    padding-left: 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 .code-editor-placeholder {
     position: absolute;
     top: 10px;
@@ -1285,6 +1335,11 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     font-size: 12px;
     line-height: 1.6;
     pointer-events: none;
+}
+
+.code-editor-placeholder.static {
+    position: static;
+    padding: 10px 14px;
 }
 
 /* Syntax colors — dark defaults */
@@ -2636,5 +2691,3 @@ body.vscode-light .xml-attr-value { color: #116329; }
     border-color: var(--accent);
     color: var(--accent);
 }
-
-

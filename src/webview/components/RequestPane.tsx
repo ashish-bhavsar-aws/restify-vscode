@@ -352,6 +352,8 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, env
                 value={request.body}
                 onChange={(body) => onUpdate({ body })}
                 language={request.bodyType as 'json' | 'xml' | 'text'}
+                jsonFormatMode={request.bodyFormat || 'formatted'}
+                onJsonFormatModeChange={(bodyFormat) => onUpdate({ bodyFormat })}
                 placeholder={request.bodyType === 'json' ? '{\n  \n}' : 'Enter request body…'}
               />
             </div>

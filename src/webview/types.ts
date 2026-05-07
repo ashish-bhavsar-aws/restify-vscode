@@ -19,6 +19,7 @@ export interface RequestState {
   queryParams: KVItem[];
   bodyType: 'none' | 'json' | 'text' | 'xml' | 'form' | 'urlencoded' | 'graphql';
   body: string;
+  bodyFormat?: 'formatted' | 'minified';
   formData: FormDataItem[];
   gqlQuery: string;
   gqlVars: string;
@@ -122,6 +123,7 @@ export const DEFAULT_REQUEST: RequestState = {
   queryParams: [],
   bodyType: 'none',
   body: '',
+  bodyFormat: 'formatted',
   formData: [],
   gqlQuery: '',
   gqlVars: '',

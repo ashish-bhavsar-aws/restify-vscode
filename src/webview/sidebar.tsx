@@ -14,7 +14,7 @@ interface CollectionRequest { id?: string; method: string; url: string; name?: s
 interface CollectionGroup { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
 interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
 type SidebarType = 'history' | 'collections' | 'environments';
-interface DragState { requestId: string; collectionId: string; fromGroupId: string | null; }
+interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; }
 
 function relativeTime(iso?: string): string {
   if (!iso) return '';
@@ -112,7 +112,13 @@ export const Sidebar: React.FC = () => {
           onDeleteGroup={(cid, gid, groupName) => post({ command: 'deleteGroup', collectionId: cid, groupId: gid, groupName })}
           onRenameGroup={(cid, gid, name) => post({ command: 'renameGroup', collectionId: cid, groupId: gid, name })}
           onDeleteGroupRequest={(cid, gid, rid) => post({ command: 'deleteRequestFromGroup', collectionId: cid, groupId: gid, requestId: rid })}
-          onMoveRequestToGroup={(cid, rid, fromGid, toGid) => post({ command: 'moveRequestToGroup', collectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid })}
+          onMoveRequestToGroup={(cid, rid, fromGid, toGid, fromCollectionId) => {
+            if (fromCollectionId && fromCollectionId !== cid) {
+              post({ command: 'moveRequestAcrossCollections', fromCollectionId, toCollectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid });
+            } else {
+              post({ command: 'moveRequestToGroup', collectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid });
+            }
+          }}
           triggerNew={triggerNewCollection}
           onTriggerNewDone={() => setTriggerNewCollection(false)} />
       )}
@@ -239,7 +245,7 @@ interface CollectionsPanelProps {
   onDeleteGroup(collectionId: string, groupId: string, groupName: string): void;
   onRenameGroup(collectionId: string, groupId: string, name: string): void;
   onDeleteGroupRequest(collectionId: string, groupId: string, requestId: string): void;
-  onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null): void;
+  onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null, fromCollectionId?: string): void;
   triggerNew?: boolean;
   onTriggerNewDone?(): void;
 }
@@ -300,7 +306,7 @@ interface GroupTreeProps {
   onSaveGroup(group: CollectionGroup, parentGroupId?: string): void;
   onDeleteGroup(groupId: string, groupName: string): void;
   onRenameGroup(groupId: string, name: string): void;
-  onMoveRequestToGroup(requestId: string, fromGroupId: string | null, toGroupId: string): void;
+  onMoveRequestToGroup(requestId: string, fromGroupId: string | null, toGroupId: string, fromCollectionId?: string): void;
 }
 const GroupTree: React.FC<GroupTreeProps> = ({
   group, collectionId, collectionName, depth, search, expansionStates,
@@ -348,7 +354,7 @@ const GroupTree: React.FC<GroupTreeProps> = ({
 
   const handleGroupDragOver = (e: React.DragEvent) => {
     const d = dragRef.current;
-    if (!d || d.collectionId !== collectionId || d.fromGroupId === group.id) return;
+    if (!d || d.fromGroupId === group.id) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
@@ -371,8 +377,14 @@ const GroupTree: React.FC<GroupTreeProps> = ({
     setIsDragOver(false);
     clearAutoExpand();
     const d = dragRef.current;
-    if (!d || d.collectionId !== collectionId || d.fromGroupId === group.id) return;
-    onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id);
+    if (!d || d.fromGroupId === group.id) return;
+    // Support both same-collection and cross-collection moves
+    if (d.fromCollectionId === collectionId) {
+      onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id);
+    } else {
+      // Cross-collection move
+      onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id, d.fromCollectionId);
+    }
     dragRef.current = null;
   };
 
@@ -447,7 +459,7 @@ const GroupTree: React.FC<GroupTreeProps> = ({
               onRename={() => onStartRenameRequest(group.id, req.id!)}
               onCommitRename={name => onCommitRenameRequest(group.id, req.id!, name)}
               onCancelRename={onCancelRenameRequest}
-              onDragStart={e => { dragRef.current = { requestId: req.id!, collectionId, fromGroupId: group.id }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
+              onDragStart={e => { dragRef.current = { requestId: req.id!, fromCollectionId: collectionId, fromGroupId: group.id }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
               onDragEnd={e => { (e.currentTarget as HTMLElement).classList.remove('dragging'); }} />
           ))}
           {reqs.length === 0 && subGroups.length === 0 && !showNewSubGroup && (
@@ -551,7 +563,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                   <div className={`collection-requests open${topLevelDropTarget === col.id ? ' drag-over-toplevel' : ''}`}
                     onDragOver={e => {
                       const d = dragRef.current;
-                      if (!d || d.collectionId !== col.id || d.fromGroupId === null) return;
+                      if (!d || d.fromGroupId === null) return;
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
                       setTopLevelDropTarget(col.id);
@@ -562,9 +574,15 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                     onDrop={e => {
                       setTopLevelDropTarget(null);
                       const d = dragRef.current;
-                      if (!d || d.collectionId !== col.id || d.fromGroupId === null) return;
+                      if (!d || d.fromGroupId === null) return;
                       e.preventDefault();
-                      onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null);
+                      // Support both same-collection and cross-collection moves
+                      if (d.fromCollectionId === col.id) {
+                        onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null);
+                      } else {
+                        // Cross-collection move
+                        onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null, d.fromCollectionId);
+                      }
                       dragRef.current = null;
                     }}>
                     {/* Groups (folders) */}
@@ -591,7 +609,13 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                         onSaveGroup={(g, pId) => onSaveGroup(col.id, g, pId ?? grp.id)}
                         onDeleteGroup={(gid, gname) => onDeleteGroup(col.id, gid, gname)}
                         onRenameGroup={(gid, name) => onRenameGroup(col.id, gid, name)}
-                        onMoveRequestToGroup={(rid, fromGid, toGid) => onMoveRequestToGroup(col.id, rid, fromGid, toGid)}
+                        onMoveRequestToGroup={(rid, fromGid, toGid, fromCollectionId) => {
+                          if (fromCollectionId && fromCollectionId !== col.id) {
+                            onMoveRequestToGroup(col.id, rid, fromGid, toGid, fromCollectionId);
+                          } else {
+                            onMoveRequestToGroup(col.id, rid, fromGid, toGid);
+                          }
+                        }}
                       />
                     ))}
                     {/* New group inline input */}
@@ -609,7 +633,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                       <div key={req.id} className="sub-item" tabIndex={0} draggable
                         onClick={() => onLoad(req, col.name)}
                         onKeyDown={e => { if (e.key === 'Enter') onLoad(req, col.name); }}
-                        onDragStart={e => { dragRef.current = { requestId: req.id!, collectionId: col.id, fromGroupId: null }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
+                        onDragStart={e => { dragRef.current = { requestId: req.id!, fromCollectionId: col.id, fromGroupId: null }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).classList.add('dragging'); }}
                         onDragEnd={e => { (e.currentTarget as HTMLElement).classList.remove('dragging'); }}>
                         <span className="drag-handle"><Icon icon={faGripVertical} size={11} /></span>
                         <span className={`method-badge method-${req.method}`}>{req.method}</span>

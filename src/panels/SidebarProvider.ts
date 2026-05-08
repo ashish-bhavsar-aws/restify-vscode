@@ -245,6 +245,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           );
           break;
         }
+        case 'moveRequestAcrossCollections': {
+          this.storageManager.moveRequestAcrossCollections(
+            msg.fromCollectionId,
+            msg.toCollectionId,
+            msg.requestId,
+            msg.fromGroupId ?? null,
+            msg.toGroupId ?? null
+          );
+          break;
+        }
         case 'renameGroupRequest': {
           const cols = this.storageManager.getCollections();
           const col = cols.find((c) => String(c.id) === String(msg.collectionId));

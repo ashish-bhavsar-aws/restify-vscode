@@ -611,6 +611,54 @@ export class StorageManager {
     this.notifyChange();
   }
 
+  /**
+   * Move a request from one collection to another collection.
+   * Removes the request from its source location and adds it to the destination.
+   */
+  moveRequestAcrossCollections(
+    fromCollectionId: string,
+    toCollectionId: string,
+    requestId: string,
+    fromGroupId: string | null,
+    toGroupId: string | null
+  ): void {
+    const collections = this.getCollections();
+    
+    // Find source and destination collections
+    const fromCol = collections.find((c) => String(c.id) === String(fromCollectionId));
+    const toCol = collections.find((c) => String(c.id) === String(toCollectionId));
+    if (!fromCol || !toCol) return;
+
+    // Remove from source
+    let request: any;
+    if (fromGroupId) {
+      const src = _findGroup(fromCol.groups || [], fromGroupId);
+      if (!src?.requests) return;
+      const idx = src.requests.findIndex((r: any) => String(r.id) === String(requestId));
+      if (idx === -1) return;
+      [request] = src.requests.splice(idx, 1);
+    } else {
+      if (!fromCol.requests) return;
+      const idx = fromCol.requests.findIndex((r: any) => String(r.id) === String(requestId));
+      if (idx === -1) return;
+      [request] = fromCol.requests.splice(idx, 1);
+    }
+
+    // Add to destination
+    if (toGroupId) {
+      const dst = _findGroup(toCol.groups || [], toGroupId);
+      if (!dst) return;
+      if (!dst.requests) dst.requests = [];
+      dst.requests.push(request);
+    } else {
+      if (!toCol.requests) toCol.requests = [];
+      toCol.requests.push(request);
+    }
+
+    this.globalState.update('restify.collections', collections);
+    this.notifyChange();
+  }
+
   // ─── Environments ─────────────────────────────────────────
   getEnvironments(): Environment[] {
     return this.globalState.get('restify.environments', []);

@@ -534,10 +534,30 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
             const filteredTopReqs = search ? topReqs.filter(r => (r.name||r.url||'').toLowerCase().includes(search.toLowerCase())) : topReqs;
 
             return (
-              <div key={col.id} className="collection-group">
+              <div key={col.id} className={`collection-group${topLevelDropTarget === col.id ? ' drag-over' : ''}`}>
                 <div className="collection-header" tabIndex={0}
                   onClick={() => onToggle(col.id, !isOpen)}
-                  onKeyDown={e => { if (e.key === 'Enter') onToggle(col.id, !isOpen); }}>
+                  onKeyDown={e => { if (e.key === 'Enter') onToggle(col.id, !isOpen); }}
+                  onDragOver={e => {
+                    const d = dragRef.current;
+                    if (!d || d.fromCollectionId === col.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setTopLevelDropTarget(col.id);
+                  }}
+                  onDragLeave={e => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setTopLevelDropTarget(null);
+                  }}
+                  onDrop={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTopLevelDropTarget(null);
+                    const d = dragRef.current;
+                    if (!d || d.fromCollectionId === col.id) return;
+                    // Drop to top-level of this collection
+                    onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null, d.fromCollectionId);
+                    dragRef.current = null;
+                  }}>
                   <span className={`caret ${isOpen ? 'open' : ''}`}><Icon icon={faChevronRight} size={10} /></span>
                   {editingCollection?.id === col.id
                     ? <input className="inline-rename" autoFocus value={editingCollection.name}
@@ -563,7 +583,9 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                   <div className={`collection-requests open${topLevelDropTarget === col.id ? ' drag-over-toplevel' : ''}`}
                     onDragOver={e => {
                       const d = dragRef.current;
-                      if (!d || d.fromGroupId === null) return;
+                      if (!d) return;
+                      // Allow drops if it's from a different collection or different location in same collection
+                      if (d.fromCollectionId === col.id && d.fromGroupId === null) return; // Same top-level, skip
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
                       setTopLevelDropTarget(col.id);
@@ -574,13 +596,15 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                     onDrop={e => {
                       setTopLevelDropTarget(null);
                       const d = dragRef.current;
-                      if (!d || d.fromGroupId === null) return;
+                      if (!d) return;
+                      // Allow drops if it's from a different collection or different location in same collection
+                      if (d.fromCollectionId === col.id && d.fromGroupId === null) return; // Same top-level, skip
                       e.preventDefault();
                       // Support both same-collection and cross-collection moves
                       if (d.fromCollectionId === col.id) {
                         onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null);
                       } else {
-                        // Cross-collection move
+                        // Cross-collection move (from different collection)
                         onMoveRequestToGroup(col.id, d.requestId, d.fromGroupId, null, d.fromCollectionId);
                       }
                       dragRef.current = null;

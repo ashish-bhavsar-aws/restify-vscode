@@ -2,7 +2,7 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "publisher": "AshishBhavsar",
   "engines": {
     "vscode": "^1.80.0"

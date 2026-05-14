@@ -154,7 +154,7 @@ export const MainPanel: React.FC = () => {
               ...(prev || {}),
               scriptLogs: [...(prev?.scriptLogs || []), entry],
             }));
-          } catch {
+          } catch(e) {
             console.error("Failed to append debugLog", e);
           }
           break;

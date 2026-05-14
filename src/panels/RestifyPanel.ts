@@ -17,7 +17,7 @@ try {
   // - exports.default = HttpsProxyAgent (ES module interop)
   HttpProxyAgent =
     proxyModule.HttpsProxyAgent || proxyModule.default || proxyModule;
-} catch {
+} catch(e) {
   console.error("Failed to load https-proxy-agent:", e);
 }
 
@@ -981,7 +981,7 @@ export class RestifyPanel {
 
           const lib = isProxyHttps ? https : http;
           return this._executeProxyRequest(lib, options, body, resolve, reject);
-        } catch {
+        } catch(e) {
           console.error("Proxy URL parsing error:", e);
           return reject(
             new Error(

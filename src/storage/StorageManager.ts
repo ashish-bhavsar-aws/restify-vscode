@@ -74,7 +74,7 @@ export class StorageManager {
     if (this.storageDir) {
       try {
         fs.mkdirSync(this.storageDir, { recursive: true });
-      } catch {
+      } catch(e) {
         console.error("Failed to create storage directory:", e);
         this.storageDir = undefined;
       }
@@ -115,7 +115,7 @@ export class StorageManager {
             this.historyCache = rows.map((r: any) => ({ ...r }));
           },
         });
-      } catch {
+      } catch(e) {
         console.error("LokiJS not available or failed to initialize:", e);
         // Fallback to file/globalState
         const histFile = path.join(this.storageDir, "history.json");
@@ -190,7 +190,7 @@ export class StorageManager {
                 this.db.saveDatabase((err: any) => {
                   if (err) console.error("Loki save error:", err);
                 });
-              } catch {
+              } catch(e) {
                 console.error("Loki insert error:", e);
               }
             }
@@ -387,7 +387,7 @@ export class StorageManager {
                 if (err) console.error("Loki save error:", err);
               });
             }
-          } catch {
+          } catch(e) {
             console.error("DB clear error:", e);
           }
         }
@@ -443,7 +443,7 @@ export class StorageManager {
             });
           }
         }
-      } catch {
+      } catch(e) {
         console.error("DB delete error:", e);
       }
     }
@@ -493,7 +493,7 @@ export class StorageManager {
           clone.request.body = fs.readFileSync(fp, "utf8");
         }
       }
-    } catch {
+    } catch(e) {
       console.error("Failed to hydrate history item bodies:", e);
     }
     return clone;

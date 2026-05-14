@@ -1562,6 +1562,19 @@ body.vscode-light .syntax-xml-comment  { color: #6e7781; }
 .code-editor-gutter .gutter-line {
     padding: 0 8px 0 0;
     transition: color .1s;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-start;
+}
+
+.code-editor-gutter .gutter-number {
+    display: block;
+}
+
+.code-editor-gutter .gutter-continuation {
+    display: block;
+    opacity: 0.45;
 }
 
 .code-editor-gutter .active-gutter-line {

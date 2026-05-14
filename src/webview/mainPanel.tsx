@@ -33,6 +33,7 @@ export const MainPanel: React.FC = () => {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [envManagerOpen, setEnvManagerOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
+  const [themeKind, setThemeKind] = useState<number>(2);
   const [savedCollectionName, setSavedCollectionName] = useState<string | null>(null);
   const [savedGroupId, setSavedGroupId] = useState<string | undefined>(undefined);
   const [isDirty, setIsDirty] = useState(false);
@@ -45,6 +46,13 @@ export const MainPanel: React.FC = () => {
 
   /* ── VS Code API bootstrap ───────────────────────── */
   useEffect(() => {
+    const applyThemeClass = (kind: number) => {
+      document.body.classList.remove('vscode-light', 'vscode-dark', 'vscode-high-contrast');
+      if (kind === 1 || kind === 4) document.body.classList.add('vscode-light');
+      else if (kind === 3) document.body.classList.add('vscode-high-contrast');
+      else document.body.classList.add('vscode-dark');
+    };
+
     vscodeApi.current = (window as any).acquireVsCodeApi?.();
 
       const handler = (event: MessageEvent) => {
@@ -120,6 +128,10 @@ export const MainPanel: React.FC = () => {
               duration: msg.duration ?? 0,
               size: 0,
             });
+            break;
+          case 'setTheme':
+            setThemeKind(msg.kind ?? 2);
+            applyThemeClass(msg.kind ?? 2);
             break;
           case 'debugLog':
             try {
@@ -360,7 +372,7 @@ export const MainPanel: React.FC = () => {
       {/* Split pane */}
       <div className="main-area">
         <div className="split-pane">
-          <RequestPane request={request} onUpdate={updateRequest} environment={activeEnvironment} />
+          <RequestPane request={request} onUpdate={updateRequest} themeKind={themeKind} environment={activeEnvironment} />
           <div className="resizer" />
           <ResponsePane 
             response={response} 

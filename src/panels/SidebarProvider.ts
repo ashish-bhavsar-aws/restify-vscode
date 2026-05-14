@@ -204,6 +204,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
+        case 'exportAllCollections': {
+          const cols = this.storageManager.getCollections();
+          if (!cols.length) {
+            vscode.window.showWarningMessage('No collections to export');
+            break;
+          }
+          const data = JSON.stringify(cols, null, 2);
+          const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file('restify.collections.json'),
+            filters: { 'JSON': ['json'] },
+          });
+          if (uri) {
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8'));
+            vscode.window.showInformationMessage(`\u2713 Exported ${cols.length} collection${cols.length !== 1 ? 's' : ''}`);
+          }
+          break;
+        }
         case 'importCollections':
         case 'showImportOptions':
           await this.importCollection();
@@ -726,6 +743,20 @@ function _collectPostmanItems(items: any[], out: any[]): void {
   }
 }
 
+function _detectPostmanRawBodyType(headers: Array<{ key?: string; value?: string }>, languageHint?: string): 'json' | 'xml' | 'text' | 'graphql' {
+  const language = (languageHint || '').toLowerCase();
+  if (language === 'json') return 'json';
+  if (language === 'xml') return 'xml';
+  if (language === 'graphql') return 'graphql';
+
+  const contentTypeHeader = headers.find((h) => (h.key || '').toLowerCase() === 'content-type');
+  const contentType = (contentTypeHeader?.value || '').toLowerCase();
+  if (contentType.includes('application/json')) return 'json';
+  if (contentType.includes('application/xml') || contentType.includes('text/xml')) return 'xml';
+  if (contentType.includes('application/graphql')) return 'graphql';
+  return 'text';
+}
+
 function _postmanV2Request(item: any): any {
   const req = item.request || {};
   const rawUrl = typeof req.url === 'string' ? req.url : req.url?.raw || '';
@@ -736,7 +767,7 @@ function _postmanV2Request(item: any): any {
   if (req.body) {
     if (req.body.mode === 'raw') {
       body = req.body.raw || '';
-      bodyType = 'raw';
+      bodyType = _detectPostmanRawBodyType(headers, req.body?.options?.raw?.language);
       // Try to detect content type from headers for body language
     } else if (req.body.mode === 'urlencoded') {
       bodyType = 'form';
@@ -761,6 +792,7 @@ function _postmanV2Request(item: any): any {
 
 function _postmanV1Request(req: any): any {
   const headers = (req.headerData || []).map((h: any) => ({ key: h.key || '', value: h.value || '' }));
+  const rawType = _detectPostmanRawBodyType(headers, req.dataMode === 'raw' ? req.dataMode : undefined);
   return {
     id: Date.now().toString() + Math.random().toString(36).slice(2),
     name: req.name || 'Untitled',
@@ -768,7 +800,7 @@ function _postmanV1Request(req: any): any {
     url: req.url || '',
     headers,
     body: req.rawModeData || '',
-    bodyType: req.dataMode === 'raw' ? 'raw' : 'none',
+    bodyType: req.dataMode === 'raw' ? rawType : 'none',
   };
 }
 

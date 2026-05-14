@@ -9,6 +9,7 @@ import { Icon, faEye, faEyeSlash } from './FaIcon';
 interface RequestPaneProps {
   request: RequestState;
   onUpdate: (updates: Partial<RequestState>) => void;
+  themeKind?: number;
   environment?: Environment | null; // Current environment for variable resolution
 }
 
@@ -191,7 +192,7 @@ const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType
 
 const BODY_TYPES: BodyType[] = ['none', 'json', 'form', 'urlencoded', 'text', 'xml', 'graphql'];
 
-export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, environment }) => {
+export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment }) => {
   const [activeTab, setActiveTab] = useState<ReqTab>('params');
 
   const activeParamCount = request.queryParams.filter((p) => p.key && p.enabled !== false).length;
@@ -352,6 +353,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, env
                 value={request.body}
                 onChange={(body) => onUpdate({ body })}
                 language={request.bodyType as 'json' | 'xml' | 'text'}
+                themeKind={themeKind}
                 jsonFormatMode={request.bodyFormat || 'formatted'}
                 onJsonFormatModeChange={(bodyFormat) => onUpdate({ bodyFormat })}
                 placeholder={request.bodyType === 'json' ? '{\n  \n}' : 'Enter request body…'}
@@ -514,6 +516,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, env
               value={request.script || ''}
               onChange={(script) => onUpdate({ script })}
               language={'javascript'}
+              themeKind={themeKind}
               placeholder={'// Example: vars[\'token\'] = response.body.access_token;'}
             />
           </div>

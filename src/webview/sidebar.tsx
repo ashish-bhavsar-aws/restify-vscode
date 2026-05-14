@@ -3,7 +3,7 @@ import './Sidebar.css';
 import { Icon } from './components/FaIcon';
 import {
   faMagnifyingGlass, faFloppyDisk, faTrash, faPen,
-  faFileExport, faFileImport, faCopy, faGripVertical,
+  faFileExport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
 } from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
@@ -106,7 +106,7 @@ export const Sidebar: React.FC = () => {
           onReorderRequest={(cid, rid, toIndex) => post({ command: 'reorderCollectionRequest', collectionId: cid, requestId: rid, toIndex })}
           onRenameCollection={(id, name) => post({ command: 'renameCollection', id, name })}
           onRenameRequest={(cid, rid, name) => post({ command: 'renameCollectionRequest', collectionId: cid, requestId: rid, name })}
-          onImportCollections={() => post({ command: 'showImportOptions' })}
+          onExportAllCollections={() => post({ command: 'exportAllCollections' })}
           onExportCollection={(id: string) => post({ command: 'exportCollection', id })}
           onSaveGroup={(cid, group, parentGroupId) => post({ command: 'saveGroup', collectionId: cid, group, parentGroupId })}
           onDeleteGroup={(cid, gid, groupName) => post({ command: 'deleteGroup', collectionId: cid, groupId: gid, groupName })}
@@ -239,7 +239,7 @@ interface CollectionsPanelProps {
   onReorderRequest(collectionId: string, requestId: string, toIndex: number): void;
   onRenameCollection(id: string, name: string): void;
   onRenameRequest(collectionId: string, requestId: string, name: string): void;
-  onImportCollections(): void;
+  onExportAllCollections(): void;
   onExportCollection(collectionId: string): void;
   onSaveGroup(collectionId: string, group: CollectionGroup, parentGroupId?: string): void;
   onDeleteGroup(collectionId: string, groupId: string, groupName: string): void;
@@ -474,7 +474,7 @@ const GroupTree: React.FC<GroupTreeProps> = ({
 const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   collections, search, expansionStates, onSearch, onToggle, onLoad, onNewCollection, onDeleteCollection, onDeleteRequest,
   onCopyRequest, onMoveRequest: _onMoveRequest, onReorderRequest: _onReorderRequest, onRenameCollection, onRenameRequest,
-  onImportCollections, onExportCollection,
+  onExportAllCollections, onExportCollection,
   onSaveGroup, onDeleteGroup, onRenameGroup, onDeleteGroupRequest, onMoveRequestToGroup,
   triggerNew, onTriggerNewDone
 }) => {
@@ -519,7 +519,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
       </div>
       <div className="toolbar-icons">
         <button className="btn-icon toolbar-expand" title={allOpen ? 'Collapse all' : 'Expand all'} onClick={toggleAll}><Icon icon={allOpen ? faAnglesUp : faAnglesDown} size={13} /></button>
-        <button className="btn-icon toolbar-expand" title="Import collections" onClick={onImportCollections}><Icon icon={faFileImport} size={13} /></button>
+        <button className="btn-icon toolbar-expand" title="Export all collections" onClick={onExportAllCollections}><Icon icon={faFileExport} size={13} /></button>
       </div>
     </div>
     <div className="list" onKeyDown={listNavKeyDown}>

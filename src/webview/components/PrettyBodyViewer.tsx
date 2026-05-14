@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 
-type PrettyLanguage = 'json' | 'xml';
+type PrettyLanguage = 'json' | 'xml' | 'html';
 type JsonDisplayMode = 'formatted' | 'minified';
 
 interface PrettyBodyViewerProps {
@@ -103,6 +103,72 @@ export function prettyPrintXml(xml: string): string {
   }
 }
 
+export function prettyPrintHtml(html: string): string {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const esc = escapeHtml;
+    const indentUnit = '  ';
+    const voidElements = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+
+    const serialize = (node: Node, indentLevel = 0): string => {
+      const indent = indentUnit.repeat(indentLevel);
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.nodeValue || '';
+        return text.trim() ? indent + esc(text.trim()) + '\n' : '';
+      }
+      if (node.nodeType === Node.CDATA_SECTION_NODE) {
+        return indent + `<![CDATA[${(node as CDATASection).data}]]>` + '\n';
+      }
+      if (node.nodeType === Node.COMMENT_NODE) {
+        return indent + `<!--${(node as Comment).data}-->` + '\n';
+      }
+      if (node.nodeType === Node.DOCUMENT_TYPE_NODE) {
+        const dt = node as DocumentType;
+        let out = `<!DOCTYPE ${dt.name}`;
+        if (dt.publicId) out += ` PUBLIC "${dt.publicId}"`;
+        if (dt.systemId) out += ` "${dt.systemId}"`;
+        out += '>' + '\n';
+        return out;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as Element;
+        const tag = el.tagName.toLowerCase();
+        const attrs: string[] = [];
+        for (let i = 0; i < el.attributes.length; i += 1) {
+          const a = el.attributes.item(i)!;
+          attrs.push(`${a.name}="${esc(a.value)}"`);
+        }
+        const open = attrs.length ? `<${tag} ${attrs.join(' ')}>` : `<${tag}>`;
+        if (voidElements.has(tag)) {
+          return indent + (attrs.length ? `<${tag} ${attrs.join(' ')}/>\n` : `<${tag}/>\n`);
+        }
+        if (el.childNodes.length === 0) return indent + open.replace(/>$/, `></${tag}>`) + '\n';
+        if (el.childNodes.length === 1 && el.firstChild?.nodeType === Node.TEXT_NODE) {
+          const txt = (el.firstChild.nodeValue || '').trim();
+          return indent + `${open.replace(/>$/, '')}>${esc(txt)}</${tag}>` + '\n';
+        }
+
+        let out = indent + open + '\n';
+        el.childNodes.forEach((n) => { out += serialize(n, indentLevel + 1); });
+        out += indent + `</${tag}>` + '\n';
+        return out;
+      }
+      if (node.nodeType === Node.DOCUMENT_NODE) {
+        let out = '';
+        node.childNodes.forEach((n) => { out += serialize(n, indentLevel); });
+        return out;
+      }
+      return '';
+    };
+
+    return serialize(doc).trim() || html;
+  } catch {
+    return html;
+  }
+}
+
 function syntaxHighlightJSON(line: string): string {
   return escapeHtml(line).replace(
     /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
@@ -151,6 +217,7 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   const displayText = useMemo(() => {
     if (!text) return '';
     if (language === 'json') return jsonMode === 'minified' ? minifyJSON(text) : formatJSON(text);
+    if (language === 'html') return prettyPrintHtml(text);
     return prettyPrintXml(text);
   }, [text, language, jsonMode]);
 

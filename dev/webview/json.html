@@ -206,7 +206,7 @@ function highlightEditor() {
     const json = JSON.parse(text);
     jsonInput.innerHTML = syntaxHighlight(JSON.stringify(json, null, 2));
     showError('');
-  } catch (e) {
+  } catch{
     jsonInput.innerHTML = syntaxHighlight(text);
     showError('Invalid JSON: ' + e.message);
   }
@@ -273,7 +273,7 @@ function beautifyJSON() {
   try {
     jsonInput.innerHTML = syntaxHighlight(JSON.stringify(JSON.parse(text), null, 2));
     showError('');
-  } catch (e) {
+  } catch{
     showError('Invalid JSON: ' + e.message);
   }
   updateLineNumbers();
@@ -284,7 +284,7 @@ function minifyJSON() {
   try {
     jsonInput.innerHTML = syntaxHighlight(JSON.stringify(JSON.parse(text)));
     showError('');
-  } catch (e) {
+  } catch{
     showError('Invalid JSON: ' + e.message);
   }
   updateLineNumbers();

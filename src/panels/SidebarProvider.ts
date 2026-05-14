@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
+import * as http from 'http';
+import { URL } from 'url';
 import { StorageManager } from '../storage/StorageManager';
 import { getSidebarHtml } from '../webview/sidebarHtml';
 
@@ -35,7 +37,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     // Send initial theme color kind so webview can adapt icon coloring
     try {
       webviewView.webview.postMessage({ command: 'setTheme', kind: vscode.window.activeColorTheme.kind });
-    } catch (e) {
+    } catch{
       /* empty */
     }
 
@@ -547,11 +549,9 @@ function _httpGet(
   redirectsLeft = 5
 ): Promise<{ statusCode: number; body: string; contentType: string }> {
   return new Promise((resolve, reject) => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const parsed = new (require('url').URL)(reqUrl);
+    const parsed = new URL(reqUrl);
     const isHttps = parsed.protocol === 'https:';
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod: typeof https = isHttps ? require('https') : require('http');
+    const mod: typeof https = isHttps ? https : (http as any);
     const req = mod.get(
       reqUrl,
       { headers: { Accept: 'application/json, application/yaml, text/yaml, */*' } },

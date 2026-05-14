@@ -33,6 +33,15 @@ function isLikelyXml(body: string | undefined | null, headers?: Record<string, s
   return trimmed.startsWith('<') && !trimmed.startsWith('<!DOCTYPE html');
 }
 
+function isLikelyHtml(body: string | undefined | null, headers?: Record<string, string>): boolean {
+  if (!body) return false;
+  const contentType = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+  const ct = String(contentType).toLowerCase();
+  if (ct.includes('text/html') || ct.includes('application/xhtml+xml')) return true;
+  const trimmed = body.trimStart().toLowerCase();
+  return trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
+}
+
 interface ResponsePaneProps {
   response: ResponseState | null;
   loading: boolean;
@@ -184,6 +193,8 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           <div style={{ flex: 1, overflow: 'auto' }}>
             {isLikelyJson(response.body, response.headers) ? (
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="json" search={bodySearch} /></div>
+            ) : isLikelyHtml(response.body, response.headers) ? (
+              <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></div>
             ) : isLikelyXml(response.body, response.headers) ? (
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></div>
             ) : bodySearch ? (

@@ -202,7 +202,7 @@ function highlightEditor() {
     parseXML(text);
     xmlInput.innerHTML = syntaxHighlightXML(text);
     showError('');
-  } catch (e) {
+  } catch{
     xmlInput.innerHTML = syntaxHighlightXML(text);
     showError('Invalid XML: ' + e.message);
   }
@@ -281,7 +281,7 @@ function beautifyXML() {
     const formatted = formatXML(text);
     xmlInput.innerHTML = syntaxHighlightXML(formatted);
     showError('');
-  } catch (e) {
+  } catch{
     showError('Invalid XML: ' + e.message);
   }
   updateLineNumbers();
@@ -293,7 +293,7 @@ function minifyXML() {
     const minified = minifyXMLString(text);
     xmlInput.innerHTML = syntaxHighlightXML(minified);
     showError('');
-  } catch (e) {
+  } catch{
     showError('Invalid XML: ' + e.message);
   }
   updateLineNumbers();

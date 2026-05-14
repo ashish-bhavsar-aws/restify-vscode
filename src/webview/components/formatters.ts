@@ -6,7 +6,7 @@ export function formatJSON(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
     return JSON.stringify(parsed, null, 2);
-  } catch (error) {
+  } catch {
     return jsonString;
   }
 }
@@ -15,7 +15,7 @@ export function minifyJSON(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
     return JSON.stringify(parsed);
-  } catch (error) {
+  } catch {
     return jsonString;
   }
 }
@@ -23,13 +23,13 @@ export function minifyJSON(jsonString: string): string {
 export function formatXML(xmlString: string): string {
   try {
     // Insert newlines between closing and opening tags (xml.html approach)
-    const xml = xmlString.replace(/(>)(<)(\/*)/g, '$1\n$2$3');
+    const xml = xmlString.replace(/(>)(<)(\/*)/g, "$1\n$2$3");
     let pad = 0;
-    let formatted = '';
+    let formatted = "";
 
-    xml.split('\n').forEach((node) => {
+    xml.split("\n").forEach((node) => {
       let indent = 0;
-      
+
       // Inline closing tag (opening and closing on same line)
       if (node.match(/.+<\/\w[^>]*>$/)) {
         indent = 0;
@@ -47,21 +47,24 @@ export function formatXML(xmlString: string): string {
         indent = 0;
       }
 
-      const padding = Array(pad + 1).join('  ');
-      formatted += padding + node + '\n';
+      const padding = Array(pad + 1).join("  ");
+      formatted += padding + node + "\n";
       pad += indent;
     });
 
     return formatted.trim();
-  } catch (error) {
+  } catch {
     return xmlString;
   }
 }
 
 export function minifyXML(xmlString: string): string {
   try {
-    return xmlString.replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').replace(/\n/g, '');
-  } catch (error) {
+    return xmlString
+      .replace(/>\s+</g, "><")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\n/g, "");
+  } catch {
     return xmlString;
   }
 }
@@ -78,13 +81,10 @@ export function isValidJSON(str: string): boolean {
 export function isValidXML(str: string): boolean {
   try {
     const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(str, 'text/xml');
+    const xmlDoc = parser.parseFromString(str, "text/xml");
     // Check for parse errors
-    return !xmlDoc.getElementsByTagName('parsererror').length;
+    return !xmlDoc.getElementsByTagName("parsererror").length;
   } catch {
     return false;
   }
 }
-
-
-

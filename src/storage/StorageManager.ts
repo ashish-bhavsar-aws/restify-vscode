@@ -1,7 +1,7 @@
-import * as vscode from 'vscode';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as vscode from "vscode";
+import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 
 export interface Environment {
   id: string;
@@ -60,19 +60,22 @@ export class StorageManager {
   private db: any | null = null;
   private writeQueue: Array<any> = [];
   private processingQueue = false;
-  private BODY_FILE_DIR = 'bodies';
+  private BODY_FILE_DIR = "bodies";
   private BODY_INLINE_LIMIT = 4 * 1024; // keep bodies inline if <= 4KB
 
   // storageDir: optional file-system directory to persist history to a file
-  constructor(private globalState: vscode.Memento, private storageDir?: string) {
+  constructor(
+    private globalState: vscode.Memento,
+    private storageDir?: string,
+  ) {
     this.expansionStates = this.getExpansionStates();
 
     // Ensure storage directory exists if provided
     if (this.storageDir) {
       try {
         fs.mkdirSync(this.storageDir, { recursive: true });
-      } catch (e) {
-        console.error('Failed to create storage directory:', e);
+      } catch {
+        console.error("Failed to create storage directory:", e);
         this.storageDir = undefined;
       }
     }
@@ -81,15 +84,15 @@ export class StorageManager {
     if (this.storageDir) {
       try {
         // Require lokijs at runtime to avoid adding it to the top-level compile-time imports
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const Loki: any = require('lokijs');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+        const Loki: any = require("lokijs");
 
-        const dbPath = path.join(this.storageDir, 'restify-history.db');
+        const dbPath = path.join(this.storageDir, "restify-history.db");
         // Use structured adapter if available for safer file writes
         let adapter: any = undefined;
         try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const LokiFsStructuredAdapter = require('lokijs/src/loki-fs-structured-adapter');
+          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+          const LokiFsStructuredAdapter = require("lokijs/src/loki-fs-structured-adapter");
           adapter = new LokiFsStructuredAdapter();
         } catch {
           /* empty */
@@ -101,31 +104,39 @@ export class StorageManager {
           autosaveInterval: 1000,
           autoload: true,
           autoloadCallback: () => {
-            const coll = this.db.getCollection('history') || this.db.addCollection('history', { indices: ['timestamp'] });
-            const rows = coll.chain().simplesort('timestamp', true).limit(25).data();
+            const coll =
+              this.db.getCollection("history") ||
+              this.db.addCollection("history", { indices: ["timestamp"] });
+            const rows = coll
+              .chain()
+              .simplesort("timestamp", true)
+              .limit(25)
+              .data();
             this.historyCache = rows.map((r: any) => ({ ...r }));
           },
         });
-      } catch (e) {
-        console.error('LokiJS not available or failed to initialize:', e);
+      } catch {
+        console.error("LokiJS not available or failed to initialize:", e);
         // Fallback to file/globalState
-        const histFile = path.join(this.storageDir, 'history.json');
+        const histFile = path.join(this.storageDir, "history.json");
         try {
           if (fs.existsSync(histFile)) {
-            const txt = fs.readFileSync(histFile, 'utf8');
-            this.historyCache = JSON.parse(txt || '[]');
+            const txt = fs.readFileSync(histFile, "utf8");
+            this.historyCache = JSON.parse(txt || "[]");
           } else {
-            this.historyCache = this.globalState.get('restify.history', []);
+            this.historyCache = this.globalState.get("restify.history", []);
             // Persist initial cache to file
-            this.persistHistoryToFile().catch((err) => console.error('Persist error:', err));
+            this.persistHistoryToFile().catch((err) =>
+              console.error("Persist error:", err),
+            );
           }
         } catch (e2) {
-          console.error('Failed to load history file:', e2);
-          this.historyCache = this.globalState.get('restify.history', []);
+          console.error("Failed to load history file:", e2);
+          this.historyCache = this.globalState.get("restify.history", []);
         }
       }
     } else {
-      this.historyCache = this.globalState.get('restify.history', []);
+      this.historyCache = this.globalState.get("restify.history", []);
     }
 
     this.startHousekeeping();
@@ -141,8 +152,8 @@ export class StorageManager {
 
   // Public API: save a body to a file (enqueued) and return filename
   saveBodyFile(filename: string, content: string): string {
-    if (!this.storageDir) throw new Error('No storageDir configured');
-    this.enqueueOp({ type: 'writeBody', filename, content });
+    if (!this.storageDir) throw new Error("No storageDir configured");
+    this.enqueueOp({ type: "writeBody", filename, content });
     return filename;
   }
 
@@ -153,24 +164,34 @@ export class StorageManager {
       try {
         if (!op) continue;
         switch (op.type) {
-          case 'writeBody': {
-            const filePath = path.join(this.storageDir || '.', this.BODY_FILE_DIR, op.filename);
-            await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-            await fs.promises.writeFile(filePath, op.content, 'utf8');
+          case "writeBody": {
+            const filePath = path.join(
+              this.storageDir || ".",
+              this.BODY_FILE_DIR,
+              op.filename,
+            );
+            await fs.promises.mkdir(path.dirname(filePath), {
+              recursive: true,
+            });
+            await fs.promises.writeFile(filePath, op.content, "utf8");
             break;
           }
-          case 'persistFile': {
+          case "persistFile": {
             await this.persistHistoryToFile();
             break;
           }
-          case 'lokiInsert': {
+          case "lokiInsert": {
             if (this.db) {
               try {
-                const coll = this.db.getCollection('history') || this.db.addCollection('history', { indices: ['timestamp'] });
+                const coll =
+                  this.db.getCollection("history") ||
+                  this.db.addCollection("history", { indices: ["timestamp"] });
                 coll.insert(op.entry);
-                this.db.saveDatabase((err: any) => { if (err) console.error('Loki save error:', err); });
-              } catch (e) {
-                console.error('Loki insert error:', e);
+                this.db.saveDatabase((err: any) => {
+                  if (err) console.error("Loki save error:", err);
+                });
+              } catch {
+                console.error("Loki insert error:", e);
               }
             }
             break;
@@ -179,7 +200,7 @@ export class StorageManager {
             break;
         }
       } catch (err) {
-        console.error('Error processing write queue op:', err);
+        console.error("Error processing write queue op:", err);
       }
     }
     this.processingQueue = false;
@@ -187,13 +208,17 @@ export class StorageManager {
 
   private async persistHistoryToFile(): Promise<void> {
     if (!this.storageDir) return Promise.resolve();
-    const histFile = path.join(this.storageDir, 'history.json');
-    const tmpFile = histFile + '.tmp';
+    const histFile = path.join(this.storageDir, "history.json");
+    const tmpFile = histFile + ".tmp";
     try {
-      await fs.promises.writeFile(tmpFile, JSON.stringify(this.historyCache, null, 2), 'utf8');
+      await fs.promises.writeFile(
+        tmpFile,
+        JSON.stringify(this.historyCache, null, 2),
+        "utf8",
+      );
       await fs.promises.rename(tmpFile, histFile);
     } catch (err) {
-      console.error('Failed to persist history to file:', err);
+      console.error("Failed to persist history to file:", err);
       try {
         if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
       } catch {
@@ -208,13 +233,16 @@ export class StorageManager {
    */
   private startHousekeeping(): void {
     // Only start housekeeping if in Node.js environment (not browser)
-    if (typeof setInterval === 'undefined') {
+    if (typeof setInterval === "undefined") {
       return;
     }
     // Run housekeeping every 30 minutes
-    this.housekeepingInterval = setInterval(() => {
-      this.cleanExpiredScriptVariables();
-    }, 30 * 60 * 1000);
+    this.housekeepingInterval = setInterval(
+      () => {
+        this.cleanExpiredScriptVariables();
+      },
+      30 * 60 * 1000,
+    );
   }
 
   /**
@@ -244,7 +272,7 @@ export class StorageManager {
 
     // Save changes if any variables were removed
     if (hasChanges) {
-      this.globalState.update('restify.environments', environments);
+      this.globalState.update("restify.environments", environments);
       this.notifyChange();
     }
   }
@@ -260,25 +288,24 @@ export class StorageManager {
   }
 
   // ─── History ──────────────────────────────────────────────
-  private createId(prefix = ''): string {
+  private createId(prefix = ""): string {
     try {
       return prefix ? `${prefix}-${randomUUID()}` : randomUUID();
     } catch {
       // Fallback for environments where randomUUID is unavailable.
-      return `${prefix}${prefix ? '-' : ''}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      return `${prefix}${prefix ? "-" : ""}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     }
   }
-
 
   getHistory(): HistoryEntry[] {
     return this.historyCache;
   }
 
-  addToHistory(entry: Omit<HistoryEntry, 'id' | 'timestamp'>): HistoryEntry {
+  addToHistory(entry: Omit<HistoryEntry, "id" | "timestamp">): HistoryEntry {
     // Operate on in-memory cache to prevent concurrency races when multiple requests
     // add to history at nearly the same time.
     const newEntry: HistoryEntry = {
-      id: this.createId('history'),
+      id: this.createId("history"),
       timestamp: new Date().toISOString(),
       ...entry,
     };
@@ -286,24 +313,30 @@ export class StorageManager {
     // Offload large bodies to files to avoid serializing big strings repeatedly
     const preparedEntry = { ...newEntry } as any;
     // Handle response body
-    if (preparedEntry.response && typeof preparedEntry.response.body === 'string') {
+    if (
+      preparedEntry.response &&
+      typeof preparedEntry.response.body === "string"
+    ) {
       const bodyStr: string = preparedEntry.response.body;
       if (bodyStr.length > this.BODY_INLINE_LIMIT && this.storageDir) {
         const filename = `${newEntry.id}.resp.txt`;
         preparedEntry.response.bodyFile = filename;
         delete preparedEntry.response.body;
         // enqueue body write
-        this.enqueueOp({ type: 'writeBody', filename, content: bodyStr });
+        this.enqueueOp({ type: "writeBody", filename, content: bodyStr });
       }
     }
     // Handle request body
-    if (preparedEntry.request && typeof preparedEntry.request.body === 'string') {
+    if (
+      preparedEntry.request &&
+      typeof preparedEntry.request.body === "string"
+    ) {
       const bodyStr: string = preparedEntry.request.body;
       if (bodyStr.length > this.BODY_INLINE_LIMIT && this.storageDir) {
         const filename = `${newEntry.id}.req.txt`;
         preparedEntry.request.bodyFile = filename;
         delete preparedEntry.request.body;
-        this.enqueueOp({ type: 'writeBody', filename, content: bodyStr });
+        this.enqueueOp({ type: "writeBody", filename, content: bodyStr });
       }
     }
 
@@ -312,12 +345,16 @@ export class StorageManager {
     if (this.historyCache.length > 25) this.historyCache.splice(25);
 
     // Persist asynchronously to globalState and to file
-    this.globalState.update('restify.history', this.historyCache).then(() => {}, (err: any) => console.error('Failed to persist history to globalState:', err));
-    if (this.storageDir) this.enqueueOp({ type: 'persistFile' });
+    this.globalState.update("restify.history", this.historyCache).then(
+      () => {},
+      (err: any) =>
+        console.error("Failed to persist history to globalState:", err),
+    );
+    if (this.storageDir) this.enqueueOp({ type: "persistFile" });
 
     // If using LokiJS, enqueue an insert (DB write happens in background)
-    if (this.db && typeof this.db.getCollection === 'function') {
-      this.enqueueOp({ type: 'lokiInsert', entry: preparedEntry });
+    if (this.db && typeof this.db.getCollection === "function") {
+      this.enqueueOp({ type: "lokiInsert", entry: preparedEntry });
     }
 
     // Notify listeners synchronously so UI updates immediately from cache
@@ -325,32 +362,38 @@ export class StorageManager {
     return preparedEntry;
   }
 
-
   clearHistory(): void {
     const oldEntries = [...this.historyCache];
     this.historyCache = [];
-    this.globalState.update('restify.history', []).then(() => {
-      if (this.storageDir) {
-        this.persistHistoryToFile().catch((err) => console.error('Failed to persist history file after clear:', err));
-      }
-      if (this.db && typeof this.db.getCollection === 'function') {
-        try {
-          const coll = this.db.getCollection('history');
-          if (coll) {
-            if (typeof coll.clear === 'function') {
-              coll.clear();
-            } else {
-              // Fallback: remove all docs via chain
-              const rows = coll.find();
-              rows.forEach((r: any) => coll.remove(r));
-            }
-            this.db.saveDatabase((err: any) => { if (err) console.error('Loki save error:', err); });
-          }
-        } catch (e) {
-          console.error('DB clear error:', e);
+    this.globalState.update("restify.history", []).then(
+      () => {
+        if (this.storageDir) {
+          this.persistHistoryToFile().catch((err) =>
+            console.error("Failed to persist history file after clear:", err),
+          );
         }
-      }
-    }, (err: any) => console.error('Failed to clear history:', err));
+        if (this.db && typeof this.db.getCollection === "function") {
+          try {
+            const coll = this.db.getCollection("history");
+            if (coll) {
+              if (typeof coll.clear === "function") {
+                coll.clear();
+              } else {
+                // Fallback: remove all docs via chain
+                const rows = coll.find();
+                rows.forEach((r: any) => coll.remove(r));
+              }
+              this.db.saveDatabase((err: any) => {
+                if (err) console.error("Loki save error:", err);
+              });
+            }
+          } catch {
+            console.error("DB clear error:", e);
+          }
+        }
+      },
+      (err: any) => console.error("Failed to clear history:", err),
+    );
 
     // Remove any persisted body files for the old entries
     try {
@@ -368,7 +411,7 @@ export class StorageManager {
           }
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -378,23 +421,30 @@ export class StorageManager {
   deleteHistoryItem(id: string): void {
     const toDelete = this.historyCache.find((h) => h.id === id);
     this.historyCache = this.historyCache.filter((h) => h.id !== id);
-    this.globalState.update('restify.history', this.historyCache).then(() => {
-      if (this.storageDir) {
-        this.persistHistoryToFile().catch((err) => console.error('Failed to persist history after delete:', err));
-      }
-    }, (err: any) => console.error('Failed to delete history item:', err));
-    if (this.db && typeof this.db.getCollection === 'function') {
+    this.globalState.update("restify.history", this.historyCache).then(
+      () => {
+        if (this.storageDir) {
+          this.persistHistoryToFile().catch((err) =>
+            console.error("Failed to persist history after delete:", err),
+          );
+        }
+      },
+      (err: any) => console.error("Failed to delete history item:", err),
+    );
+    if (this.db && typeof this.db.getCollection === "function") {
       try {
-        const coll = this.db.getCollection('history');
+        const coll = this.db.getCollection("history");
         if (coll) {
           const item = coll.findOne({ id });
           if (item) {
             coll.remove(item);
-            this.db.saveDatabase((err: any) => { if (err) console.error('Loki save error:', err); });
+            this.db.saveDatabase((err: any) => {
+              if (err) console.error("Loki save error:", err);
+            });
           }
         }
-      } catch (e) {
-        console.error('DB delete error:', e);
+      } catch {
+        console.error("DB delete error:", e);
       }
     }
     // Remove body files if present
@@ -411,7 +461,7 @@ export class StorageManager {
           fs.unlink(fp, () => {});
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     this.notifyChange();
@@ -424,31 +474,41 @@ export class StorageManager {
     const clone: any = JSON.parse(JSON.stringify(found));
     try {
       if (clone.response && clone.response.bodyFile && this.storageDir) {
-        const fp = path.join(this.storageDir, this.BODY_FILE_DIR, clone.response.bodyFile);
+        const fp = path.join(
+          this.storageDir,
+          this.BODY_FILE_DIR,
+          clone.response.bodyFile,
+        );
         if (fs.existsSync(fp)) {
-          clone.response.body = fs.readFileSync(fp, 'utf8');
+          clone.response.body = fs.readFileSync(fp, "utf8");
         }
       }
       if (clone.request && clone.request.bodyFile && this.storageDir) {
-        const fp = path.join(this.storageDir, this.BODY_FILE_DIR, clone.request.bodyFile);
+        const fp = path.join(
+          this.storageDir,
+          this.BODY_FILE_DIR,
+          clone.request.bodyFile,
+        );
         if (fs.existsSync(fp)) {
-          clone.request.body = fs.readFileSync(fp, 'utf8');
+          clone.request.body = fs.readFileSync(fp, "utf8");
         }
       }
-    } catch (e) {
-      console.error('Failed to hydrate history item bodies:', e);
+    } catch {
+      console.error("Failed to hydrate history item bodies:", e);
     }
     return clone;
   }
 
   // ─── Collections ──────────────────────────────────────────
   getCollections(): Collection[] {
-    return this.globalState.get('restify.collections', []);
+    return this.globalState.get("restify.collections", []);
   }
 
   saveCollection(collection: Collection): void {
     const collections = this.getCollections();
-    const newId = collection.id ? String(collection.id) : this.createId('collection');
+    const newId = collection.id
+      ? String(collection.id)
+      : this.createId("collection");
     const idx = collections.findIndex((c) => String(c.id) === newId);
     const toSave = { ...collection, id: newId };
     if (idx >= 0) {
@@ -456,13 +516,15 @@ export class StorageManager {
     } else {
       collections.push(toSave);
     }
-    this.globalState.update('restify.collections', collections);
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
   deleteCollection(id: string): void {
-    const collections = this.getCollections().filter((c) => String(c.id) !== String(id));
-    this.globalState.update('restify.collections', collections);
+    const collections = this.getCollections().filter(
+      (c) => String(c.id) !== String(id),
+    );
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
@@ -471,7 +533,7 @@ export class StorageManager {
     const col = collections.find((c) => c.id === collectionId);
     if (col) {
       if (!col.requests) col.requests = [];
-      const reqId = request.id ? String(request.id) : this.createId('request');
+      const reqId = request.id ? String(request.id) : this.createId("request");
       const existing = col.requests.findIndex((r) => String(r.id) === reqId);
       const toSaveReq = { ...request, id: reqId };
       if (existing >= 0) {
@@ -479,7 +541,7 @@ export class StorageManager {
       } else {
         col.requests.push(toSaveReq);
       }
-      this.globalState.update('restify.collections', collections);
+      this.globalState.update("restify.collections", collections);
       this.notifyChange();
     }
   }
@@ -488,8 +550,10 @@ export class StorageManager {
     const collections = this.getCollections();
     const col = collections.find((c) => c.id === collectionId);
     if (col) {
-      col.requests = (col.requests || []).filter((r) => String(r.id) !== String(requestId));
-      this.globalState.update('restify.collections', collections);
+      col.requests = (col.requests || []).filter(
+        (r) => String(r.id) !== String(requestId),
+      );
+      this.globalState.update("restify.collections", collections);
       this.notifyChange();
     }
   }
@@ -497,20 +561,28 @@ export class StorageManager {
   // ─── Groups (folders within a collection) ─────────────────
 
   /** Upsert a group inside a collection. */
-  saveGroup(collectionId: string, group: CollectionGroup, parentGroupId?: string): void {
+  saveGroup(
+    collectionId: string,
+    group: CollectionGroup,
+    parentGroupId?: string,
+  ): void {
     const collections = this.getCollections();
     const col = collections.find((c) => String(c.id) === String(collectionId));
     if (!col) return;
-    const container = parentGroupId ? _findGroup(col.groups || [], parentGroupId) : col;
+    const container = parentGroupId
+      ? _findGroup(col.groups || [], parentGroupId)
+      : col;
     if (!container) return;
     if (!container.groups) container.groups = [];
-    const idx = container.groups.findIndex((g) => String(g.id) === String(group.id));
+    const idx = container.groups.findIndex(
+      (g) => String(g.id) === String(group.id),
+    );
     if (idx >= 0) {
       container.groups[idx] = group;
     } else {
       container.groups.push(group);
     }
-    this.globalState.update('restify.collections', collections);
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
@@ -520,7 +592,7 @@ export class StorageManager {
     const col = collections.find((c) => String(c.id) === String(collectionId));
     if (!col) return;
     _removeGroup(col, groupId);
-    this.globalState.update('restify.collections', collections);
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
@@ -532,7 +604,7 @@ export class StorageManager {
     const grp = _findGroup(col.groups || [], groupId);
     if (grp && name.trim()) {
       grp.name = name.trim();
-      this.globalState.update('restify.collections', collections);
+      this.globalState.update("restify.collections", collections);
       this.notifyChange();
     }
   }
@@ -545,23 +617,33 @@ export class StorageManager {
     const grp = _findGroup(col.groups || [], groupId);
     if (!grp) return;
     if (!grp.requests) grp.requests = [];
-    const reqId = request.id ? String(request.id) : this.createId('request');
+    const reqId = request.id ? String(request.id) : this.createId("request");
     const idx = grp.requests.findIndex((r: any) => String(r.id) === reqId);
     const toSave = { ...request, id: reqId };
-    if (idx >= 0) { grp.requests[idx] = toSave; } else { grp.requests.push(toSave); }
-    this.globalState.update('restify.collections', collections);
+    if (idx >= 0) {
+      grp.requests[idx] = toSave;
+    } else {
+      grp.requests.push(toSave);
+    }
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
   /** Delete a request from a group. */
-  deleteRequestFromGroup(collectionId: string, groupId: string, requestId: string): void {
+  deleteRequestFromGroup(
+    collectionId: string,
+    groupId: string,
+    requestId: string,
+  ): void {
     const collections = this.getCollections();
     const col = collections.find((c) => String(c.id) === String(collectionId));
     if (!col) return;
     const grp = _findGroup(col.groups || [], groupId);
     if (!grp) return;
-    grp.requests = (grp.requests || []).filter((r: any) => String(r.id) !== String(requestId));
-    this.globalState.update('restify.collections', collections);
+    grp.requests = (grp.requests || []).filter(
+      (r: any) => String(r.id) !== String(requestId),
+    );
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
@@ -574,7 +656,7 @@ export class StorageManager {
     collectionId: string,
     requestId: string,
     fromGroupId: string | null,
-    toGroupId: string | null
+    toGroupId: string | null,
   ): void {
     if (fromGroupId === toGroupId) return;
     const collections = this.getCollections();
@@ -586,12 +668,16 @@ export class StorageManager {
     if (fromGroupId) {
       const src = _findGroup(col.groups || [], fromGroupId);
       if (!src?.requests) return;
-      const idx = src.requests.findIndex((r: any) => String(r.id) === String(requestId));
+      const idx = src.requests.findIndex(
+        (r: any) => String(r.id) === String(requestId),
+      );
       if (idx === -1) return;
       [request] = src.requests.splice(idx, 1);
     } else {
       if (!col.requests) return;
-      const idx = col.requests.findIndex((r) => String(r.id) === String(requestId));
+      const idx = col.requests.findIndex(
+        (r) => String(r.id) === String(requestId),
+      );
       if (idx === -1) return;
       [request] = col.requests.splice(idx, 1);
     }
@@ -607,7 +693,7 @@ export class StorageManager {
       col.requests.push(request);
     }
 
-    this.globalState.update('restify.collections', collections);
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
@@ -620,13 +706,17 @@ export class StorageManager {
     toCollectionId: string,
     requestId: string,
     fromGroupId: string | null,
-    toGroupId: string | null
+    toGroupId: string | null,
   ): void {
     const collections = this.getCollections();
-    
+
     // Find source and destination collections
-    const fromCol = collections.find((c) => String(c.id) === String(fromCollectionId));
-    const toCol = collections.find((c) => String(c.id) === String(toCollectionId));
+    const fromCol = collections.find(
+      (c) => String(c.id) === String(fromCollectionId),
+    );
+    const toCol = collections.find(
+      (c) => String(c.id) === String(toCollectionId),
+    );
     if (!fromCol || !toCol) return;
 
     // Remove from source
@@ -634,12 +724,16 @@ export class StorageManager {
     if (fromGroupId) {
       const src = _findGroup(fromCol.groups || [], fromGroupId);
       if (!src?.requests) return;
-      const idx = src.requests.findIndex((r: any) => String(r.id) === String(requestId));
+      const idx = src.requests.findIndex(
+        (r: any) => String(r.id) === String(requestId),
+      );
       if (idx === -1) return;
       [request] = src.requests.splice(idx, 1);
     } else {
       if (!fromCol.requests) return;
-      const idx = fromCol.requests.findIndex((r: any) => String(r.id) === String(requestId));
+      const idx = fromCol.requests.findIndex(
+        (r: any) => String(r.id) === String(requestId),
+      );
       if (idx === -1) return;
       [request] = fromCol.requests.splice(idx, 1);
     }
@@ -655,23 +749,23 @@ export class StorageManager {
       toCol.requests.push(request);
     }
 
-    this.globalState.update('restify.collections', collections);
+    this.globalState.update("restify.collections", collections);
     this.notifyChange();
   }
 
   // ─── Environments ─────────────────────────────────────────
   getEnvironments(): Environment[] {
-    return this.globalState.get('restify.environments', []);
+    return this.globalState.get("restify.environments", []);
   }
 
   getActiveEnvironment(): Environment | null {
     const envs = this.getEnvironments();
-    const activeId = this.globalState.get('restify.activeEnv', null);
+    const activeId = this.globalState.get("restify.activeEnv", null);
     return envs.find((e) => e.id === activeId) || null;
   }
 
   setActiveEnvironment(id: string | null): void {
-    this.globalState.update('restify.activeEnv', id);
+    this.globalState.update("restify.activeEnv", id);
     this.notifyChange();
   }
 
@@ -681,31 +775,38 @@ export class StorageManager {
     if (idx >= 0) {
       environments[idx] = env;
     } else {
-      const newEnv: Environment = { ...env, id: env.id || this.createId('environment'), variables: env.variables ?? [] };
+      const newEnv: Environment = {
+        ...env,
+        id: env.id || this.createId("environment"),
+        variables: env.variables ?? [],
+      };
       environments.push(newEnv);
     }
-    this.globalState.update('restify.environments', environments);
+    this.globalState.update("restify.environments", environments);
     this.notifyChange();
   }
 
   deleteEnvironment(id: string): void {
     const environments = this.getEnvironments().filter((e) => e.id !== id);
-    this.globalState.update('restify.environments', environments);
-    if (this.globalState.get('restify.activeEnv') === id) {
-      this.globalState.update('restify.activeEnv', null);
+    this.globalState.update("restify.environments", environments);
+    if (this.globalState.get("restify.activeEnv") === id) {
+      this.globalState.update("restify.activeEnv", null);
     }
     this.notifyChange();
   }
 
   // ─── Expansion States ──────────────────────────────────────
   setCollectionExpansionState(id: string, isOpen: boolean): void {
-    const states = this.globalState.get<Record<string, boolean>>('restify.expansionStates', {});
+    const states = this.globalState.get<Record<string, boolean>>(
+      "restify.expansionStates",
+      {},
+    );
     states[id] = isOpen;
-    this.globalState.update('restify.expansionStates', states);
+    this.globalState.update("restify.expansionStates", states);
   }
 
   getExpansionStates(): Record<string, boolean> {
-    return this.globalState.get('restify.expansionStates', {});
+    return this.globalState.get("restify.expansionStates", {});
   }
 
   // ─── Variable resolution ──────────────────────────────────
@@ -715,8 +816,8 @@ export class StorageManager {
     let resolved = text;
     for (const v of activeEnv.variables) {
       resolved = resolved.replace(
-        new RegExp(`\\{\\{${v.key}\\}\\}`, 'g'),
-        v.value
+        new RegExp(`\\{\\{${v.key}\\}\\}`, "g"),
+        v.value,
       );
     }
     return resolved;
@@ -724,25 +825,25 @@ export class StorageManager {
 
   // ─── Settings ─────────────────────────────────────────────
   getSettings(): SettingsState {
-    return this.globalState.get('restify.settings', {
-      proxy: '',
-      proxyAuthorization: '',
-      noProxy: '',
+    return this.globalState.get("restify.settings", {
+      proxy: "",
+      proxyAuthorization: "",
+      noProxy: "",
       certificates: [],
     });
   }
 
   saveSettings(settings: SettingsState): void {
-    this.globalState.update('restify.settings', settings);
+    this.globalState.update("restify.settings", settings);
     this.notifyChange();
   }
 
   clearProxySettings(): void {
     const settings = this.getSettings();
-    settings.proxy = '';
-    settings.proxyAuthorization = '';
-    settings.noProxy = '';
-    this.globalState.update('restify.settings', settings);
+    settings.proxy = "";
+    settings.proxyAuthorization = "";
+    settings.noProxy = "";
+    this.globalState.update("restify.settings", settings);
     this.notifyChange();
   }
 
@@ -758,7 +859,10 @@ export class StorageManager {
 
 // ─── Module-level group tree helpers ──────────────────────────────────────────
 
-export function _findGroup(groups: CollectionGroup[], id: string): CollectionGroup | undefined {
+export function _findGroup(
+  groups: CollectionGroup[],
+  id: string,
+): CollectionGroup | undefined {
   for (const g of groups) {
     if (String(g.id) === String(id)) return g;
     if (g.groups?.length) {
@@ -769,10 +873,16 @@ export function _findGroup(groups: CollectionGroup[], id: string): CollectionGro
   return undefined;
 }
 
-function _removeGroup(container: { groups?: CollectionGroup[] }, id: string): boolean {
+function _removeGroup(
+  container: { groups?: CollectionGroup[] },
+  id: string,
+): boolean {
   if (!container.groups) return false;
   const idx = container.groups.findIndex((g) => String(g.id) === String(id));
-  if (idx >= 0) { container.groups.splice(idx, 1); return true; }
+  if (idx >= 0) {
+    container.groups.splice(idx, 1);
+    return true;
+  }
   for (const g of container.groups) {
     if (_removeGroup(g, id)) return true;
   }

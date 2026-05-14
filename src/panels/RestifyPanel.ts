@@ -1,23 +1,24 @@
-import * as vscode from 'vscode';
-import * as https from 'https';
-import * as http from 'http';
-import * as fs from 'fs';
-import { URL } from 'url';
-import { StorageManager } from '../storage/StorageManager';
-import { getMainPanelHtml } from '../webview/mainPanelHtml';
+import * as vscode from "vscode";
+import * as https from "https";
+import * as http from "http";
+import * as fs from "fs";
+import { URL } from "url";
+import { StorageManager } from "../storage/StorageManager";
+import { getMainPanelHtml } from "../webview/mainPanelHtml";
 
 // Load https-proxy-agent at runtime to avoid module resolution issues
 let HttpProxyAgent: any;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const proxyModule = require('https-proxy-agent');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+  const proxyModule = require("https-proxy-agent");
   // Support different export shapes across versions:
   // - module.exports = HttpsProxyAgent (function/class)
   // - exports.HttpsProxyAgent = HttpsProxyAgent (named)
   // - exports.default = HttpsProxyAgent (ES module interop)
-  HttpProxyAgent = proxyModule.HttpsProxyAgent || proxyModule.default || proxyModule;
-} catch (e) {
-  console.error('Failed to load https-proxy-agent:', e);
+  HttpProxyAgent =
+    proxyModule.HttpsProxyAgent || proxyModule.default || proxyModule;
+} catch {
+  console.error("Failed to load https-proxy-agent:", e);
 }
 
 // Helper class to disable all proxy detection (direct connection only)
@@ -48,7 +49,7 @@ interface RequestData {
     key: string;
     value?: string;
     enabled?: boolean;
-    formType?: 'text' | 'file';
+    formType?: "text" | "file";
     fileName?: string;
     fileContentBase64?: string;
     contentType?: string;
@@ -57,14 +58,14 @@ interface RequestData {
   queryParams?: Array<{ key: string; value: string; enabled?: boolean }>;
   rejectUnauthorized?: boolean;
   script?: string; // Post-response script for variable extraction
-  authType?: 'none' | 'bearer' | 'basic' | 'apikey';
+  authType?: "none" | "bearer" | "basic" | "apikey";
   authData?: {
     token?: string;
     username?: string;
     password?: string;
     keyName?: string;
     keyValue?: string;
-    addTo?: 'header' | 'query';
+    addTo?: "header" | "query";
   };
   gqlQuery?: string;
   gqlVars?: string;
@@ -85,35 +86,35 @@ export class RestifyPanel {
   private onDispose: (instance: RestifyPanel) => void;
   private pendingRequest: RequestData | null = null;
   private webviewReady: boolean = false;
-  
+
   constructor(
     context: vscode.ExtensionContext,
     storageManager: StorageManager,
-    onDispose: (instance: RestifyPanel) => void
+    onDispose: (instance: RestifyPanel) => void,
   ) {
     this.context = context;
     this.storageManager = storageManager;
     this.onDispose = onDispose;
 
     this.panel = vscode.window.createWebviewPanel(
-      'restify-main',
-      'New Request',
+      "restify-main",
+      "New Request",
       vscode.ViewColumn.One,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [context.extensionUri],
-      }
+      },
     );
 
     this.panel.webview.html = getMainPanelHtml(context, this.panel.webview);
     this.panel.webview.onDidReceiveMessage((msg) => {
       this._handleMessage(msg).catch((err) => {
-        console.error('Error handling message:', err);
+        console.error("Error handling message:", err);
         // Send error response to webview to clear loading state
         this.panel.webview.postMessage({
-          command: 'requestError',
-          error: err?.message || 'An unexpected error occurred',
+          command: "requestError",
+          error: err?.message || "An unexpected error occurred",
           duration: 0,
         });
       });
@@ -125,12 +126,15 @@ export class RestifyPanel {
 
     // Post theme kind and listen for changes so webview can adapt icon coloring
     try {
-      this.panel.webview.postMessage({ command: 'setTheme', kind: vscode.window.activeColorTheme.kind });
-    } catch (e) {
+      this.panel.webview.postMessage({
+        command: "setTheme",
+        kind: vscode.window.activeColorTheme.kind,
+      });
+    } catch {
       /* empty */
     }
     const themeListener = vscode.window.onDidChangeActiveColorTheme((t) => {
-      this.panel.webview.postMessage({ command: 'setTheme', kind: t.kind });
+      this.panel.webview.postMessage({ command: "setTheme", kind: t.kind });
     });
     this.panel.onDidDispose(() => themeListener.dispose());
 
@@ -138,7 +142,9 @@ export class RestifyPanel {
   }
 
   private createSafeId(len = 8): string {
-    return Math.random().toString(36).slice(2, 2 + len);
+    return Math.random()
+      .toString(36)
+      .slice(2, 2 + len);
   }
 
   updateMetadata(): void {
@@ -146,11 +152,11 @@ export class RestifyPanel {
     setTimeout(() => {
       this._sendEnvironments();
       this.panel.webview.postMessage({
-        command: 'collections',
+        command: "collections",
         data: this.storageManager.getCollections(),
       });
       this.panel.webview.postMessage({
-        command: 'loadSettings',
+        command: "loadSettings",
         settings: this.storageManager.getSettings(),
       });
     }, 100);
@@ -158,11 +164,11 @@ export class RestifyPanel {
 
   loadRequest(requestData: RequestData): void {
     this.pendingRequest = requestData;
-    
+
     if (requestData && requestData.name) {
       this.panel.title = requestData.name;
     }
-    
+
     // If webview is already ready, send immediately
     if (this.webviewReady) {
       this._sendPendingRequest();
@@ -172,7 +178,7 @@ export class RestifyPanel {
   private _sendPendingRequest(): void {
     if (this.pendingRequest) {
       this.panel.webview.postMessage({
-        command: 'loadRequest',
+        command: "loadRequest",
         data: this.pendingRequest,
       });
       this.pendingRequest = null;
@@ -181,16 +187,13 @@ export class RestifyPanel {
 
   private _sendEnvironments(): void {
     this.panel.webview.postMessage({
-      command: 'setEnvironments',
+      command: "setEnvironments",
       environments: this.storageManager.getEnvironments(),
       activeEnvId: this.storageManager.getActiveEnvironment()?.id || null,
     });
   }
 
-  private _shouldUseProxy(
-    host: string,
-    noProxyArray?: string[]
-  ): boolean {
+  private _shouldUseProxy(host: string, noProxyArray?: string[]): boolean {
     if (!noProxyArray || !Array.isArray(noProxyArray)) return true;
 
     const normalizedHost = host.trim().toLowerCase();
@@ -198,9 +201,9 @@ export class RestifyPanel {
     return !noProxyArray.some((noHost) => {
       // Accept entries like "ubstest.com", ".ubstest.com", or "https://ubstest.com:8080".
       let sanitizedNoHost = noHost.trim().toLowerCase();
-      sanitizedNoHost = sanitizedNoHost.replace(/^[a-z]+:\/\//, '');
-      sanitizedNoHost = sanitizedNoHost.replace(/:\d+$/, '');
-      sanitizedNoHost = sanitizedNoHost.replace(/^\.+/, '');
+      sanitizedNoHost = sanitizedNoHost.replace(/^[a-z]+:\/\//, "");
+      sanitizedNoHost = sanitizedNoHost.replace(/:\d+$/, "");
+      sanitizedNoHost = sanitizedNoHost.replace(/^\.+/, "");
 
       if (!sanitizedNoHost) return false;
 
@@ -212,12 +215,10 @@ export class RestifyPanel {
     });
   }
 
-  private _getCertificatesForHost(
-    host: string
-  ): Record<string, Buffer> | null {
+  private _getCertificatesForHost(host: string): Record<string, Buffer> | null {
     const settings = this.storageManager.getSettings();
     const certMatch = (settings.certificates || []).find(
-      (cert) => host === cert.hostname || host.endsWith('.' + cert.hostname)
+      (cert) => host === cert.hostname || host.endsWith("." + cert.hostname),
     );
 
     if (certMatch) {
@@ -225,10 +226,8 @@ export class RestifyPanel {
         const options: Record<string, Buffer> = {};
         if (certMatch.certPath)
           options.cert = fs.readFileSync(certMatch.certPath);
-        if (certMatch.keyPath)
-          options.key = fs.readFileSync(certMatch.keyPath);
-        if (certMatch.caPath)
-          options.ca = fs.readFileSync(certMatch.caPath);
+        if (certMatch.keyPath) options.key = fs.readFileSync(certMatch.keyPath);
+        if (certMatch.caPath) options.ca = fs.readFileSync(certMatch.caPath);
         return options;
       } catch (err) {
         console.error(`Failed to read certificates for ${host}:`, err);
@@ -240,18 +239,18 @@ export class RestifyPanel {
 
   private async _handleMessage(msg: any): Promise<void> {
     switch (msg.command) {
-      case 'webviewReady':
+      case "webviewReady":
         // Webview is ready, send all initial data
         this.webviewReady = true;
         this.updateMetadata();
         // Send any pending request data
         this._sendPendingRequest();
         break;
-      case 'executeRequest':
+      case "executeRequest":
         // msg.savedRequest is the original state (no injected auth headers) — used for history.
         await this._executeRequest(msg.request, msg.savedRequest);
         break;
-      case 'setScriptVariables':
+      case "setScriptVariables":
         // Script extracted variables - add them to the active environment
         if (this.storageManager.getActiveEnvironment()) {
           const env = this.storageManager.getActiveEnvironment();
@@ -260,8 +259,11 @@ export class RestifyPanel {
             const now = Date.now(); // Current timestamp
             // Update or add extracted variables with timestamp
             Object.entries(msg.variables).forEach(([key, value]) => {
-              const existingIndex = existingVars.findIndex((v) => v.key === key);
-              const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+              const existingIndex = existingVars.findIndex(
+                (v) => v.key === key,
+              );
+              const stringValue =
+                typeof value === "string" ? value : JSON.stringify(value);
               if (existingIndex >= 0) {
                 // Update existing variable and set timestamp
                 existingVars[existingIndex].value = stringValue;
@@ -272,69 +274,75 @@ export class RestifyPanel {
               }
             });
             // Update environment using saveEnvironment
-            this.storageManager.saveEnvironment({ ...env, variables: existingVars });
+            this.storageManager.saveEnvironment({
+              ...env,
+              variables: existingVars,
+            });
             // Notify webview of updated environment
             this._sendEnvironments();
           }
         }
         break;
-      case 'saveToCollection':
+      case "saveToCollection":
         this._saveToCollection(msg.request, msg.collectionName, msg.groupId);
         break;
-      case 'getCollections':
+      case "getCollections":
         this.updateMetadata();
         break;
-      case 'openSettings':
-        vscode.commands.executeCommand('workbench.action.openSettings', 'restify');
+      case "openSettings":
+        vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "restify",
+        );
         break;
-      case 'configureProxy':
+      case "configureProxy":
         await this._initializeProxySettings();
         break;
-      case 'getEnvironments':
+      case "getEnvironments":
         this._sendEnvironments();
         break;
-      case 'setActiveEnvironment':
+      case "setActiveEnvironment":
         this.storageManager.setActiveEnvironment(msg.id);
         break;
-      case 'saveEnvironment': {
+      case "saveEnvironment": {
         const env = { ...msg.data };
         if (Array.isArray(env.variables)) {
           env.variables = env.variables.filter(
             (v: any) =>
-              (v.key || '').toString().trim() !== '' ||
-              (v.value || '').toString().trim() !== ''
+              (v.key || "").toString().trim() !== "" ||
+              (v.value || "").toString().trim() !== "",
           );
         }
         this.storageManager.saveEnvironment(env);
         this._sendEnvironments();
         break;
       }
-      case 'deleteEnvironment': {
+      case "deleteEnvironment": {
         this.storageManager.deleteEnvironment(msg.id);
         this._sendEnvironments();
         break;
       }
-      case 'updateTitle':
-        this.panel.title = msg.title || 'New Request';
+      case "updateTitle":
+        this.panel.title = msg.title || "New Request";
         break;
-      case 'resolveTooltip': {
+      case "resolveTooltip": {
         const resolved = this.storageManager.resolveVariables(msg.text);
         this.panel.webview.postMessage({
-          command: 'setTooltipValue',
+          command: "setTooltipValue",
           value: resolved,
         });
         break;
       }
-      case 'saveSettings':
+      case "saveSettings":
         this.storageManager.saveSettings(msg.settings);
         // Send confirmation back with the saved settings
         this.panel.webview.postMessage({
-          command: 'loadSettings',
+          command: "loadSettings",
           settings: msg.settings,
         });
-        vscode.window.showInformationMessage('✓ Settings saved successfully');
+        vscode.window.showInformationMessage("✓ Settings saved successfully");
         break;
-      case 'runScript':
+      case "runScript":
         await this._runScript(msg.script, msg.response);
         break;
     }
@@ -343,8 +351,8 @@ export class RestifyPanel {
   private async _runScript(script: string, response: any): Promise<void> {
     // Execute the user script on the extension host (Node.js) using vm module
     // This bypasses the webview CSP that blocks eval/Worker.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const vm = require('vm') as typeof import('vm');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+    const vm = require("vm") as typeof import("vm");
     const logs: string[] = [];
     const variables: Record<string, any> = {};
     const vars = variables;
@@ -353,21 +361,31 @@ export class RestifyPanel {
       logs.push(
         args
           .map((a) => {
-            try { return typeof a === 'string' ? a : JSON.stringify(a); } catch { return String(a); }
+            try {
+              return typeof a === "string" ? a : JSON.stringify(a);
+            } catch {
+              return String(a);
+            }
           })
-          .join(' ')
+          .join(" "),
       );
-    const set = (k: string, v: any) => { variables[String(k)] = v; };
+    const set = (k: string, v: any) => {
+      variables[String(k)] = v;
+    };
 
-    let parsedBody: any = response?.body ?? '';
-    try { parsedBody = JSON.parse(parsedBody); } catch { /* keep raw string */ }
+    let parsedBody: any = response?.body ?? "";
+    try {
+      parsedBody = JSON.parse(parsedBody);
+    } catch {
+      /* keep raw string */
+    }
 
     const responseObj = {
       status: response?.status ?? 0,
-      statusText: response?.statusText ?? '',
+      statusText: response?.statusText ?? "",
       headers: response?.headers ?? {},
       body: parsedBody,
-      rawBody: response?.body ?? '',
+      rawBody: response?.body ?? "",
     };
 
     try {
@@ -383,71 +401,84 @@ export class RestifyPanel {
         console: { log, warn: log, error: log, info: log },
       });
 
-      const wrapped = '(async function(){' + script + '})();';
+      const wrapped = "(async function(){" + script + "})();";
       // vm.runInContext with timeout only covers synchronous part; we race the promise
-      const resultPromise = vm.runInContext(wrapped, context, { timeout: 5000 });
+      const resultPromise = vm.runInContext(wrapped, context, {
+        timeout: 5000,
+      });
 
-      if (resultPromise && typeof (resultPromise as any).then === 'function') {
+      if (resultPromise && typeof (resultPromise as any).then === "function") {
         await Promise.race([
           resultPromise,
           new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error('Script timed out after 5s')), 5000)
+            setTimeout(
+              () => reject(new Error("Script timed out after 5s")),
+              5000,
+            ),
           ),
         ]);
       }
 
       this.panel.webview.postMessage({
-        command: 'scriptResult',
+        command: "scriptResult",
         result: { success: true, variables, logs },
       });
 
       // Save extracted variables to active environment (reuse existing logic)
       if (Object.keys(variables).length > 0) {
-        await this._handleMessage({ command: 'setScriptVariables', variables });
+        await this._handleMessage({ command: "setScriptVariables", variables });
       }
     } catch (err: any) {
       this.panel.webview.postMessage({
-        command: 'scriptResult',
-        result: { success: false, variables, logs, error: err?.message ?? String(err) },
+        command: "scriptResult",
+        result: {
+          success: false,
+          variables,
+          logs,
+          error: err?.message ?? String(err),
+        },
       });
     }
   }
 
   private async _initializeProxySettings(): Promise<void> {
-    const config = vscode.workspace.getConfiguration('restify');
-    const existingProxy = config.get('proxy');
+    const config = vscode.workspace.getConfiguration("restify");
+    const existingProxy = config.get("proxy");
 
     if (!existingProxy || Object.keys(existingProxy).length === 0) {
       await config.update(
-        'proxy',
+        "proxy",
         {
-          'http.proxyAuthorization': null,
-          'http.proxy': 'https://abc.com:8080',
-          'http.noProxy': ['abc.com'],
+          "http.proxyAuthorization": null,
+          "http.proxy": "https://abc.com:8080",
+          "http.noProxy": ["abc.com"],
         },
-        vscode.ConfigurationTarget.Global
+        vscode.ConfigurationTarget.Global,
       );
       vscode.window.showInformationMessage(
-        'Proxy configuration initialized in settings.json'
+        "Proxy configuration initialized in settings.json",
       );
     }
     vscode.commands.executeCommand(
-      'workbench.action.openSettings',
-      'restify.proxy'
+      "workbench.action.openSettings",
+      "restify.proxy",
     );
   }
 
-  private async _executeRequest(req: RequestData, savedReq?: RequestData): Promise<void> {
+  private async _executeRequest(
+    req: RequestData,
+    savedReq?: RequestData,
+  ): Promise<void> {
     // savedReq is the original request state without injected auth headers.
     // Use it when persisting to history so reloading doesn't re-duplicate auth headers.
     const historyReq = savedReq || req;
     const startTime = Date.now();
     const timings: any = { start: startTime };
     const resolveVars = (s: string | undefined) =>
-      this.storageManager.resolveVariables(s || '');
+      this.storageManager.resolveVariables(s || "");
 
     const rawUrl = resolveVars(req.url);
-    const method = req.method || 'GET';
+    const method = req.method || "GET";
     const headers: Record<string, string> = {};
 
     (req.headers || []).forEach((h) => {
@@ -457,17 +488,17 @@ export class RestifyPanel {
     });
 
     let body: string | Buffer | undefined = undefined;
-    if (req.bodyType === 'json' && req.body) {
+    if (req.bodyType === "json" && req.body) {
       body = resolveVars(req.body);
-      if (!headers['Content-Type'] && !headers['content-type']) {
-        headers['Content-Type'] = 'application/json';
+      if (!headers["Content-Type"] && !headers["content-type"]) {
+        headers["Content-Type"] = "application/json";
       }
-    } else if (req.bodyType === 'form' && req.formData) {
+    } else if (req.bodyType === "form" && req.formData) {
       const enabledFields = (req.formData || []).filter(
-        (f) => f.key && f.enabled !== false
+        (f) => f.key && f.enabled !== false,
       );
       const hasFileField = enabledFields.some(
-        (f) => (f.formType || 'text') === 'file'
+        (f) => (f.formType || "text") === "file",
       );
 
       if (hasFileField) {
@@ -476,67 +507,66 @@ export class RestifyPanel {
 
         enabledFields.forEach((field) => {
           const fieldName = resolveVars(field.key);
-          const fieldType = field.formType || 'text';
+          const fieldType = field.formType || "text";
 
-          if (fieldType === 'file' && field.fileContentBase64) {
-            const fileName = field.fileName || 'upload.bin';
-            const contentType =
-              field.contentType || 'application/octet-stream';
-            const fileBuffer = Buffer.from(field.fileContentBase64, 'base64');
+          if (fieldType === "file" && field.fileContentBase64) {
+            const fileName = field.fileName || "upload.bin";
+            const contentType = field.contentType || "application/octet-stream";
+            const fileBuffer = Buffer.from(field.fileContentBase64, "base64");
 
             chunks.push(
               Buffer.from(
                 `--${boundary}\r\n` +
                   `Content-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\n` +
-                  `Content-Type: ${contentType}\r\n\r\n`
-              )
+                  `Content-Type: ${contentType}\r\n\r\n`,
+              ),
             );
             chunks.push(fileBuffer);
-            chunks.push(Buffer.from('\r\n'));
+            chunks.push(Buffer.from("\r\n"));
             return;
           }
 
-          const fieldValue = resolveVars(field.value || '');
+          const fieldValue = resolveVars(field.value || "");
           chunks.push(
             Buffer.from(
               `--${boundary}\r\n` +
                 `Content-Disposition: form-data; name="${fieldName}"\r\n\r\n` +
-                `${fieldValue}\r\n`
-            )
+                `${fieldValue}\r\n`,
+            ),
           );
         });
 
         chunks.push(Buffer.from(`--${boundary}--\r\n`));
         body = Buffer.concat(chunks);
 
-        headers['Content-Type'] = `multipart/form-data; boundary=${boundary}`;
-        headers['Content-Length'] = String(body.length);
+        headers["Content-Type"] = `multipart/form-data; boundary=${boundary}`;
+        headers["Content-Length"] = String(body.length);
       } else {
         const params = new URLSearchParams();
         enabledFields.forEach((f) => {
-          params.append(resolveVars(f.key), resolveVars(f.value || ''));
+          params.append(resolveVars(f.key), resolveVars(f.value || ""));
         });
         body = params.toString();
-        if (!headers['Content-Type']) {
-          headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        if (!headers["Content-Type"]) {
+          headers["Content-Type"] = "application/x-www-form-urlencoded";
         }
       }
-    } else if (req.bodyType === 'urlencoded') {
+    } else if (req.bodyType === "urlencoded") {
       const enabledFields = (req.urlencoded || []).filter(
-        (f) => f.key && f.enabled !== false
+        (f) => f.key && f.enabled !== false,
       );
       const params = new URLSearchParams();
       enabledFields.forEach((f) => {
-        params.append(resolveVars(f.key), resolveVars(f.value || ''));
+        params.append(resolveVars(f.key), resolveVars(f.value || ""));
       });
       body = params.toString();
-      if (!headers['Content-Type']) {
-        headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      if (!headers["Content-Type"]) {
+        headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-    } else if (req.bodyType === 'text' || req.bodyType === 'xml') {
+    } else if (req.bodyType === "text" || req.bodyType === "xml") {
       body = resolveVars(req.body);
-      if (req.bodyType === 'xml' && !headers['Content-Type']) {
-        headers['Content-Type'] = 'application/xml';
+      if (req.bodyType === "xml" && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/xml";
       }
     }
 
@@ -549,16 +579,16 @@ export class RestifyPanel {
           if (p.key && p.enabled !== false) {
             parsedUrl.searchParams.append(
               resolveVars(p.key),
-              resolveVars(p.value)
+              resolveVars(p.value),
             );
           }
         });
         finalUrl = parsedUrl.toString();
       }
-    } catch (e) {
+    } catch {
       this.panel.webview.postMessage({
-        command: 'requestError',
-        error: 'Invalid URL',
+        command: "requestError",
+        error: "Invalid URL",
         duration: 0,
       });
       return;
@@ -570,40 +600,61 @@ export class RestifyPanel {
     if (settings.proxy) {
       // Parse no-proxy list - filter out empty strings
       const noProxyArray = settings.noProxy
-        ? settings.noProxy.split(',').map((h) => h.trim()).filter((h) => h.length > 0)
+        ? settings.noProxy
+            .split(",")
+            .map((h) => h.trim())
+            .filter((h) => h.length > 0)
         : [];
-      
+
       // Log for debugging
       // eslint-disable-next-line no-console
-      console.log('Proxy check:', {
+      console.log("Proxy check:", {
         proxyConfigured: !!settings.proxy,
         hostname: parsedUrl.hostname.toLowerCase(),
         noProxyList: noProxyArray,
-        shouldUseProxy: this._shouldUseProxy(parsedUrl.hostname.toLowerCase(), noProxyArray),
+        shouldUseProxy: this._shouldUseProxy(
+          parsedUrl.hostname.toLowerCase(),
+          noProxyArray,
+        ),
       });
-      
-      if (this._shouldUseProxy(parsedUrl.hostname.toLowerCase(), noProxyArray)) {
+
+      if (
+        this._shouldUseProxy(parsedUrl.hostname.toLowerCase(), noProxyArray)
+      ) {
         proxyOpts = {
           proxy: settings.proxy,
           auth: settings.proxyAuthorization,
         };
         // eslint-disable-next-line no-console
-        console.log('✓ Proxy is ENABLED for this request');
+        console.log("✓ Proxy is ENABLED for this request");
       } else {
         // eslint-disable-next-line no-console
-        console.log('✗ Proxy is DISABLED (hostname in noProxy list)');
+        console.log("✗ Proxy is DISABLED (hostname in noProxy list)");
       }
     } else {
       // eslint-disable-next-line no-console
-      console.log('⚠ No proxy configured in settings');
+      console.log("⚠ No proxy configured in settings");
     }
 
     // Send a debug log to the webview so the UI can surface diagnostic steps
     try {
-      this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'preparedRequest', info: { method, url: finalUrl, headers: Object.keys(headers).slice(0,10), hasBody: !!body } } });
-    } catch (e) { /* ignore postMessage failures for debug */ }
+      this.panel.webview.postMessage({
+        command: "debugLog",
+        data: {
+          stage: "preparedRequest",
+          info: {
+            method,
+            url: finalUrl,
+            headers: Object.keys(headers).slice(0, 10),
+            hasBody: !!body,
+          },
+        },
+      });
+    } catch {
+      /* ignore postMessage failures for debug */
+    }
 
-    this.panel.webview.postMessage({ command: 'requestStart' });
+    this.panel.webview.postMessage({ command: "requestStart" });
 
     try {
       const netStart = Date.now();
@@ -613,13 +664,20 @@ export class RestifyPanel {
         headers,
         body,
         req.rejectUnauthorized === true,
-        proxyOpts
+        proxyOpts,
       );
       try {
-        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'receivedResponse', info: { status: result.status, size: Buffer.byteLength(result.body || '', 'utf8') } } });
-      } catch (e) {
-        /* empty */
-      
+        this.panel.webview.postMessage({
+          command: "debugLog",
+          data: {
+            stage: "receivedResponse",
+            info: {
+              status: result.status,
+              size: Buffer.byteLength(result.body || "", "utf8"),
+            },
+          },
+        });
+      } catch {
         /* empty */
       }
       timings.network = Date.now() - netStart;
@@ -631,7 +689,7 @@ export class RestifyPanel {
         headers: result.headers,
         body: result.body,
         duration,
-        size: Buffer.byteLength(result.body || '', 'utf8'),
+        size: Buffer.byteLength(result.body || "", "utf8"),
       };
 
       // Detect mTLS usage
@@ -646,7 +704,7 @@ export class RestifyPanel {
 
       // Build curl command
       let curlCommand = `curl -X ${method}`;
-      
+
       // Add headers
       resolvedHeaders.forEach((h) => {
         if (h.enabled !== false) {
@@ -656,7 +714,7 @@ export class RestifyPanel {
 
       // Add data/body
       if (body) {
-        if (typeof body === 'string') {
+        if (typeof body === "string") {
           curlCommand += ` -d '${body.replace(/'/g, "'\\''")}'`;
         } else {
           curlCommand += ` --data-binary @file`;
@@ -695,18 +753,24 @@ export class RestifyPanel {
         // measure approximate size
         let size = 0;
         try {
-          size = Buffer.byteLength(JSON.stringify({ response: safeResponse, requestInfo: safeRequestInfo }), 'utf8');
+          size = Buffer.byteLength(
+            JSON.stringify({
+              response: safeResponse,
+              requestInfo: safeRequestInfo,
+            }),
+            "utf8",
+          );
         } catch {
           /* empty */
         }
         this.panel.webview.postMessage({
-          command: 'requestComplete',
+          command: "requestComplete",
           response: safeResponse,
           requestInfo: safeRequestInfo,
         });
         timings.postMessageMs = Date.now() - pmStart;
         timings.postMessageSize = size;
-      } catch (pmErr) {
+      } catch {
         /* empty */
       }
 
@@ -721,29 +785,36 @@ export class RestifyPanel {
           duration,
           request: historyReq,
           response: responseData,
-          activeEnvironmentId: this.storageManager.getActiveEnvironment()?.id || null,
+          activeEnvironmentId:
+            this.storageManager.getActiveEnvironment()?.id || null,
         });
         timings.addHistoryMs = Date.now() - hStart;
       } catch (hErr) {
-        console.error('addToHistory failed:', hErr);
+        console.error("addToHistory failed:", hErr);
       }
 
       // Log timings for diagnostics
       // eslint-disable-next-line no-console
-      console.log('Restify: request timings', {
+      console.log("Restify: request timings", {
         url: finalUrl,
         status: result.status,
         timings,
       });
     } catch (err: any) {
       try {
-        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'requestError', info: { message: err?.message || String(err) } } });
-      } catch (e) {
+        this.panel.webview.postMessage({
+          command: "debugLog",
+          data: {
+            stage: "requestError",
+            info: { message: err?.message || String(err) },
+          },
+        });
+      } catch {
         /* empty */
       }
       const duration = Date.now() - startTime;
       this.panel.webview.postMessage({
-        command: 'requestError',
+        command: "requestError",
         error: err.message,
         duration,
       });
@@ -755,7 +826,8 @@ export class RestifyPanel {
         error: err.message,
         duration,
         request: historyReq,
-        activeEnvironmentId: this.storageManager.getActiveEnvironment()?.id || null,
+        activeEnvironmentId:
+          this.storageManager.getActiveEnvironment()?.id || null,
       });
     }
   }
@@ -766,29 +838,31 @@ export class RestifyPanel {
     headers: Record<string, string>,
     body: string | Buffer | undefined,
     rejectUnauthorized: boolean,
-    proxyOpts: { proxy: string; auth?: string } | null
+    proxyOpts: { proxy: string; auth?: string } | null,
   ): Promise<RequestResult> {
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(url);
-      const isHttps = parsedUrl.protocol === 'https:';
+      const isHttps = parsedUrl.protocol === "https:";
 
       const rawProxyAuth = proxyOpts?.auth?.trim();
       let proxyAuthToken: string | undefined;
       let proxyAuthCredentials: string | undefined;
       if (rawProxyAuth) {
         if (/^Basic\s+/i.test(rawProxyAuth)) {
-          proxyAuthToken = rawProxyAuth.replace(/^Basic\s+/i, '').trim();
-        } else if (rawProxyAuth.includes(':')) {
+          proxyAuthToken = rawProxyAuth.replace(/^Basic\s+/i, "").trim();
+        } else if (rawProxyAuth.includes(":")) {
           proxyAuthCredentials = rawProxyAuth;
-          proxyAuthToken = Buffer.from(rawProxyAuth).toString('base64');
+          proxyAuthToken = Buffer.from(rawProxyAuth).toString("base64");
         } else {
           proxyAuthToken = rawProxyAuth;
         }
 
         if (!proxyAuthCredentials && proxyAuthToken) {
           try {
-            const decoded = Buffer.from(proxyAuthToken, 'base64').toString('utf8');
-            if (decoded.includes(':')) {
+            const decoded = Buffer.from(proxyAuthToken, "base64").toString(
+              "utf8",
+            );
+            if (decoded.includes(":")) {
               proxyAuthCredentials = decoded;
             }
           } catch {
@@ -823,52 +897,72 @@ export class RestifyPanel {
             ? proxyOpts.proxy
             : `http://${proxyOpts.proxy}`;
           const parsedProxyUrl = new URL(normalizedProxyUrl);
-          const isProxyHttps = parsedProxyUrl.protocol === 'https:';
+          const isProxyHttps = parsedProxyUrl.protocol === "https:";
 
           if (HttpProxyAgent) {
             const proxyUrlForAgent = new URL(parsedProxyUrl.toString());
 
             // Allow auth from either proxy URL or separate proxyAuthorization field.
             if (proxyAuthCredentials && !proxyUrlForAgent.username) {
-              const separator = proxyAuthCredentials.indexOf(':');
+              const separator = proxyAuthCredentials.indexOf(":");
               if (separator >= 0) {
-                proxyUrlForAgent.username = proxyAuthCredentials.slice(0, separator);
-                proxyUrlForAgent.password = proxyAuthCredentials.slice(separator + 1);
+                proxyUrlForAgent.username = proxyAuthCredentials.slice(
+                  0,
+                  separator,
+                );
+                proxyUrlForAgent.password = proxyAuthCredentials.slice(
+                  separator + 1,
+                );
               }
             }
 
             try {
               options.agent = new HttpProxyAgent(proxyUrlForAgent.toString());
             } catch (agentErr) {
-              console.error('Failed to create proxy agent:', agentErr);
+              console.error("Failed to create proxy agent:", agentErr);
               return reject(
                 new Error(
-                  `Failed to create proxy agent: ${agentErr instanceof Error ? agentErr.message : String(agentErr)}`
-                )
+                  `Failed to create proxy agent: ${agentErr instanceof Error ? agentErr.message : String(agentErr)}`,
+                ),
               );
             }
 
             if (proxyAuthToken) {
-              options.headers = { ...options.headers } as Record<string, string>;
-              (options.headers as Record<string, string>)['Proxy-Authorization'] = `Basic ${proxyAuthToken}`;
+              options.headers = { ...options.headers } as Record<
+                string,
+                string
+              >;
+              (options.headers as Record<string, string>)[
+                "Proxy-Authorization"
+              ] = `Basic ${proxyAuthToken}`;
             }
 
             // eslint-disable-next-line no-console
-            console.log('Using proxy agent:', {
+            console.log("Using proxy agent:", {
               proxyHost: parsedProxyUrl.hostname,
-              proxyPort: parsedProxyUrl.port || (isProxyHttps ? '443' : '80'),
+              proxyPort: parsedProxyUrl.port || (isProxyHttps ? "443" : "80"),
               hasProxyAuth: !!proxyAuthToken,
               targetUrl: url,
               rejectUnauthorized: options.rejectUnauthorized,
             });
 
             const lib = isHttps ? https : http;
-            return this._executeProxyRequest(lib, options, body, resolve, reject);
+            return this._executeProxyRequest(
+              lib,
+              options,
+              body,
+              resolve,
+              reject,
+            );
           }
 
           // Fallback when proxy agent is unavailable (supports plain HTTP target requests).
           if (isHttps) {
-            return reject(new Error('Proxy agent module is not available for HTTPS target requests'));
+            return reject(
+              new Error(
+                "Proxy agent module is not available for HTTPS target requests",
+              ),
+            );
           }
 
           options.hostname = parsedProxyUrl.hostname;
@@ -881,17 +975,18 @@ export class RestifyPanel {
 
           if (proxyAuthToken) {
             options.headers = { ...options.headers } as Record<string, string>;
-            (options.headers as Record<string, string>)['Proxy-Authorization'] = `Basic ${proxyAuthToken}`;
+            (options.headers as Record<string, string>)["Proxy-Authorization"] =
+              `Basic ${proxyAuthToken}`;
           }
 
           const lib = isProxyHttps ? https : http;
           return this._executeProxyRequest(lib, options, body, resolve, reject);
-        } catch (e) {
-          console.error('Proxy URL parsing error:', e);
+        } catch {
+          console.error("Proxy URL parsing error:", e);
           return reject(
             new Error(
-              `Invalid Proxy URL configuration: ${e instanceof Error ? e.message : String(e)}`
-            )
+              `Invalid Proxy URL configuration: ${e instanceof Error ? e.message : String(e)}`,
+            ),
           );
         }
       }
@@ -900,46 +995,69 @@ export class RestifyPanel {
       // This prevents Node.js from using environment variables or system-wide proxy settings
       if (!proxyOpts || !proxyOpts.proxy) {
         // eslint-disable-next-line no-console
-        console.log('🔒 CRITICAL: Disabling system proxy - using direct connection ONLY');
+        console.log(
+          "🔒 CRITICAL: Disabling system proxy - using direct connection ONLY",
+        );
         options.agent = isHttps ? noProxyAgentHttps : noProxyAgentHttp;
       }
       try {
-        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-start', info: { hostname: parsedUrl.hostname, port: options.port, isHttps } } });
-      } catch (e) {
+        this.panel.webview.postMessage({
+          command: "debugLog",
+          data: {
+            stage: "doRequest-start",
+            info: { hostname: parsedUrl.hostname, port: options.port, isHttps },
+          },
+        });
+      } catch {
         /* empty */
       }
 
       const lib = isHttps ? https : http;
       const req = lib.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
+        let data = "";
+        res.on("data", (chunk) => {
           data += chunk;
         });
-        res.on('end', () => {
+        res.on("end", () => {
           try {
-            this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-end', info: { status: res.statusCode, size: Buffer.byteLength(data || '', 'utf8') } } });
-          } catch (e) {
+            this.panel.webview.postMessage({
+              command: "debugLog",
+              data: {
+                stage: "doRequest-end",
+                info: {
+                  status: res.statusCode,
+                  size: Buffer.byteLength(data || "", "utf8"),
+                },
+              },
+            });
+          } catch {
             /* empty */
           }
           resolve({
             status: res.statusCode || 0,
-            statusText: res.statusMessage || '',
+            statusText: res.statusMessage || "",
             headers: res.headers,
             body: data,
           });
         });
       });
-      req.on('error', (err) => {
+      req.on("error", (err) => {
         try {
-          this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'doRequest-error', info: { message: err?.message || String(err) } } });
-        } catch (e) {
+          this.panel.webview.postMessage({
+            command: "debugLog",
+            data: {
+              stage: "doRequest-error",
+              info: { message: err?.message || String(err) },
+            },
+          });
+        } catch {
           /* empty */
         }
         reject(err);
       });
       req.setTimeout(30000, () => {
         req.destroy();
-        reject(new Error('Request timed out after 30 seconds'));
+        reject(new Error("Request timed out after 30 seconds"));
       });
 
       if (body) req.write(body);
@@ -952,36 +1070,57 @@ export class RestifyPanel {
     options: any,
     body: string | Buffer | undefined,
     resolve: (value: RequestResult) => void,
-    reject: (reason?: any) => void
+    reject: (reason?: any) => void,
   ): void {
     try {
-      this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-start', info: { proxyOpts: !!options.agent, path: options.path } } });
-    } catch (e) {
+      this.panel.webview.postMessage({
+        command: "debugLog",
+        data: {
+          stage: "proxyRequest-start",
+          info: { proxyOpts: !!options.agent, path: options.path },
+        },
+      });
+    } catch {
       /* empty */
     }
 
     const req = lib.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => (data += chunk.toString()));
-      res.on('end', () => {
+      let data = "";
+      res.on("data", (chunk: Buffer) => (data += chunk.toString()));
+      res.on("end", () => {
         try {
-          this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-end', info: { status: res.statusCode, size: Buffer.byteLength(data || '', 'utf8') } } });
-        } catch (e) {
+          this.panel.webview.postMessage({
+            command: "debugLog",
+            data: {
+              stage: "proxyRequest-end",
+              info: {
+                status: res.statusCode,
+                size: Buffer.byteLength(data || "", "utf8"),
+              },
+            },
+          });
+        } catch {
           /* empty */
         }
         resolve({
           status: res.statusCode || 0,
-          statusText: res.statusMessage || 'Unknown',
+          statusText: res.statusMessage || "Unknown",
           headers: res.headers as Record<string, string>,
           body: data,
         });
       });
     });
 
-    req.on('error', (err) => {
+    req.on("error", (err) => {
       try {
-        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-error', info: { message: err?.message || String(err) } } });
-      } catch (e) {
+        this.panel.webview.postMessage({
+          command: "debugLog",
+          data: {
+            stage: "proxyRequest-error",
+            info: { message: err?.message || String(err) },
+          },
+        });
+      } catch {
         /* empty */
       }
       reject(err);
@@ -989,18 +1128,25 @@ export class RestifyPanel {
     req.setTimeout(30000, () => {
       req.destroy();
       try {
-        this.panel.webview.postMessage({ command: 'debugLog', data: { stage: 'proxyRequest-timeout', info: { timeoutMs: 30000 } } });
-      } catch (e) {
+        this.panel.webview.postMessage({
+          command: "debugLog",
+          data: { stage: "proxyRequest-timeout", info: { timeoutMs: 30000 } },
+        });
+      } catch {
         /* empty */
       }
-      reject(new Error('Request timed out after 30 seconds'));
+      reject(new Error("Request timed out after 30 seconds"));
     });
 
     if (body) req.write(body);
     req.end();
   }
 
-  private _saveToCollection(request: RequestData, collectionName: string, groupId?: string): void {
+  private _saveToCollection(
+    request: RequestData,
+    collectionName: string,
+    groupId?: string,
+  ): void {
     const collections = this.storageManager.getCollections();
     let col = collections.find((c) => c.name === collectionName);
 
@@ -1028,11 +1174,13 @@ export class RestifyPanel {
         };
         this.storageManager.addRequestToGroup(col.id, groupId, requestToSave);
         vscode.window.showInformationMessage(
-          `✓ Saved "${requestName}" in collection "${collectionName}"`
+          `✓ Saved "${requestName}" in collection "${collectionName}"`,
         );
       } else {
         // Save to collection root
-        const existingRequest = col.requests?.find((r) => r.name === requestName);
+        const existingRequest = col.requests?.find(
+          (r) => r.name === requestName,
+        );
 
         const requestToSave = {
           ...request,
@@ -1042,15 +1190,11 @@ export class RestifyPanel {
 
         this.storageManager.addRequestToCollection(col.id, requestToSave);
 
-        const action = existingRequest ? 'Updated' : 'Saved';
+        const action = existingRequest ? "Updated" : "Saved";
         vscode.window.showInformationMessage(
-          `✓ ${action} "${requestName}" in collection "${collectionName}"`
+          `✓ ${action} "${requestName}" in collection "${collectionName}"`,
         );
       }
     }
   }
 }
-
-
-
-

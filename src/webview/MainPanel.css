@@ -500,6 +500,22 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     align-items: stretch;
 }
 
+/* Fixed-size URL input: prevent the URL from growing the layout
+   and show ellipses for overflowing values. Responsive: will
+   shrink below the fixed width on very small screens. */
+.url-input.fixed-size {
+    /* Make the URL input take available space so it fills the row. */
+    flex: 1 1 100%;
+    max-width: 100%;
+    min-width: 220px;
+}
+
+.url-input .variable-text-input {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .url-input:focus-within {
     border-color: var(--accent);
     background: var(--input-bg);
@@ -531,6 +547,7 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     position: relative;
     display: flex;
     align-items: center;
+    min-width: 0;
 }
 
 .send-btn {

@@ -9,9 +9,11 @@ interface VariableTextInputProps {
   type?: string;
   variables?: Array<{ key: string; value: string }>;
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+  onFocus?: React.FocusEventHandler<HTMLInputElement>;
+  onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }
 
-export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, placeholder, onChange, className = '', type = 'text', variables, onKeyDown }) => {
+export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, placeholder, onChange, className = '', type = 'text', variables, onKeyDown, onFocus, onBlur }) => {
   const [focused, setFocused] = useState(false);
   // localValue holds the raw in-progress typed text while focused, preventing
   // derived prop updates (e.g. displayUrl recalculation) from fighting the user's input.
@@ -128,7 +130,8 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
             setLocalValue(e.target.value);
             onChange(e.target.value);
           }}
-          onBlur={() => setFocused(false)}
+          onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+          onBlur={(e) => { setFocused(false); onBlur?.(e); }}
           onKeyDown={onKeyDown}
         />
       )}

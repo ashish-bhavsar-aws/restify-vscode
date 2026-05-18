@@ -91,13 +91,16 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
       const next = Math.max(keyActiveIndex - 1, 0);
       setKeyActiveIndex(next);
       scrollItemIntoView(keyDropdownRef.current, next);
-    } else if (e.key === 'Enter' && keyActiveIndex >= 0) {
+    } else if (e.key === 'Enter') {
+      if (!suggestions.length) return;
       e.preventDefault();
-      const selected = suggestions[keyActiveIndex];
+      const idx = keyActiveIndex >= 0 ? keyActiveIndex : 0;
+      const selected = suggestions[idx];
       onUpdate(rowIndex, 'key', selected);
       setKeyInput(selected);
       setShowKeyAutocomplete(null);
       setKeyActiveIndex(-1);
+      try { (e.currentTarget as HTMLInputElement).blur(); } catch { void 0; }
     } else if (e.key === 'Escape') {
       setShowKeyAutocomplete(null);
       setKeyActiveIndex(-1);
@@ -120,13 +123,16 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
       const next = Math.max(valueActiveIndex - 1, 0);
       setValueActiveIndex(next);
       scrollItemIntoView(valueDropdownRef.current, next);
-    } else if (e.key === 'Enter' && valueActiveIndex >= 0) {
+    } else if (e.key === 'Enter') {
+      if (!suggestions.length) return;
       e.preventDefault();
-      const selected = suggestions[valueActiveIndex];
+      const idx = valueActiveIndex >= 0 ? valueActiveIndex : 0;
+      const selected = suggestions[idx];
       onUpdate(rowIndex, 'value', selected);
       setValueInput(selected);
       setShowValueAutocomplete(null);
       setValueActiveIndex(-1);
+      try { (e.currentTarget as HTMLInputElement).blur(); } catch { void 0; }
     } else if (e.key === 'Escape') {
       setShowValueAutocomplete(null);
       setValueActiveIndex(-1);
@@ -241,6 +247,14 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                     setShowValueAutocomplete(v.length > 0 ? i : null);
                   }
                 }}
+                onFocus={() => {
+                  if (isHeaderTable && item.key && item.value.length > 0) {
+                    setShowValueAutocomplete(i);
+                    setValueInput(item.value);
+                    setValueActiveIndex(-1);
+                  }
+                }}
+                onBlur={() => { setTimeout(() => { setShowValueAutocomplete(null); setValueActiveIndex(-1); }, 200); }}
                 className={`${hasUnresolvedVars ? 'has-unresolved-vars' : ''} ${item.value.includes('{{') ? (hasUnresolvedVars ? 'kv-unresolved-var' : 'kv-resolved-var') : ''}`}
                 variables={variables}
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleValueKeyDown(e, i, valueSuggestions)}

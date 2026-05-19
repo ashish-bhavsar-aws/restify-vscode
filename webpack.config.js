@@ -1,5 +1,6 @@
 const path = require('path');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = [
   // ─── Extension (Node.js) ──────────────────────────────────
@@ -39,6 +40,16 @@ module.exports = [
     },
     plugins: [
       new MiniCssExtractPlugin({ filename: 'mainPanel.css' }),
+      // Copy the prebuilt pdf.worker to the webview output so the webview can load it directly
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            // Copy the pdfjs worker into the webview output directory
+            from: path.resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.mjs'),
+            to: 'pdf.worker.js',
+          },
+        ],
+      }),
     ],
     module: {
       rules: [
@@ -46,6 +57,14 @@ module.exports = [
           test: /\.tsx?$/,
           use: 'ts-loader',
           exclude: /node_modules/,
+        },
+        // Emit pdf.worker as a separate asset so react-pdf / pdfjs can load it from the bundle
+        {
+          test: /pdf\.worker(\.entry)?\.js$/,
+          type: 'asset/resource',
+          generator: {
+            filename: 'pdf.worker.[hash][ext]'
+          }
         },
         {
           test: /\.css$/,

@@ -363,6 +363,14 @@ export const MainPanel: React.FC = () => {
     setSettingsModalOpen(false);
   };
 
+  const handleDownloadFile = (payload: {
+    fileName: string;
+    mimeType: string;
+    fileBase64: string;
+  }) => {
+    post({ command: "downloadFile", payload });
+  };
+
   // script functionality removed
 
   /* ── Render ──────────────────────────────────────── */
@@ -468,6 +476,8 @@ export const MainPanel: React.FC = () => {
             response={response}
             loading={loading}
             request={requestInfo}
+            onDownloadFile={handleDownloadFile}
+            post={post}
           />
         </div>
       </div>

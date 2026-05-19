@@ -130,6 +130,15 @@ Once you send a request, the response appears in tabs:
 
 The Logs tab gives you a complete breakdown: exactly what was sent, what was received, headers, parameters, and more — perfect for debugging.
 
+### File Previews (CSV, PDF, Text, Excel)
+
+- Restify shows native previews for common file responses: **CSV**, **Excel (XLS/XLSX)**, **plain text**, and **PDF**.
+- CSV and Excel files are parsed in the webview and displayed as read-only tables for quick inspection.
+- PDF files are rendered in the webview using a bundled PDF renderer (`react-pdf` / `pdfjs`) so they display inline without relying on external CDNs. If rendering fails, you can download the PDF to view it locally.
+- Preview size limit: in-webview previews are capped at **5 MB**; files larger than this will prompt you to download instead of rendering inline.
+- Download behavior: the Download button attempts to suggest a filename (from the `Content-Disposition` header or the URL) and will save the binary to your chosen location.
+
+
 ---
 
 ## Saving Requests to Collections

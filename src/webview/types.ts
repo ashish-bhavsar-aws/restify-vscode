@@ -40,10 +40,16 @@ export interface RequestState {
 export interface ResponseState {
   status: number;
   statusText: string;
-  headers: Record<string, string>;
+  headers: Record<string, string | string[]>;
   body: string;
   duration: number;
   size: number;
+  isFileResponse?: boolean;
+  fileDetectionSource?: 'mime' | 'filename';
+  fileName?: string;
+  fileMimeType?: string;
+  fileBase64?: string;
+  filePreviewType?: 'text' | 'csv' | 'pdf' | 'excel' | 'none';
 }
 
 export interface Environment {

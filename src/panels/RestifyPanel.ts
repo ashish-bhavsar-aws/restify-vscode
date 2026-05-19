@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import * as https from "https";
 import * as http from "http";
 import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 import { URL } from "url";
 import { StorageManager } from "../storage/StorageManager";
 import { getMainPanelHtml } from "../webview/mainPanelHtml";
@@ -75,8 +77,15 @@ interface RequestData {
 interface RequestResult {
   status: number;
   statusText: string;
-  headers: Record<string, any>;
+  headers: Record<string, string | string[]>;
   body: string;
+  bodySize: number;
+  isFileResponse?: boolean;
+  fileDetectionSource?: "mime" | "filename";
+  fileName?: string;
+  fileMimeType?: string;
+  fileBase64?: string;
+  filePreviewType?: "text" | "csv" | "pdf" | "excel" | "none";
 }
 
 export class RestifyPanel {
@@ -237,6 +246,296 @@ export class RestifyPanel {
     return null;
   }
 
+  private _canonicalHeaderName(name: string): string {
+    if (name.toLowerCase() === "set-cookie") return "Set-Cookie";
+    return name
+      .split("-")
+      .map((part) =>
+        part.length > 0
+          ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+          : part,
+      )
+      .join("-");
+  }
+
+  private _normalizeResponseHeaders(
+    headers: http.IncomingHttpHeaders,
+  ): Record<string, string | string[]> {
+    const normalized: Record<string, string | string[]> = {};
+
+    Object.entries(headers || {}).forEach(([rawKey, rawValue]) => {
+      if (rawValue === undefined) return;
+      const key = this._canonicalHeaderName(rawKey);
+
+      if (Array.isArray(rawValue)) {
+        normalized[key] = rawValue.map((v) => String(v));
+      } else {
+        normalized[key] = String(rawValue);
+      }
+    });
+
+    return normalized;
+  }
+
+  private _getHeaderValue(
+    headers: Record<string, string | string[]>,
+    name: string,
+  ): string {
+    const hit = Object.entries(headers).find(
+      ([k]) => k.toLowerCase() === name.toLowerCase(),
+    )?.[1];
+    if (!hit) return "";
+    return Array.isArray(hit) ? hit.join("; ") : hit;
+  }
+
+  private _extractFilename(contentDisposition: string): string | undefined {
+    if (!contentDisposition) return undefined;
+
+    // Try UTF-8 RFC 5987 format: filename*=UTF-8''encoded-filename
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      try {
+        const decoded = decodeURIComponent(utf8Match[1].replace(/["']/g, "")).trim();
+        if (decoded.length > 0) return decoded;
+      } catch {
+        const fallback = utf8Match[1].replace(/["']/g, "").trim();
+        if (fallback.length > 0) return fallback;
+      }
+    }
+
+    // Try standard format: filename="name.ext" or filename=name.ext
+    const plainMatch = contentDisposition.match(/filename\s*=\s*"?([^";,\n]+)"?/i);
+    if (plainMatch?.[1]) {
+      const extracted = plainMatch[1].trim();
+      if (extracted.length > 0) return extracted;
+    }
+
+    // Try alternate format without quotes: filename=name.ext (with possible spaces)
+    const alternateMatch = contentDisposition.match(/filename=([^\s;,]+)/i);
+    if (alternateMatch?.[1]) {
+      const extracted = alternateMatch[1].trim();
+      if (extracted.length > 0) return extracted;
+    }
+
+    return undefined;
+  }
+
+  private _getExtensionFromFileName(fileName?: string): string {
+    if (!fileName || !fileName.includes(".")) return "";
+    return fileName.split(".").pop()?.toLowerCase() || "";
+  }
+
+  private _extractFilenameFromPath(pathOrUrl: string): string | undefined {
+    if (!pathOrUrl) return undefined;
+
+    try {
+      const parsed = new URL(pathOrUrl);
+      pathOrUrl = parsed.pathname;
+    } catch {
+      // Keep path as-is if it is not a full URL.
+    }
+
+    const cleanPath = pathOrUrl.split("?")[0].split("#")[0];
+    const last = cleanPath.split("/").pop();
+    if (!last || !last.includes(".")) return undefined;
+
+    try {
+      return decodeURIComponent(last);
+    } catch {
+      return last;
+    }
+  }
+
+  private _previewTypeFromExtension(
+    ext: string,
+  ): "text" | "csv" | "pdf" | "excel" | "none" {
+    if (!ext) return "none";
+    if (ext === "pdf") return "pdf";
+    if (ext === "csv") return "csv";
+    if (["xls", "xlsx", "xlsm", "ods"].includes(ext)) return "excel";
+    if (
+      [
+        "txt",
+        "log",
+        "md",
+        "json",
+        "xml",
+        "html",
+        "htm",
+        "yaml",
+        "yml",
+        "csv",
+      ].includes(ext)
+    )
+      return "text";
+    return "none";
+  }
+
+  private _guessExtension(mimeType: string): string {
+    const mime = mimeType.toLowerCase();
+    if (mime.includes("application/pdf")) return "pdf";
+    if (mime.includes("text/csv") || mime.includes("application/csv"))
+      return "csv";
+    if (mime.includes("spreadsheetml") || mime.includes("application/vnd.ms-excel"))
+      return "xlsx";
+    if (mime.includes("application/json")) return "json";
+    if (mime.includes("application/xml") || mime.includes("text/xml"))
+      return "xml";
+    if (mime.includes("text/plain")) return "txt";
+    return "bin";
+  }
+
+  private _isTextLike(contentType: string, fileName?: string): boolean {
+    const ct = contentType.toLowerCase();
+    const ext = this._getExtensionFromFileName(fileName);
+    return (
+      ct.startsWith("text/") ||
+      ct.includes("csv") ||
+      ct.includes("json") ||
+      ct.includes("xml") ||
+      ct.includes("javascript") ||
+      ct.includes("x-www-form-urlencoded") ||
+      this._previewTypeFromExtension(ext) === "text" ||
+      this._previewTypeFromExtension(ext) === "csv"
+    );
+  }
+
+  private _isFileLikeResponse(
+    contentType: string,
+    contentDisposition: string,
+    fileName?: string,
+  ): boolean {
+    const ct = contentType.toLowerCase();
+    const cd = contentDisposition.toLowerCase();
+    const ext = this._getExtensionFromFileName(fileName);
+
+    if (cd.includes("attachment") || cd.includes("filename=")) return true;
+    if (this._previewTypeFromExtension(ext) !== "none") return true;
+
+    return (
+      ct.includes("application/pdf") ||
+      ct.includes("text/csv") ||
+      ct.includes("application/csv") ||
+      ct.includes("application/octet-stream") ||
+      ct.includes("application/zip") ||
+      ct.includes("application/vnd") ||
+      ct.includes("spreadsheetml")
+    );
+  }
+
+  private _getFilePreviewType(
+    contentType: string,
+    fileName?: string,
+  ): "text" | "csv" | "pdf" | "excel" | "none" {
+    const ct = contentType.toLowerCase();
+    const ext = this._getExtensionFromFileName(fileName);
+
+    if (ct.includes("application/pdf")) return "pdf";
+    if (ct.includes("text/csv") || ct.includes("application/csv")) return "csv";
+    if (ct.includes("spreadsheetml") || ct.includes("application/vnd.ms-excel"))
+      return "excel";
+    if (
+      ct.startsWith("text/") ||
+      ct.includes("application/json") ||
+      ct.includes("application/xml") ||
+      ct.includes("text/xml")
+    )
+      return "text";
+
+    const byExt = this._previewTypeFromExtension(ext);
+    if (byExt !== "none") return byExt;
+
+    return "none";
+  }
+
+  private _getFileDetectionSource(
+    contentType: string,
+    contentDisposition: string,
+    fileName?: string,
+  ): "mime" | "filename" {
+    const ct = contentType.toLowerCase();
+    const cd = contentDisposition.toLowerCase();
+    const ext = this._getExtensionFromFileName(fileName);
+
+    const mimeSuggestsFile =
+      cd.includes("attachment") ||
+      cd.includes("filename=") ||
+      ct.includes("application/pdf") ||
+      ct.includes("text/csv") ||
+      ct.includes("application/csv") ||
+      ct.includes("application/octet-stream") ||
+      ct.includes("application/zip") ||
+      ct.includes("application/vnd") ||
+      ct.includes("spreadsheetml");
+
+    const filenameSuggestsFile = this._previewTypeFromExtension(ext) !== "none";
+
+    if (!mimeSuggestsFile && filenameSuggestsFile) return "filename";
+    return "mime";
+  }
+
+  private _buildRequestResult(
+    status: number,
+    statusText: string,
+    headers: http.IncomingHttpHeaders,
+    rawData: Buffer,
+    requestPathOrUrl: string,
+  ): RequestResult {
+    const normalizedHeaders = this._normalizeResponseHeaders(headers);
+    const contentType = this._getHeaderValue(normalizedHeaders, "Content-Type");
+    const contentDisposition = this._getHeaderValue(
+      normalizedHeaders,
+      "Content-Disposition",
+    );
+    const fromDisposition = this._extractFilename(contentDisposition);
+    const fromPath = this._extractFilenameFromPath(requestPathOrUrl);
+    const inferredFileName = fromDisposition || fromPath;
+    const isFileResponse = this._isFileLikeResponse(
+      contentType,
+      contentDisposition,
+      inferredFileName,
+    );
+
+    if (!isFileResponse) {
+      return {
+        status,
+        statusText,
+        headers: normalizedHeaders,
+        body: rawData.toString("utf8"),
+        bodySize: rawData.length,
+        isFileResponse: false,
+      };
+    }
+
+    const safeMimeType = contentType || "application/octet-stream";
+    const safeFileName =
+      inferredFileName || `response.${this._guessExtension(safeMimeType)}`;
+    const filePreviewType = this._getFilePreviewType(safeMimeType, safeFileName);
+    const fileDetectionSource = this._getFileDetectionSource(
+      contentType,
+      contentDisposition,
+      safeFileName,
+    );
+    const fileBase64 = rawData.toString("base64");
+    const textBody = this._isTextLike(safeMimeType, safeFileName)
+      ? rawData.toString("utf8")
+      : "";
+
+    return {
+      status,
+      statusText,
+      headers: normalizedHeaders,
+      body: textBody,
+      bodySize: rawData.length,
+      isFileResponse: true,
+      fileDetectionSource,
+      fileName: safeFileName,
+      fileMimeType: safeMimeType,
+      fileBase64,
+      filePreviewType,
+    };
+  }
+
   private async _handleMessage(msg: any): Promise<void> {
     switch (msg.command) {
       case "webviewReady":
@@ -297,6 +596,9 @@ export class RestifyPanel {
         break;
       case "configureProxy":
         await this._initializeProxySettings();
+        break;
+      case "downloadFile":
+        await this._downloadFile(msg.payload);
         break;
       case "getEnvironments":
         this._sendEnvironments();
@@ -673,7 +975,7 @@ export class RestifyPanel {
             stage: "receivedResponse",
             info: {
               status: result.status,
-              size: Buffer.byteLength(result.body || "", "utf8"),
+              size: result.bodySize || Buffer.byteLength(result.body || "", "utf8"),
             },
           },
         });
@@ -689,7 +991,13 @@ export class RestifyPanel {
         headers: result.headers,
         body: result.body,
         duration,
-        size: Buffer.byteLength(result.body || "", "utf8"),
+        size: result.bodySize || Buffer.byteLength(result.body || "", "utf8"),
+        isFileResponse: result.isFileResponse,
+        fileDetectionSource: result.fileDetectionSource,
+        fileName: result.fileName,
+        fileMimeType: result.fileMimeType,
+        fileBase64: result.fileBase64,
+        filePreviewType: result.filePreviewType,
       };
 
       // Detect mTLS usage
@@ -1014,11 +1322,19 @@ export class RestifyPanel {
 
       const lib = isHttps ? https : http;
       const req = lib.request(options, (res) => {
-        let data = "";
+        const chunks: Buffer[] = [];
         res.on("data", (chunk) => {
-          data += chunk;
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         res.on("end", () => {
+          const rawData = Buffer.concat(chunks);
+          const result = this._buildRequestResult(
+            res.statusCode || 0,
+            res.statusMessage || "",
+            res.headers,
+            rawData,
+            url,
+          );
           try {
             this.panel.webview.postMessage({
               command: "debugLog",
@@ -1026,19 +1342,14 @@ export class RestifyPanel {
                 stage: "doRequest-end",
                 info: {
                   status: res.statusCode,
-                  size: Buffer.byteLength(data || "", "utf8"),
+                  size: rawData.length,
                 },
               },
             });
           } catch {
             /* empty */
           }
-          resolve({
-            status: res.statusCode || 0,
-            statusText: res.statusMessage || "",
-            headers: res.headers,
-            body: data,
-          });
+          resolve(result);
         });
       });
       req.on("error", (err) => {
@@ -1085,9 +1396,21 @@ export class RestifyPanel {
     }
 
     const req = lib.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk: Buffer) => (data += chunk.toString()));
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
       res.on("end", () => {
+        const rawData = Buffer.concat(chunks);
+        const requestPathOrUrl =
+          typeof options.path === "string" ? options.path : "";
+        const result = this._buildRequestResult(
+          res.statusCode || 0,
+          res.statusMessage || "Unknown",
+          res.headers,
+          rawData,
+          requestPathOrUrl,
+        );
         try {
           this.panel.webview.postMessage({
             command: "debugLog",
@@ -1095,19 +1418,14 @@ export class RestifyPanel {
               stage: "proxyRequest-end",
               info: {
                 status: res.statusCode,
-                size: Buffer.byteLength(data || "", "utf8"),
+                size: rawData.length,
               },
             },
           });
         } catch {
           /* empty */
         }
-        resolve({
-          status: res.statusCode || 0,
-          statusText: res.statusMessage || "Unknown",
-          headers: res.headers as Record<string, string>,
-          body: data,
-        });
+        resolve(result);
       });
     });
 
@@ -1195,6 +1513,73 @@ export class RestifyPanel {
           `✓ ${action} "${requestName}" in collection "${collectionName}"`,
         );
       }
+    }
+  }
+
+  private async _downloadFile(payload: {
+    fileName?: string;
+    mimeType?: string;
+    fileBase64?: string;
+  }): Promise<void> {
+    let fileName = payload?.fileName || "response.bin";
+    const mimeType = payload?.mimeType || "application/octet-stream";
+    
+    // Extract just the filename (not the full path)
+    fileName = path.basename(fileName);
+    
+    // If basename returns empty string, fall back to MIME-based filename
+    if (!fileName || fileName.trim().length === 0 || fileName === ".") {
+      if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('vnd.ms-excel')) {
+        fileName = "response.xlsx";
+      } else if (mimeType.includes('csv')) {
+        fileName = "response.csv";
+      } else if (mimeType.includes('pdf')) {
+        fileName = "response.pdf";
+      } else if (mimeType.includes('text')) {
+        fileName = "response.txt";
+      } else {
+        fileName = "response.bin";
+      }
+    }
+    
+    const fileBase64 = payload?.fileBase64;
+
+    if (!fileBase64) {
+      vscode.window.showErrorMessage("No file payload available to download.");
+      return;
+    }
+
+    let defaultUri: vscode.Uri | undefined;
+    
+    // Try to use workspace folder first
+    const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (workspaceUri) {
+      defaultUri = vscode.Uri.joinPath(workspaceUri, fileName);
+    } else {
+      // Fallback: create a URI from home directory (uses OS temp or user home)
+      // vscode.Uri.file() will use the home directory on most systems
+      defaultUri = vscode.Uri.file(path.join(os.homedir(), fileName));
+    }
+
+    const targetUri = await vscode.window.showSaveDialog({
+      defaultUri,
+      saveLabel: "Save Response File",
+      title: "Save Response File",
+    });
+
+    if (!targetUri) return;
+
+    try {
+      const bytes = Buffer.from(fileBase64, "base64");
+      await vscode.workspace.fs.writeFile(targetUri, new Uint8Array(bytes));
+      const savedFileName = targetUri.fsPath.split("/").pop() || fileName;
+      vscode.window.showInformationMessage(
+        `Saved file: ${savedFileName}`,
+      );
+    } catch (err: any) {
+      vscode.window.showErrorMessage(
+        `Failed to save file: ${err?.message || "Unknown error"}`,
+      );
     }
   }
 }

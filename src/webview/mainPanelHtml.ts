@@ -14,12 +14,16 @@ export function getMainPanelHtml(context: vscode.ExtensionContext, webview: vsco
     vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.svg')
   );
 
+  const pdfWorkerUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'dist/webview', 'pdf.worker.js')
+  );
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource} data:; script-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-eval'; worker-src ${webview.cspSource} blob:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; connect-src ${webview.cspSource} data: blob:; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource} data:; script-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-eval'; worker-src ${webview.cspSource} blob:; frame-src data: blob: ${webview.cspSource}; object-src ${webview.cspSource} data:;" />
   <link rel="stylesheet" href="${cssUri}">
   <title>Restify</title>
 </head>
@@ -28,6 +32,7 @@ export function getMainPanelHtml(context: vscode.ExtensionContext, webview: vsco
   <script nonce="${nonce}">window.restifyMedia = {
     sidebarIcon: "${sidebarIconUri}"
   };</script>
+  <script nonce="${nonce}">window.restifyPdfWorker = "${pdfWorkerUri}";</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

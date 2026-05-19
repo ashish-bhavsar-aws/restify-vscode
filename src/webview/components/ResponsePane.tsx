@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ResponseState, getStatusClass } from '../types';
 import { Icon } from './FaIcon';
+import { PdfViewer } from './PdfViewer';
 import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList, faXmark, faChevronRight,
@@ -9,33 +10,108 @@ import {
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
 const LARGE_RESPONSE_THRESHOLD = 500 * 1024; // 500 KB
+const FILE_PREVIEW_RENDER_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function getHeaderValue(headers: Record<string, string | string[]> | undefined, name: string): string {
+  if (!headers) return '';
+  const hit = Object.entries(headers).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+  if (!hit) return '';
+  return Array.isArray(hit) ? (hit[0] || '') : hit;
+}
+
+function flattenHeaders(headers: Record<string, string | string[]> | undefined): Array<{ key: string; value: string }> {
+  if (!headers) return [];
+  const rows: Array<{ key: string; value: string }> = [];
+  Object.entries(headers).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((v) => rows.push({ key, value: String(v) }));
+      return;
+    }
+    rows.push({ key, value: String(value) });
+  });
+  return rows;
+}
+
+function decodeBase64ToText(base64: string): string {
+  try {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function parseCsvRows(input: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (ch === '"') {
+      if (inQuotes && input[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+
+    if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && input[i + 1] === '\n') i += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
 // Helper: detect if response is JSON
-function isLikelyJson(body: string | undefined | null, headers?: Record<string, string>): boolean {
+function isLikelyJson(body: string | undefined | null, headers?: Record<string, string | string[]>): boolean {
   if (!body) return false;
-  const contentType = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+  const contentType = getHeaderValue(headers, 'content-type');
   const ct = String(contentType).toLowerCase();
   if (ct.includes('application/json') || ct.includes('+json')) return true;
   const trimmed = body.trimStart();
   return trimmed.startsWith('{') || trimmed.startsWith('[');
 }
 
-function isLikelyXml(body: string | undefined | null, headers?: Record<string, string>): boolean {
+function isLikelyXml(body: string | undefined | null, headers?: Record<string, string | string[]>): boolean {
   if (!body) return false;
-  const contentType = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+  const contentType = getHeaderValue(headers, 'content-type');
   const ct = String(contentType).toLowerCase();
   if (ct.includes('application/xml') || ct.includes('text/xml') || ct.includes('+xml')) return true;
   const trimmed = body.trimStart();
   return trimmed.startsWith('<') && !trimmed.startsWith('<!DOCTYPE html');
 }
 
-function isLikelyHtml(body: string | undefined | null, headers?: Record<string, string>): boolean {
+function isLikelyHtml(body: string | undefined | null, headers?: Record<string, string | string[]>): boolean {
   if (!body) return false;
-  const contentType = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+  const contentType = getHeaderValue(headers, 'content-type');
   const ct = String(contentType).toLowerCase();
   if (ct.includes('text/html') || ct.includes('application/xhtml+xml')) return true;
   const trimmed = body.trimStart().toLowerCase();
@@ -46,21 +122,51 @@ interface ResponsePaneProps {
   response: ResponseState | null;
   loading: boolean;
   request?: any; // Request details for logging
+  onDownloadFile?: (payload: { fileName: string; mimeType: string; fileBase64: string }) => void;
+  post?: (msg: any) => void;
 }
 
 type ResTab = 'body' | 'headers' | 'logs' | 'raw';
 
-export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request }) => {
+export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, onDownloadFile, post }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [bodySearch, setBodySearch] = useState('');
   const [showRawForLarge, setShowRawForLarge] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Local alias for the post function (ensures a named variable in this scope)
+  const send = post;
 
   useEffect(() => { if (showSearch) searchRef.current?.focus(); }, [showSearch]);
   useEffect(() => { setShowSearch(false); setBodySearch(''); }, [response]);
+
+  const decodedFileText = React.useMemo(() => {
+    if (!response?.isFileResponse || !response.fileBase64) return '';
+    if (response.filePreviewType !== 'text' && response.filePreviewType !== 'csv') return '';
+    return decodeBase64ToText(response.fileBase64);
+  }, [response]);
+
+  // Hide search control for PDF previews (we render PDF visually instead)
+  const hideSearchButton = !!response?.isFileResponse && (response.filePreviewType === 'pdf') && !!response.fileBase64;
+  useEffect(() => {
+    if (hideSearchButton) {
+      setShowSearch(false);
+      setBodySearch('');
+    }
+  }, [hideSearchButton]);
+
+  const isLargeFilePreviewBlocked = !!response?.isFileResponse && response.size > FILE_PREVIEW_RENDER_THRESHOLD;
+  const isPdfPreview = !!response?.isFileResponse && response.filePreviewType === 'pdf' && !!response.fileBase64;
+  const searchableText = isPdfPreview ? '' : (response?.body || decodedFileText || '');
+
+  const headerRows = React.useMemo(
+    () => flattenHeaders(response?.headers),
+    [response?.headers],
+  );
 
   const handleCopy = () => {
     if (response?.body) {
@@ -76,6 +182,39 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
       navigator.clipboard.writeText(curlCmd);
       setCopiedCurl(true);
       setTimeout(() => setCopiedCurl(false), 1500);
+    }
+  };
+
+  const handleDownloadFile = () => {
+    if (!response?.fileBase64) return;
+    const mimeType = response.fileMimeType || 'application/octet-stream';
+    const fileName = response.fileName || 'response.bin';
+
+    try {
+      if (onDownloadFile) {
+        onDownloadFile({
+          fileName,
+          mimeType,
+          fileBase64: response.fileBase64,
+        });
+      } else {
+        const selectedName = window.prompt('Save file as', fileName);
+        if (!selectedName) return;
+        const bytes = Uint8Array.from(atob(response.fileBase64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = selectedName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 1500);
+    } catch {
+      // Ignore download failures silently.
     }
   };
 
@@ -120,6 +259,11 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
         <span className="status-text">{response.statusText}</span>
         <span className="meta-chip">{response.duration} ms</span>
         <span className="meta-chip">{formatSize(response.size)}</span>
+        {response.isFileResponse && response.fileDetectionSource === 'filename' && (
+          <span className="meta-chip" title="File type inferred from filename when response headers were generic">
+            Detected from filename
+          </span>
+        )}
         <div className="response-actions">
           {request && (
             <button className="copy-btn" onClick={handleCopyCurlStatus} title="Copy as cURL command">
@@ -127,15 +271,21 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
               {copiedCurl ? 'cURL ✓' : 'cURL'}
             </button>
           )}
-          {response.body && (
+          {response.body && !isLargeFilePreviewBlocked && (
             <button className="copy-btn" onClick={handleCopy}>
               <Icon icon={faCopy} size={12} style={{ marginRight: 4 }} />
               {copied ? 'Copied ✓' : 'Copy'}
             </button>
           )}
-          {response.body && (
-            <button className="copy-btn" title="Search in body (/)" onClick={() => setShowSearch(s => !s)}>
+          {!isLargeFilePreviewBlocked && !hideSearchButton && (response.body || decodedFileText || response.isFileResponse) && (
+            <button className="copy-btn" title="Search in preview" onClick={() => setShowSearch(s => !s)}>
               <Icon icon={faMagnifyingGlass} size={12} />
+            </button>
+          )}
+          {response.isFileResponse && response.fileBase64 && (
+            <button className={`copy-btn ${downloaded ? 'active' : ''}`} onClick={handleDownloadFile} title={response.fileName || 'Download file'}>
+              <Icon icon={faDownload} size={12} style={{ marginRight: 4 }} />
+              {downloaded ? 'Downloaded ✓' : 'Download'}
             </button>
           )}
         </div>
@@ -151,7 +301,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           >
             {tab === 'logs' ? <><Icon icon={faClipboardList} size={12} style={{ marginRight: 5 }} />Logs</> : tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'headers' && (
-              <span className="tab-badge">{Object.keys(response.headers).length}</span>
+              <span className="tab-badge">{headerRows.length}</span>
             )}
             {tab === 'logs' && request?.scriptLogs && request.scriptLogs.length > 0 && (
               <span className="tab-badge" style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: '#000' }}>
@@ -174,7 +324,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 style={{ flex: 1, background: 'var(--input-bg)', border: '1px solid var(--accent)', color: 'var(--fg)', padding: '3px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
               {bodySearch && (
                 <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>
-                  {(() => { try { return (response.body.match(new RegExp(escapeRegex(bodySearch), 'gi')) || []).length; } catch { return 0; } })()} matches
+                  {(() => { try { return (searchableText.match(new RegExp(escapeRegex(bodySearch), 'gi')) || []).length; } catch { return 0; } })()} matches
                 </span>
               )}
               <button onClick={() => { setShowSearch(false); setBodySearch(''); }}
@@ -191,17 +341,19 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           )}
           {/* Body content */}
           <div style={{ flex: 1, overflow: 'auto' }}>
-            {isLikelyJson(response.body, response.headers) ? (
+            {response.isFileResponse && response.fileBase64 ? (
+              <FilePreview response={response} search={bodySearch} post={send} />
+            ) : isLikelyJson(response.body, response.headers) ? (
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="json" search={bodySearch} /></div>
             ) : isLikelyHtml(response.body, response.headers) ? (
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></div>
             ) : isLikelyXml(response.body, response.headers) ? (
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></div>
             ) : bodySearch ? (
-              <SearchableBody text={response.body} search={bodySearch} />
+              <SearchableBody text={searchableText} search={bodySearch} />
             ) : (
               <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }}>
-                {response.body}
+                {searchableText}
               </pre>
             )}
           </div>
@@ -220,10 +372,10 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(response.headers).map(([key, val]) => (
-                  <tr key={key} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 40%, transparent)' }}>
+                {headerRows.map(({ key, value }, idx) => (
+                  <tr key={`${key}-${idx}`} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 40%, transparent)' }}>
                     <td style={{ padding: '6px 12px', fontFamily: 'monospace', color: 'var(--accent-2)' }}>{key}</td>
-                    <td style={{ padding: '6px 12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{String(val)}</td>
+                    <td style={{ padding: '6px 12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{value}</td>
                   </tr>
                 ))}
               </tbody>
@@ -276,6 +428,197 @@ const SearchableBody: React.FC<{ text: string; search: string }> = ({ text, sear
         ? <mark key={i} style={{ background: 'color-mix(in srgb, var(--accent, #89b4fa) 50%, transparent)', color: 'var(--fg)', borderRadius: 2 }}>{p.text}</mark>
         : <React.Fragment key={i}>{p.text}</React.Fragment>)}
     </pre>
+  );
+};
+
+const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (msg: any) => void }> = ({ response, search, post }) => {
+  const previewType = response.filePreviewType || 'none';
+  const fileName = response.fileName || 'response.bin';
+
+  const decodedText = React.useMemo(() => {
+    if (!response.fileBase64) return '';
+    if (previewType !== 'text' && previewType !== 'csv') return '';
+    return decodeBase64ToText(response.fileBase64);
+  }, [response.fileBase64, previewType]);
+
+  const [excelData, setExcelData] = React.useState<{ error: string; rows: string[][]; sheetName: string } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let workbook: any = null;
+    if (previewType !== 'excel' || !response.fileBase64) {
+      setExcelData(null);
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        const binary = Uint8Array.from(atob(response.fileBase64!), (c) => c.charCodeAt(0));
+        // Lazy-load exceljs to avoid bundling it into the mainPanel chunk
+        const mod = await import('exceljs');
+        const ExcelJSLib = (mod && (mod as any).default) ? (mod as any).default : mod;
+        workbook = new ExcelJSLib.Workbook();
+        await workbook.xlsx.load(binary.buffer as any);
+        const ws = workbook.worksheets[0];
+        if (!ws) {
+          if (!cancelled) setExcelData({ error: 'No worksheet found in file', rows: [], sheetName: '' });
+          return;
+        }
+        const rows: string[][] = [];
+        ws.eachRow((row: any) => {
+          const vals = (row.values as any[]).slice(1).map((v) => (v == null ? '' : String(v)));
+          rows.push(vals);
+        });
+        if (!cancelled) setExcelData({ error: '', rows, sheetName: ws.name || '' });
+      } catch {
+        if (!cancelled) setExcelData({ error: 'Unable to parse Excel file for preview', rows: [], sheetName: '' });
+      } finally {
+        // Release reference to workbook so it can be GC'd
+        try { workbook = null; } catch { /* ignore */ }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      // Clear parsed data and drop references to free memory
+      try { setExcelData(null); } catch { /* ignore */ }
+      try { workbook = null; } catch { /* ignore */ }
+    };
+  }, [previewType, response.fileBase64]);
+
+  if (response.size > FILE_PREVIEW_RENDER_THRESHOLD) {
+    return (
+      <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
+        Preview skipped for large file ({formatSize(response.size)}). Preview limit is 5 MB. Use Download to save {fileName}.
+      </div>
+    );
+  }
+
+  if (previewType === 'pdf' && response.fileBase64) {
+    return <PdfViewer fileBase64={response.fileBase64} fileName={fileName} post={post} />;
+  }
+
+  if ((previewType === 'text' || previewType === 'csv') && decodedText) {
+    if (previewType === 'csv') {
+      const rows = parseCsvRows(decodedText);
+      if (rows.length > 0) {
+        const headers = rows[0];
+        const dataRows = rows.slice(1);
+        const filteredRows = search
+          ? dataRows.filter((r) => r.join(' ').toLowerCase().includes(search.toLowerCase()))
+          : dataRows;
+        const cappedRows = filteredRows.slice(0, 300);
+        return (
+          <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+              CSV Preview: {filteredRows.length} rows {filteredRows.length > cappedRows.length ? `(showing first ${cappedRows.length})` : ''} {search && `(filtered)`}
+            </div>
+            <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+              <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 }} role="grid" aria-label="CSV data (read-only)">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'color-mix(in srgb, var(--input-bg) 65%, transparent)' }}>
+                    {headers.map((h, idx) => (
+                      <th key={`${h}-${idx}`} style={{ textAlign: 'left', padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                        {h || `Column ${idx + 1}`}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cappedRows.map((r, rIdx) => (
+                    <tr key={rIdx} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 35%, transparent)' }}>
+                      {headers.map((_, cIdx) => (
+                        <td key={`${rIdx}-${cIdx}`} style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                          {r[cIdx] || ''}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      }
+    }
+
+    if (search) return <SearchableBody text={decodedText} search={search} />;
+    return (
+      <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }} role="document" aria-label="File preview (read-only)">
+        {decodedText}
+      </pre>
+    );
+  }
+
+  if (previewType === 'excel') {
+    if (!excelData) {
+      return (
+        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
+          Excel file is empty. Use Download to open {fileName}.
+        </div>
+      );
+    }
+
+    if (excelData.error) {
+      return (
+        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
+          {excelData.error}. Use Download to open {fileName} in your spreadsheet app.
+        </div>
+      );
+    }
+
+    if (!excelData.rows.length) {
+      return (
+        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
+          Excel file is empty. Use Download to open {fileName}.
+        </div>
+      );
+    }
+
+    const headers = excelData.rows[0] || [];
+    const dataRows = excelData.rows.slice(1);
+    const filteredRows = search
+      ? dataRows.filter((r) => r.join(' ').toLowerCase().includes(search.toLowerCase()))
+      : dataRows;
+    const cappedRows = filteredRows.slice(0, 300);
+
+    return (
+      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+          Excel Preview ({excelData.sheetName}): {filteredRows.length} rows {filteredRows.length > cappedRows.length ? `(showing first ${cappedRows.length})` : ''} {search && `(filtered)`}
+        </div>
+        <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 }} role="grid" aria-label="Excel data (read-only)">
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'color-mix(in srgb, var(--input-bg) 65%, transparent)' }}>
+                {headers.map((h, idx) => (
+                  <th key={`${h}-${idx}`} style={{ textAlign: 'left', padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                    {h || `Column ${idx + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {cappedRows.map((r, rIdx) => (
+                <tr key={rIdx} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 35%, transparent)' }}>
+                  {headers.map((_, cIdx) => (
+                    <td key={`${rIdx}-${cIdx}`} style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                      {r[cIdx] || ''}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
+      Binary file response detected ({fileName}). Use Download to save and open it locally.
+    </div>
   );
 };
 

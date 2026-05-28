@@ -15,6 +15,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
   const [pdfLib, setPdfLib] = useState<any | null>(null);
   const [libError, setLibError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const pdfLibRef = useRef<any | null>(null);
   const [width, setWidth] = useState<number>(800);
   // Notify host to hide search while PDF viewer is active (host may ignore)
   useEffect(() => {
@@ -58,7 +59,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
         } catch {
           /* ignore */
         }
-        if (mounted) setPdfLib(mod);
+        if (mounted) {
+          pdfLibRef.current = mod;
+          setPdfLib(mod);
+        }
       } catch (err: any) {
         console.error('Failed to load react-pdf:', err);
         if (mounted) setLibError(err?.message || String(err));
@@ -72,8 +76,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
           URL.revokeObjectURL(createdBlobUrl);
         }
         // Clear workerSrc to allow GC of underlying worker
-        if ((pdfLib as any)?.pdfjs?.GlobalWorkerOptions) {
-          try { (pdfLib as any).pdfjs.GlobalWorkerOptions.workerSrc = '';} catch { /* ignore */ }
+        if (pdfLibRef.current?.pdfjs?.GlobalWorkerOptions) {
+          try { pdfLibRef.current.pdfjs.GlobalWorkerOptions.workerSrc = '';} catch { /* ignore */ }
         }
       } catch { /* ignore cleanup errors */ }
     };

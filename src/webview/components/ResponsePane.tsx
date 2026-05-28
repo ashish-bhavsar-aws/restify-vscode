@@ -349,12 +349,8 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></div>
             ) : isLikelyXml(response.body, response.headers) ? (
               <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></div>
-            ) : bodySearch ? (
-              <SearchableBody text={searchableText} search={bodySearch} />
             ) : (
-              <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }}>
-                {searchableText}
-              </pre>
+              <div style={{ padding: 8 }}><PrettyBodyViewer text={searchableText} language="text" search={bodySearch} /></div>
             )}
           </div>
         </div>

@@ -1,6 +1,25 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { EditorState, Extension, RangeSetBuilder } from '@codemirror/state';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { html } from '@codemirror/lang-html';
+import { json } from '@codemirror/lang-json';
+import { xml } from '@codemirror/lang-xml';
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  ViewPlugin,
+  ViewUpdate,
+  drawSelection,
+  highlightActiveLine,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+} from '@codemirror/view';
+import { defaultKeymap } from '@codemirror/commands';
+import { tags } from '@lezer/highlight';
 
-type PrettyLanguage = 'json' | 'xml' | 'html';
+type PrettyLanguage = 'json' | 'xml' | 'html' | 'text';
 type JsonDisplayMode = 'formatted' | 'minified';
 
 interface PrettyBodyViewerProps {
@@ -17,52 +36,34 @@ function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function highlightInHtml(html: string, term: string): string {
-  if (!term) return html;
+export function formatJSON(jsonString: string): string {
   try {
-    const escaped = escapeRegex(term);
-    return html.replace(
-      new RegExp(`(${escaped})(?![^<]*>)`, 'gi'),
-      '<mark style="background:color-mix(in srgb,var(--accent,#89b4fa) 50%,transparent);color:var(--fg);border-radius:2px;outline:1px solid color-mix(in srgb,var(--accent,#89b4fa) 60%,transparent)">$1</mark>'
-    );
+    return JSON.stringify(JSON.parse(jsonString), null, 2);
   } catch {
-    return html;
+    return jsonString;
   }
 }
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-export function formatJSON(json: string): string {
+export function minifyJSON(jsonString: string): string {
   try {
-    return JSON.stringify(JSON.parse(json), null, 2);
+    return JSON.stringify(JSON.parse(jsonString));
   } catch {
-    return json;
+    return jsonString;
   }
 }
 
-export function minifyJSON(json: string): string {
-  try {
-    return JSON.stringify(JSON.parse(json));
-  } catch {
-    return json;
-  }
-}
-
-export function prettyPrintXml(xml: string): string {
+export function prettyPrintXml(xmlString: string): string {
   try {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length > 0) return xml;
+    const doc = parser.parseFromString(xmlString, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length > 0) return xmlString;
 
-    const esc = escapeHtml;
     const indentUnit = '  ';
     const serialize = (node: Node, indentLevel = 0): string => {
       const indent = indentUnit.repeat(indentLevel);
       if (node.nodeType === Node.TEXT_NODE) {
         const text = node.nodeValue || '';
-        return text.trim() ? indent + esc(text.trim()) + '\n' : '';
+        return text.trim() ? indent + text.trim() + '\n' : '';
       }
       if (node.nodeType === Node.CDATA_SECTION_NODE) {
         return indent + `<![CDATA[${(node as CDATASection).data}]]>` + '\n';
@@ -80,12 +81,12 @@ export function prettyPrintXml(xml: string): string {
         const attrs: string[] = [];
         for (let i = 0; i < el.attributes.length; i += 1) {
           const a = el.attributes.item(i)!;
-          attrs.push(`${a.name}="${esc(a.value)}"`);
+          attrs.push(`${a.name}="${a.value}"`);
         }
         const open = attrs.length ? `<${el.tagName} ${attrs.join(' ')}>` : `<${el.tagName}>`;
         if (el.childNodes.length === 1 && el.firstChild?.nodeType === Node.TEXT_NODE) {
           const txt = (el.firstChild.nodeValue || '').trim();
-          return indent + `${open.replace(/>$/, '')}>${esc(txt)}</${el.tagName}>` + '\n';
+          return indent + `${open.replace(/>$/, '')}>${txt}</${el.tagName}>` + '\n';
         }
         if (el.childNodes.length === 0) return indent + open.replace(/>$/, '/>') + '\n';
 
@@ -97,39 +98,35 @@ export function prettyPrintXml(xml: string): string {
       return '';
     };
 
-    return serialize(doc).trim() || xml;
+    return serialize(doc).trim() || xmlString;
   } catch {
-    return xml;
+    return xmlString;
   }
 }
 
-export function prettyPrintHtml(html: string): string {
+export function prettyPrintHtml(htmlString: string): string {
   try {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    const esc = escapeHtml;
+    const doc = parser.parseFromString(htmlString, 'text/html');
     const indentUnit = '  ';
-    const voidElements = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+    const voidElements = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 
     const serialize = (node: Node, indentLevel = 0): string => {
       const indent = indentUnit.repeat(indentLevel);
       if (node.nodeType === Node.TEXT_NODE) {
         const text = node.nodeValue || '';
-        return text.trim() ? indent + esc(text.trim()) + '\n' : '';
-      }
-      if (node.nodeType === Node.CDATA_SECTION_NODE) {
-        return indent + `<![CDATA[${(node as CDATASection).data}]]>` + '\n';
+        return text.trim() ? indent + text.trim() + '\n' : '';
       }
       if (node.nodeType === Node.COMMENT_NODE) {
         return indent + `<!--${(node as Comment).data}-->` + '\n';
       }
       if (node.nodeType === Node.DOCUMENT_TYPE_NODE) {
         const dt = node as DocumentType;
-        let out = `<!DOCTYPE ${dt.name}`;
-        if (dt.publicId) out += ` PUBLIC "${dt.publicId}"`;
-        if (dt.systemId) out += ` "${dt.systemId}"`;
-        out += '>' + '\n';
+        return `<!DOCTYPE ${dt.name}>` + '\n';
+      }
+      if (node.nodeType === Node.DOCUMENT_NODE) {
+        let out = '';
+        node.childNodes.forEach((n) => { out += serialize(n, indentLevel); });
         return out;
       }
       if (node.nodeType === Node.ELEMENT_NODE) {
@@ -138,16 +135,14 @@ export function prettyPrintHtml(html: string): string {
         const attrs: string[] = [];
         for (let i = 0; i < el.attributes.length; i += 1) {
           const a = el.attributes.item(i)!;
-          attrs.push(`${a.name}="${esc(a.value)}"`);
+          attrs.push(`${a.name}="${a.value}"`);
         }
         const open = attrs.length ? `<${tag} ${attrs.join(' ')}>` : `<${tag}>`;
-        if (voidElements.has(tag)) {
-          return indent + (attrs.length ? `<${tag} ${attrs.join(' ')}/>\n` : `<${tag}/>\n`);
-        }
+        if (voidElements.has(tag)) return indent + open.replace(/>$/, '/>') + '\n';
         if (el.childNodes.length === 0) return indent + open.replace(/>$/, `></${tag}>`) + '\n';
         if (el.childNodes.length === 1 && el.firstChild?.nodeType === Node.TEXT_NODE) {
           const txt = (el.firstChild.nodeValue || '').trim();
-          return indent + `${open.replace(/>$/, '')}>${esc(txt)}</${tag}>` + '\n';
+          return indent + `${open.replace(/>$/, '')}>${txt}</${tag}>` + '\n';
         }
 
         let out = indent + open + '\n';
@@ -155,52 +150,71 @@ export function prettyPrintHtml(html: string): string {
         out += indent + `</${tag}>` + '\n';
         return out;
       }
-      if (node.nodeType === Node.DOCUMENT_NODE) {
-        let out = '';
-        node.childNodes.forEach((n) => { out += serialize(n, indentLevel); });
-        return out;
-      }
       return '';
     };
 
-    return serialize(doc).trim() || html;
+    return serialize(doc).trim() || htmlString;
   } catch {
-    return html;
+    return htmlString;
   }
 }
 
-function syntaxHighlightJSON(line: string): string {
-  return escapeHtml(line).replace(
-    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
-    (match) => {
-      let cls = 'json-number';
-      if (/^"/.test(match)) cls = /:$/.test(match) ? 'json-key' : 'json-string';
-      else if (/true|false/.test(match)) cls = 'json-boolean';
-      else if (/null/.test(match)) cls = 'json-null';
-      return `<span class="${cls}">${match}</span>`;
-    }
-  );
+function languageExtension(language: PrettyLanguage): Extension {
+  if (language === 'json') return json();
+  if (language === 'xml') return xml();
+  if (language === 'html') return html();
+  return [];
 }
 
-function syntaxHighlightXml(line: string): string {
-  if (typeof line !== 'string') line = String(line);
-  
-  // Escape HTML entities first
-  let xml = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  
-  // Comments
-  xml = xml.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="xml-comment">$1</span>');
-  
-  // Tags, attributes, values (xml.html approach)
-  xml = xml.replace(/(&lt;\/?)([\w\-.:]+)([\s\S]*?)(&gt;)/g, (_, p1, p2, p3, p4) => {
-    // Highlight attributes and values in the attributes section
-    const attrs = p3.replace(/([\w\-.:]+)(\s*=\s*)("[^"]*"|'[^']*')/g,
-      '<span class="xml-attr-name">$1</span>$2<span class="xml-attr-value">$3</span>');
-    return `<span class="xml-bracket">${p1}</span><span class="xml-tag">${p2}</span>${attrs}<span class="xml-bracket">${p4}</span>`;
+function searchHighlightExtension(search: string): Extension {
+  const term = search.trim();
+  if (!term) return [];
+
+  const matcher = new RegExp(escapeRegex(term), 'gi');
+  const mark = Decoration.mark({ class: 'cm-response-search-match' });
+
+  return ViewPlugin.fromClass(class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = this.buildDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.buildDecorations(update.view);
+      }
+    }
+
+    buildDecorations(view: EditorView) {
+      const builder = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        const text = view.state.doc.sliceString(from, to);
+        matcher.lastIndex = 0;
+        let match: RegExpExecArray | null = matcher.exec(text);
+        while (match) {
+          builder.add(from + match.index, from + match.index + match[0].length, mark);
+          match = matcher.exec(text);
+        }
+      }
+      return builder.finish();
+    }
+  }, {
+    decorations: (plugin) => plugin.decorations,
   });
-  
-  return xml;
 }
+
+const responseHighlightStyle = HighlightStyle.define([
+  { tag: tags.propertyName, class: 'cm-response-json-key' },
+  { tag: tags.string, class: 'cm-response-json-string' },
+  { tag: tags.number, class: 'cm-response-json-number' },
+  { tag: tags.bool, class: 'cm-response-json-boolean' },
+  { tag: tags.null, class: 'cm-response-json-null' },
+  { tag: tags.tagName, class: 'cm-response-xml-tag' },
+  { tag: tags.attributeName, class: 'cm-response-xml-attr-name' },
+  { tag: tags.attributeValue, class: 'cm-response-xml-attr-value' },
+  { tag: tags.comment, class: 'cm-response-xml-comment' },
+]);
 
 export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   text,
@@ -211,67 +225,78 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   className = '',
   onActivate,
 }) => {
-  const rulerRef = useRef<HTMLDivElement | null>(null);
-  const [visualLines, setVisualLines] = useState<number[]>([]);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
 
   const displayText = useMemo(() => {
     if (!text) return '';
     if (language === 'json') return jsonMode === 'minified' ? minifyJSON(text) : formatJSON(text);
+    if (language === 'xml') return prettyPrintXml(text);
     if (language === 'html') return prettyPrintHtml(text);
-    return prettyPrintXml(text);
-  }, [text, language, jsonMode]);
+    return text;
+  }, [jsonMode, language, text]);
 
-  const lines = useMemo(() => (displayText || '').split('\n'), [displayText]);
-  const highlighter = language === 'json' ? syntaxHighlightJSON : syntaxHighlightXml;
-
-  // Compute visual lines for wrapped text
-  const computeVisualLines = useMemo(() => () => {
-    const ruler = rulerRef.current;
-    if (!ruler) return;
-
-    // Measure actual container width (find first pretty-body-code to measure against)
-    const codeCell = document.querySelector('.pretty-body-code') as HTMLElement;
-    if (!codeCell) return;
-
-    // Get the actual content width (offsetWidth is total including padding)
-    const codeCellStyle = window.getComputedStyle(codeCell);
-    const paddingLeft = parseFloat(codeCellStyle.paddingLeft) || 0;
-    const paddingRight = parseFloat(codeCellStyle.paddingRight) || 0;
-    const contentWidth = codeCell.offsetWidth - paddingLeft - paddingRight;
-    if (!contentWidth) return;
-
-    // Set ruler width to match content width (not including padding)
-    ruler.style.width = contentWidth + 'px';
-    ruler.innerHTML = '';
-    
-    const rulerStyle = window.getComputedStyle(ruler);
-    const lineHeight = parseFloat(rulerStyle.lineHeight) || 16;
-    const results: number[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] || ' ';
-      const span = document.createElement('span');
-      span.textContent = line;
-      ruler.appendChild(span);
-      ruler.appendChild(document.createElement('br'));
-      const spanHeight = span.offsetHeight || lineHeight;
-      let visual = Math.round(spanHeight / lineHeight);
-      if (visual < 1) visual = 1;
-      results.push(visual);
-    }
-    setVisualLines(results.length ? results : [1]);
-  }, [lines]);
+  const extensions = useMemo(() => [
+    lineNumbers(),
+    highlightSpecialChars(),
+    drawSelection(),
+    highlightActiveLine(),
+    syntaxHighlighting(responseHighlightStyle),
+    languageExtension(language),
+    searchHighlightExtension(search),
+    keymap.of(defaultKeymap),
+    EditorState.readOnly.of(true),
+    EditorView.editable.of(false),
+    EditorView.lineWrapping,
+    EditorView.theme({
+      '&': {
+        backgroundColor: 'var(--input-bg)',
+        color: 'var(--input-fg)',
+        fontSize: '12px',
+        height: '100%',
+      },
+      '.cm-scroller': {
+        fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
+        lineHeight: '1.6',
+      },
+      '.cm-content': {
+        padding: '8px 0',
+      },
+      '.cm-line': {
+        padding: '0 12px',
+      },
+      '.cm-gutters': {
+        backgroundColor: 'var(--line-number-bg)',
+        color: 'var(--line-number-fg)',
+        borderRight: '1px solid var(--border)',
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'transparent',
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'transparent',
+      },
+    }),
+  ], [language, search]);
 
   useEffect(() => {
-    computeVisualLines();
-    const ro = new ResizeObserver(() => computeVisualLines());
-    if (rulerRef.current) ro.observe(rulerRef.current);
-    window.addEventListener('resize', computeVisualLines);
+    const host = hostRef.current;
+    if (!host) return;
+
+    viewRef.current?.destroy();
+    viewRef.current = new EditorView({
+      parent: host,
+      state: EditorState.create({
+        doc: displayText,
+        extensions,
+      }),
+    });
+
     return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', computeVisualLines);
+      viewRef.current?.destroy();
+      viewRef.current = null;
     };
-  }, [computeVisualLines]);
+  }, [displayText, extensions]);
 
   if (!text && placeholder) {
     return (
@@ -282,32 +307,10 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   }
 
   return (
-    <div className={`pretty-body-viewer ${className}`} onMouseDown={onActivate}>
-      <div className="pretty-body-table">
-        {lines.map((line, idx) => {
-          const vl = visualLines[idx] || 1;
-          return (
-            <div key={idx} className="pretty-body-row">
-              <div className="pretty-body-gutter">
-                {idx + 1}
-                {Array.from({ length: Math.max(0, vl - 1) }).map((_, k) => (
-                  <React.Fragment key={k}>
-                    <br />
-                    &nbsp;
-                  </React.Fragment>
-                ))}
-              </div>
-              <div
-                className="pretty-body-code"
-                dangerouslySetInnerHTML={{ __html: highlightInHtml(highlighter(line), search) }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      {/* Hidden ruler to measure visual wrapping */}
-      <div ref={rulerRef} className="pretty-body-ruler" aria-hidden="true" />
-    </div>
+    <div
+      ref={hostRef}
+      className={`pretty-body-viewer cm-response-viewer ${className}`}
+      onMouseDown={onActivate}
+    />
   );
 };
-

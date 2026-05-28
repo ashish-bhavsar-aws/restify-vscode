@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { EditorState, Extension, RangeSetBuilder } from '@codemirror/state';
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { html } from '@codemirror/lang-html';
 import { json } from '@codemirror/lang-json';
 import { xml } from '@codemirror/lang-xml';
@@ -238,13 +238,21 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
 
   const extensions = useMemo(() => [
     lineNumbers(),
+    foldGutter({
+      markerDOM(open) {
+        const marker = document.createElement('span');
+        marker.className = 'cm-response-fold-marker';
+        marker.textContent = open ? '⌄' : '›';
+        return marker;
+      },
+    }),
     highlightSpecialChars(),
     drawSelection(),
     highlightActiveLine(),
     syntaxHighlighting(responseHighlightStyle),
     languageExtension(language),
     searchHighlightExtension(search),
-    keymap.of(defaultKeymap),
+    keymap.of([...foldKeymap, ...defaultKeymap]),
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
     EditorView.lineWrapping,
@@ -269,6 +277,31 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
         backgroundColor: 'var(--line-number-bg)',
         color: 'var(--line-number-fg)',
         borderRight: '1px solid var(--border)',
+      },
+      '.cm-foldGutter': {
+        minWidth: '18px',
+      },
+      '.cm-foldGutter .cm-gutterElement': {
+        alignItems: 'center',
+        cursor: 'pointer',
+        display: 'flex',
+        justifyContent: 'center',
+        padding: '0 4px',
+      },
+      '.cm-response-fold-marker': {
+        color: 'var(--line-number-fg)',
+        fontSize: '13px',
+        lineHeight: '1',
+        opacity: '0.8',
+      },
+      '.cm-foldPlaceholder': {
+        backgroundColor: 'var(--button-bg)',
+        border: '1px solid var(--border)',
+        borderRadius: '3px',
+        color: 'var(--button-fg)',
+        cursor: 'pointer',
+        margin: '0 2px',
+        padding: '0 4px',
       },
       '.cm-activeLine': {
         backgroundColor: 'transparent',

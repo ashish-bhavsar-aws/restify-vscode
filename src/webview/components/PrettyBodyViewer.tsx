@@ -318,6 +318,18 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
       '.cm-activeLineGutter': {
         backgroundColor: 'transparent',
       },
+      '.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+      },
+      '.cm-selectionBackground': {
+        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+      },
+      '.cm-content ::selection': {
+        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+      },
+      '.cm-line::selection': {
+        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+      },
     }),
   ], [language, search]);
 

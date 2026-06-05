@@ -298,7 +298,11 @@ export const MainPanel: React.FC = () => {
     }
     const qIdx = rawUrl.indexOf("?");
     if (qIdx === -1) {
-      updateRequest({ url: rawUrl });
+      // If the user removed the query string entirely from the URL input,
+      // clear any active query params so they don't reappear when the
+      // derived display URL is recalculated on blur.
+      const disabledParams = request.queryParams.filter((p) => p.enabled === false);
+      updateRequest({ url: rawUrl, queryParams: disabledParams });
       return;
     }
     const baseUrl = rawUrl.slice(0, qIdx);

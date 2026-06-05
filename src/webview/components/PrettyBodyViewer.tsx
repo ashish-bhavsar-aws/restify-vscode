@@ -16,6 +16,9 @@ import {
   keymap,
   lineNumbers,
 } from '@codemirror/view';
+import ReactDOM from 'react-dom/client';
+import { Icon } from './FaIcon';
+import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { defaultKeymap } from '@codemirror/commands';
 import { tags } from '@lezer/highlight';
 
@@ -242,7 +245,13 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
       markerDOM(open) {
         const marker = document.createElement('span');
         marker.className = 'cm-response-fold-marker';
-        marker.textContent = open ? '⌄' : '›';
+        try {
+          const root = ReactDOM.createRoot(marker);
+          root.render(<Icon icon={open ? faChevronDown : faChevronRight} size={13} />);
+        } catch {
+          // Fallback to plain text if rendering fails
+          marker.textContent = open ? '⌄' : '›';
+        }
         return marker;
       },
     }),

@@ -1013,19 +1013,61 @@ export class RestifyPanel {
       // Build curl command
       let curlCommand = `curl -X ${method}`;
 
-      // Add headers
+      const isFormData = req.bodyType === "form" && Array.isArray(req.formData) && req.formData.length > 0;
+
+      // Add headers (omit Content-Type for multipart form-data so curl sets boundary)
       resolvedHeaders.forEach((h) => {
-        if (h.enabled !== false) {
-          curlCommand += ` -H "${h.key}: ${h.value}"`;
-        }
+        if (h.enabled === false) return;
+        if (isFormData && h.key && h.key.toLowerCase() === "content-type") return;
+        curlCommand += ` -H "${h.key}: ${h.value}"`;
       });
 
-      // Add data/body
-      if (body) {
-        if (typeof body === "string") {
-          curlCommand += ` -d '${body.replace(/'/g, "'\\''")}'`;
-        } else {
-          curlCommand += ` --data-binary @file`;
+      // Form-data: produce -F entries using actual file paths when present
+      if (isFormData) {
+        (req.formData || []).forEach((field) => {
+          if (!field.key || field.enabled === false) return;
+          const name = resolveVars(field.key);
+          const fieldType = field.formType || "text";
+          if (fieldType === "file") {
+            const candidatePath = field.fileName || "";
+            const contentType = field.contentType || "application/octet-stream";
+            if (candidatePath && path.isAbsolute(candidatePath)) {
+              const safePath = candidatePath.replace(/"/g, '\\"');
+              curlCommand += ` -F "${name}=@${safePath};type=${contentType}"`;
+            } else if (candidatePath) {
+              // Not absolute — include as-is (user may have relative path)
+              const safePath = candidatePath.replace(/"/g, '\\"');
+              curlCommand += ` -F "${name}=@${safePath};type=${contentType}"`;
+            } else {
+              // No path available: include a placeholder path so command is executable after user adjusts
+              curlCommand += ` -F "${name}=@/path/to/${field.fileName || 'file'};type=${contentType}"`;
+            }
+          } else {
+            const val = resolveVars(field.value || "");
+            const escaped = String(val).replace(/"/g, '\\"');
+            curlCommand += ` -F "${name}=${escaped}"`;
+          }
+        });
+      } else {
+        // Non-form bodies: prefer minified JSON when possible
+        if (body) {
+          if (typeof body === "string") {
+            let outBody = body;
+            const contentTypeHeader = Object.keys(headers).find((k) => k.toLowerCase() === "content-type");
+            const contentType = contentTypeHeader ? headers[contentTypeHeader] : "";
+            const looksLikeJson = (req.bodyType === "json") || (typeof contentType === "string" && contentType.toLowerCase().includes("application/json"));
+            if (looksLikeJson) {
+              try {
+                outBody = JSON.stringify(JSON.parse(outBody));
+              } catch {
+                // leave as-is if parse fails
+              }
+            }
+            curlCommand += ` -d '${outBody.replace(/'/g, "'\\''")}'`;
+          } else {
+            // Buffer bodies: include as --data-binary @file placeholder (no temp files)
+            curlCommand += ` --data-binary @/path/to/body.bin`;
+          }
         }
       }
 

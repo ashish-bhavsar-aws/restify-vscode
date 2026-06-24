@@ -266,6 +266,31 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
     reader.readAsArrayBuffer(file);
   };
 
+  const handleBodyTypeChange = (bt: BodyType) => {
+    const mapping: Record<BodyType, string | undefined> = {
+      json: 'application/json',
+      xml: 'application/xml',
+      text: 'text/plain',
+      urlencoded: 'application/x-www-form-urlencoded',
+      form: 'multipart/form-data',
+      graphql: 'application/json',
+      none: undefined,
+    };
+
+    const desired = mapping[bt];
+
+    // If a Content-Type-like header already exists, do not override
+    const existingIndex = (request.headers || []).findIndex((h) => (h.key || '').toLowerCase() === 'content-type');
+
+    if (desired && existingIndex === -1) {
+      onUpdate({ bodyType: bt, headers: [...(request.headers || []), { key: 'Content-Type', value: desired, enabled: true }] });
+      return;
+    }
+
+    // Just update bodyType otherwise
+    onUpdate({ bodyType: bt });
+  };
+
   return (
     <div className="request-pane" id="req-pane">
       {/* Tab Bar */}
@@ -334,7 +359,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               <button
                 key={bt}
                 className={`body-type-btn ${request.bodyType === bt ? 'active' : ''}`}
-                onClick={() => onUpdate({ bodyType: bt })}
+                onClick={() => handleBodyTypeChange(bt)}
               >
                 {bt}
               </button>

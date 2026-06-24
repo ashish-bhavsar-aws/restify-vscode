@@ -282,6 +282,29 @@ body {
     color: var(--accent);
 }
 
+/* Codegen button styling (matches gear/manage buttons) */
+.codegen-btn {
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border-radius: 6px;
+    opacity: 0.85;
+    flex-shrink: 0;
+    transition: background .12s, color .12s;
+}
+.codegen-btn:hover {
+    background: var(--surface-2);
+    color: var(--accent);
+}
+.codegen-btn svg {
+    fill: currentColor;
+}
+
 /* ─── Loading Bar ─────────────────────────────────────────── */
 .loading-bar {
     height: 2px;
@@ -2314,11 +2337,94 @@ body.vscode-light .xml-attr-value { color: #116329; }
     margin-bottom: 14px;
 }
 
+.modal.large {
+    width: min(820px, calc(100vw - 40px));
+}
+
 .modal-label {
     display: block;
     font-size: 11px;
     color: var(--muted);
     margin-bottom: 4px;
+}
+
+.codegen-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.codegen-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.codegen-container {
+    display: flex;
+    gap: 12px;
+    height: 60vh;
+    min-height: 320px;
+}
+
+.codegen-left {
+    width: 220px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: auto;
+    flex-shrink: 0;
+}
+
+.codegen-lang {
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--fg);
+}
+
+.codegen-lang:hover {
+    background: var(--hover);
+}
+
+.codegen-lang.selected {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.codegen-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.code-meta {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.code-block {
+    flex: 1;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
+    font-size: 12px;
+    white-space: pre;
 }
 
 .helper-text {

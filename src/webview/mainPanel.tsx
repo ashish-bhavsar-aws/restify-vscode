@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./MainPanel.css";
 
 import { TopBar } from "./components/TopBar";
+import { CodeGenModal } from "./components/CodeGenModal";
 import { UrlBar } from "./components/UrlBar";
 import { RequestPane } from "./components/RequestPane";
 import { ResponsePane } from "./components/ResponsePane";
@@ -32,6 +33,8 @@ export const MainPanel: React.FC = () => {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [envManagerOpen, setEnvManagerOpen] = useState(false);
+  const [codeGenOpen, setCodeGenOpen] = useState(false);
+  const [codeGenEnabled, setCodeGenEnabled] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [themeKind, setThemeKind] = useState<number>(2);
   const [savedCollectionName, setSavedCollectionName] = useState<string | null>(
@@ -230,6 +233,8 @@ export const MainPanel: React.FC = () => {
 
   // Send the built payload (with injected auth headers) for execution
   const handleSend = useCallback(() => {
+    // enable code generation once a send occurs
+    setCodeGenEnabled(true);
     post({
       command: "executeRequest",
       request: buildPayload(),
@@ -413,6 +418,8 @@ export const MainPanel: React.FC = () => {
         onEnvChange={handleEnvChange}
         onManageEnvs={() => setEnvManagerOpen(true)}
         onOpenSettings={() => setSettingsModalOpen(true)}
+        onGenerateCode={() => setCodeGenOpen(true)}
+        codegenEnabled={codeGenEnabled}
       />
 
       {/* Animated loading bar */}
@@ -511,6 +518,12 @@ export const MainPanel: React.FC = () => {
         }}
         onSave={handleSaveEnvironment}
         onDelete={handleDeleteEnvironment}
+      />
+
+      <CodeGenModal
+        open={codeGenOpen}
+        request={buildPayload()}
+        onClose={() => setCodeGenOpen(false)}
       />
     </div>
   );

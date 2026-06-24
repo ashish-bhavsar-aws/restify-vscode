@@ -47,7 +47,7 @@ library.add(
 );
 
 export type { IconProp };
-export { FontAwesomeIcon, faEye, faEyeSlash };
+export { FontAwesomeIcon, faEye, faEyeSlash, faCode };
 
 /** Convenience alias with sensible size default */
 export const Icon: React.FC<{

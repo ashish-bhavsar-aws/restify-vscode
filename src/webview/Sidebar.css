@@ -213,7 +213,20 @@ body {
 .codegen-lang.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight:600; }
 .codegen-right { flex: 1; display:flex; flex-direction:column; gap:8px; }
 .code-meta { font-size: 12px; color: var(--muted); }
-.code-block { flex:1; background: var(--input-bg); color: var(--input-fg); border:1px solid var(--border); border-radius:6px; padding:12px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace; font-size:12px; white-space:pre; }
+.code-block {
+  flex: 1; background: var(--input-bg); color: var(--input-fg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 0;
+  overflow: hidden; min-height: 0;
+}
+.codegen-pretty-viewer {
+  height: 100%; width: 100%; min-height: 0;
+}
+.codegen-pretty-viewer .cm-editor {
+  height: 100%; width: 100%; border-radius: 6px;
+}
+.codegen-pretty-viewer .cm-scroller {
+  overflow: auto;
+}
 
 /* Codegen button styling */
 .codegen-btn { background: transparent; border: none; color: var(--fg); cursor: pointer; display:flex; align-items:center; justify-content:center; padding:6px; border-radius:6px; opacity:0.85; }

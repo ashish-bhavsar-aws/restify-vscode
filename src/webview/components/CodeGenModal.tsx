@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RequestState } from '../types';
 import { generateCode, SUPPORTED_LANGS } from '../utils/codegen';
+import { PrettyBodyViewer } from './PrettyBodyViewer';
 
 interface CodeGenModalProps {
   open: boolean;
@@ -56,7 +57,9 @@ export const CodeGenModal: React.FC<CodeGenModalProps> = ({ open, request, onClo
 
           <div className="codegen-right">
             <div className="code-meta">{SUPPORTED_LANGS.find((x) => x.id === lang)?.label}</div>
-            <pre className="code-block" tabIndex={0}>{code}</pre>
+            <div className="code-block" tabIndex={0} role="region" aria-label="Generated code">
+              <PrettyBodyViewer text={code} language="text" className="codegen-pretty-viewer" />
+            </div>
           </div>
         </div>
       </div>

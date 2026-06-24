@@ -13,6 +13,7 @@ A fast, lightweight REST API client built right into VS Code. Test APIs, debug e
   - [Query Parameters](#query-parameters)
   - [Headers](#headers)
   - [Request Body](#request-body)
+  - [Code Generation](#code-generation)
   - [Authentication](#authentication)
 - [Understanding Responses](#understanding-responses)
   - [Response Tabs](#response-tabs)
@@ -95,6 +96,17 @@ Some requests need to send data. Choose your body format from the options:
 - **GraphQL** — send GraphQL queries and variables
 
 The body editor includes formatting options to clean up your data.
+
+### Code Generation
+
+Restify can turn the current request into ready-to-run code snippets for popular languages and tooling:
+
+- **Generate code** — click the code icon in the top bar to open the generator from the current request
+- **Multiple languages** — generate snippets for cURL, JavaScript, Node.js, Python, Java, Go, Swift, PowerShell, PHP, and C#
+- **Copy-ready output** — quickly copy the generated snippet into your app, script, or terminal
+- **Request-aware** — the snippet reflects the selected method, URL, headers, body, and auth details
+
+This is useful when you want to reuse an API call outside the extension or share it with teammates.
 
 ### Authentication
 

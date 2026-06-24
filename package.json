@@ -2,7 +2,7 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "license": "MIT",
   "publisher": "AshishBhavsar",
   "engines": {
@@ -187,7 +187,8 @@
   "scripts": {
     "compile": "webpack --mode development",
     "watch": "webpack --mode development --watch",
-    "build": "webpack --mode production",
+    "build": "npm install --legacy-peer-deps && webpack --mode production",
+    "prepackage": "npm run build",
     "package": "vsce package",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",

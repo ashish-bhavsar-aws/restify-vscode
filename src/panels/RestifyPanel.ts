@@ -829,13 +829,19 @@ export class RestifyPanel {
           }
 
           const fieldValue = resolveVars(field.value || "");
-          chunks.push(
-            Buffer.from(
-              `--${boundary}\r\n` +
-                `Content-Disposition: form-data; name="${fieldName}"\r\n\r\n` +
-                `${fieldValue}\r\n`,
-            ),
-          );
+          let header = `--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="${fieldName}"\r\n`;
+          
+          // Add Content-Type header for text fields with custom content type
+          if (fieldType === "text" && field.contentType) {
+            header += `Content-Type: ${field.contentType}\r\n`;
+          }
+          
+          header += `\r\n`;
+          
+          chunks.push(Buffer.from(header));
+          chunks.push(Buffer.from(fieldValue));
+          chunks.push(Buffer.from("\r\n"));
         });
 
         chunks.push(Buffer.from(`--${boundary}--\r\n`));
@@ -1045,7 +1051,11 @@ export class RestifyPanel {
           } else {
             const val = resolveVars(field.value || "");
             const escaped = String(val).replace(/"/g, '\\"');
-            curlCommand += ` -F "${name}=${escaped}"`;
+            if (field.contentType) {
+              curlCommand += ` -F "${name}=${escaped};type=${field.contentType}"`;
+            } else {
+              curlCommand += ` -F "${name}=${escaped}"`;
+            }
           }
         });
       } else {

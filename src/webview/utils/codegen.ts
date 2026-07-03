@@ -107,7 +107,12 @@ export function generateCode(lang: string, req: RequestState): string {
             const contentType = field.contentType || 'application/octet-stream';
             cmd += ` -F "${key}=@${escapeShellArg(filePath)};type=${contentType}"`;
           } else {
-            cmd += ` -F "${key}=${escapeShellArg(field.value || '')}"`;
+            const value = escapeShellArg(field.value || '');
+            if (field.contentType) {
+              cmd += ` -F "${key}=${value};type=${field.contentType}"`;
+            } else {
+              cmd += ` -F "${key}=${value}"`;
+            }
           }
         });
       } else if (body && method !== 'GET' && method !== 'HEAD') {
@@ -126,7 +131,8 @@ export function generateCode(lang: string, req: RequestState): string {
             if ((field.formType || 'text') === 'file') {
               return `form.append(${key}, fileInput.files[0]);`;
             }
-            return `form.append(${key}, ${JSON.stringify(field.value || '')});`;
+            const comment = field.contentType ? ` // type=${field.contentType}` : '';
+            return `form.append(${key}, ${JSON.stringify(field.value || '')});${comment}`;
           }).join('\n');
           const headerLines = JSON.stringify(relevantHeaders, null, 2);
           return `const form = new FormData();
@@ -227,9 +233,11 @@ axios({
           const formLines = enabledFormFields.map((field) => {
             const key = JSON.stringify(field.key || 'field');
             if ((field.formType || 'text') === 'file') {
-              return `form.append(${key}, fs.createReadStream('/path/to/file'))`;
+              const comment = field.contentType ? `, { contentType: ${JSON.stringify(field.contentType)} }` : '';
+              return `form.append(${key}, fs.createReadStream('/path/to/file')${comment})`;
             }
-            return `form.append(${key}, ${JSON.stringify(field.value || '')})`;
+            const comment = field.contentType ? ` // type=${field.contentType}` : '';
+            return `form.append(${key}, ${JSON.stringify(field.value || '')});${comment}`;
           }).join('\n');
           const headerLines = JSON.stringify(relevantHeaders, null, 2);
           return `import fetch from 'node-fetch';
@@ -281,10 +289,17 @@ ${bodyLine}  });
     case 'python-requests': {
       if (req.bodyType === 'form' && enabledFormFields.length > 0) {
         if (isMultipart) {
-          const dataLines = enabledFormFields.filter((field) => (field.formType || 'text') !== 'file').map((field) => `    ${JSON.stringify(field.key || 'field')}: ${JSON.stringify(field.value || '')},`).join('\n');
-          const fileLines = enabledFormFields.filter((field) => (field.formType || 'text') === 'file').map((field) => `    ${JSON.stringify(field.key || 'field')}: (${JSON.stringify(field.fileName || 'file'), JSON.stringify(field.fileName || 'file')})`).join('\n');
-          return `import requests
-
+          const hasCustomContentTypes = enabledFormFields.some((f) => f.contentType && (f.formType || 'text') !== 'file');
+          const dataLines = enabledFormFields.filter((field) => (field.formType || 'text') !== 'file').map((field) => {
+            const comment = field.contentType ? ` # type=${field.contentType}` : '';
+            return `    ${JSON.stringify(field.key || 'field')}: ${JSON.stringify(field.value || '')},${comment}`;
+          }).join('\n');
+          const fileLines = enabledFormFields.filter((field) => (field.formType || 'text') === 'file').map((field) => {
+            const comment = field.contentType ? ` # type=${field.contentType}` : '';
+            return `    ${JSON.stringify(field.key || 'field')}: (${JSON.stringify(field.fileName || 'file'), JSON.stringify(field.fileName || 'file')}),${comment}`;
+          }).join('\n');
+          const toolbeltNote = hasCustomContentTypes ? `\n# Note: For custom content types per field, install requests-toolbelt:\n# pip install requests-toolbelt\n# Then use MultipartEncoder instead of the simple approach below\n` : '';
+          return `import requests${toolbeltNote}
 url = ${JSON.stringify(url)}
 headers = ${JSON.stringify(relevantHeaders, null, 2)}
 
@@ -329,6 +344,9 @@ print(resp.text)
           const key = JSON.stringify(field.key || 'field');
           if ((field.formType || 'text') === 'file') {
             return `builder.addFormDataPart(${key}, ${JSON.stringify(field.fileName || 'upload.bin')}, RequestBody.create(new byte[0], MediaType.parse(${JSON.stringify(field.contentType || 'application/octet-stream')})));`;
+          }
+          if (field.contentType) {
+            return `builder.addFormDataPart(${key}, ${JSON.stringify(field.value || '')}, RequestBody.create(${JSON.stringify(field.value || '')}, MediaType.parse(${JSON.stringify(field.contentType)})));`;
           }
           return `builder.addFormDataPart(${key}, ${JSON.stringify(field.value || '')});`;
         }).join('\n  ');
@@ -441,14 +459,21 @@ task.resume()
 
     case 'go-http': {
       if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
+        const hasCustomTypes = enabledFormFields.some((f) => f.contentType && (f.formType || 'text') === 'text');
         const parts = enabledFormFields.map((field) => {
           const key = JSON.stringify(field.key || 'field');
           if ((field.formType || 'text') === 'file') {
             return `writer.CreateFormFile(${key}, ${JSON.stringify(field.fileName || 'upload.bin')})`;
           }
+          if (field.contentType && hasCustomTypes) {
+            return `part, err := writer.CreatePart(textproto.MIMEHeader{"Content-Disposition": {"form-data; name=" + ${key}}, "Content-Type": {${JSON.stringify(field.contentType)}}})
+  if err != nil { panic(err) }
+  part.Write([]byte(${JSON.stringify(field.value || '')}))`;
+          }
           return `writer.WriteField(${key}, ${JSON.stringify(field.value || '')})`;
         }).join('\n  ');
         const headerLines = Object.entries(relevantHeaders).map(([k, v]) => `req.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join('\n  ');
+        const imports = hasCustomTypes ? `  "net/textproto"` : '';
         return `package main
 
 import (
@@ -456,7 +481,7 @@ import (
   "fmt"
   "mime/multipart"
   "net/http"
-  "strings"
+  "strings"${imports}
 )
 
 func main() {

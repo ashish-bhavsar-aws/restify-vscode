@@ -5,6 +5,7 @@ import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
 import { Icon, faEye, faEyeSlash } from './FaIcon';
+import { getSuggestedContentType } from '../utils/formDataTypeDetector';
 
 interface RequestPaneProps {
   request: RequestState;
@@ -394,70 +395,121 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                 <div className="kv-wrap">
                   {(request.formData || []).map((item, i) => {
                     const rowType = item.formType || 'text';
+                    const suggestedContentType = rowType === 'text' ? getSuggestedContentType(item.value || '', item.contentType) : undefined;
                     return (
-                      <div key={i} className="kv-row">
-                        <div className="kv-check">
-                          <input
-                            type="checkbox"
-                            checked={item.enabled !== false}
-                            onChange={(e) => updateFormDataRow(i, { enabled: e.target.checked })}
-                          />
-                        </div>
-                        <div className="form-key-wrapper">
-                          <input
-                            type="text"
-                            className="kv-input"
-                            placeholder="Key"
-                            value={item.key}
-                            onChange={(e) => updateFormDataRow(i, { key: e.target.value })}
-                          />
-                          <select
-                            className="form-type-select"
-                            value={rowType}
-                            onChange={(e) => {
-                              const nextType = e.target.value as 'text' | 'file';
-                              updateFormDataRow(i, {
-                                formType: nextType,
-                                value: nextType === 'text' ? item.value || '' : '',
-                                fileName: nextType === 'file' ? item.fileName || '' : '',
-                                fileContentBase64: nextType === 'file' ? item.fileContentBase64 || '' : '',
-                                contentType: nextType === 'file' ? item.contentType || '' : '',
-                              });
-                            }}
-                            title={rowType === 'text' ? 'Text value' : 'File upload'}
-                          >
-                            <option value="text">T</option>
-                            <option value="file">F</option>
-                          </select>
-                        </div>
-
-                        {rowType === 'file' ? (
-                          <div className="form-file-wrapper" data-has-file={!!item.fileName}>
+                      <div key={i} className="kv-row" style={{ flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                          <div className="kv-check">
                             <input
-                              type="file"
-                              className="form-file-input"
-                              onChange={(e) => handleSelectFormFile(i, e.target.files?.[0])}
+                              type="checkbox"
+                              checked={item.enabled !== false}
+                              onChange={(e) => updateFormDataRow(i, { enabled: e.target.checked })}
                             />
-                            <span
-                              className="form-file-name"
-                              title={item.fileName || 'No file selected'}
-                            >
-                              {item.fileName || 'No file selected'}
-                            </span>
                           </div>
-                        ) : (
-                          <input
-                            type="text"
-                            className="kv-input"
-                            placeholder="Value"
-                            value={item.value || ''}
-                            onChange={(e) => updateFormDataRow(i, { value: e.target.value })}
-                          />
+                          <div className="form-key-wrapper">
+                            <input
+                              type="text"
+                              className="kv-input"
+                              placeholder="Key"
+                              value={item.key}
+                              onChange={(e) => updateFormDataRow(i, { key: e.target.value })}
+                            />
+                            <select
+                              className="form-type-select"
+                              value={rowType}
+                              onChange={(e) => {
+                                const nextType = e.target.value as 'text' | 'file';
+                                updateFormDataRow(i, {
+                                  formType: nextType,
+                                  value: nextType === 'text' ? item.value || '' : '',
+                                  fileName: nextType === 'file' ? item.fileName || '' : '',
+                                  fileContentBase64: nextType === 'file' ? item.fileContentBase64 || '' : '',
+                                  contentType: nextType === 'file' ? item.contentType || '' : '',
+                                });
+                              }}
+                              title={rowType === 'text' ? 'Text value' : 'File upload'}
+                            >
+                              <option value="text">T</option>
+                              <option value="file">F</option>
+                            </select>
+                          </div>
+
+                          {rowType === 'file' ? (
+                            <div className="form-file-wrapper" data-has-file={!!item.fileName}>
+                              <input
+                                type="file"
+                                className="form-file-input"
+                                onChange={(e) => handleSelectFormFile(i, e.target.files?.[0])}
+                              />
+                              <span
+                                className="form-file-name"
+                                title={item.fileName || 'No file selected'}
+                              >
+                                {item.fileName || 'No file selected'}
+                              </span>
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              className="kv-input"
+                              placeholder="Value"
+                              value={item.value || ''}
+                              onChange={(e) => updateFormDataRow(i, { value: e.target.value })}
+                            />
+                          )}
+
+                          <button className="kv-del" onClick={() => removeKvRow('formData', i)}>
+                            ×
+                          </button>
+                        </div>
+                        
+                        {/* Content-Type field for text form fields */}
+                        {rowType === 'text' && (
+                          <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px', paddingLeft: '24px' }}>
+                            <input
+                              type="text"
+                              className="kv-input"
+                              placeholder="Content-Type (auto-detect)"
+                              value={item.contentType || ''}
+                              onChange={(e) => updateFormDataRow(i, { contentType: e.target.value })}
+                              title="MIME type for this field (e.g., application/json, application/xml)"
+                              style={{ flex: 1 }}
+                            />
+                            {suggestedContentType && (
+                              <button
+                                onClick={() => updateFormDataRow(i, { contentType: suggestedContentType })}
+                                title={`Auto-detect: ${suggestedContentType}`}
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '11px',
+                                  whiteSpace: 'nowrap',
+                                  cursor: 'pointer',
+                                  backgroundColor: 'var(--button-background)',
+                                  border: '1px solid var(--button-border)',
+                                  borderRadius: '3px',
+                                  color: 'var(--foreground)',
+                                }}
+                              >
+                                Auto
+                              </button>
+                            )}
+                          </div>
                         )}
 
-                        <button className="kv-del" onClick={() => removeKvRow('formData', i)}>
-                          ×
-                        </button>
+                        {/* Content-Type field for file form fields */}
+                        {rowType === 'file' && (
+                          <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px', paddingLeft: '24px' }}>
+                            <input
+                              type="text"
+                              className="kv-input"
+                              placeholder="Content-Type (e.g., application/pdf, image/png)"
+                              value={item.contentType || ''}
+                              onChange={(e) => updateFormDataRow(i, { contentType: e.target.value })}
+                              title="MIME type for the uploaded file"
+                              style={{ flex: 1 }}
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}

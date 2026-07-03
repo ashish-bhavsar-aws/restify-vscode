@@ -1,0 +1,141 @@
+{
+  "collection": {
+    "name": "Restify Datatype Detection Tests",
+    "description": "Test collection for form-data datatype detection feature",
+    "requests": [
+      {
+        "id": "test-1",
+        "name": "JSON Field Test",
+        "method": "POST",
+        "url": "http://localhost:3000/api/json-field",
+        "bodyType": "form",
+        "formData": [
+          {
+            "key": "metadata",
+            "value": "{\"user_id\": 123, \"status\": \"active\"}",
+            "formType": "text",
+            "contentType": "application/json",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "test-2",
+        "name": "XML Field Test",
+        "method": "POST",
+        "url": "http://localhost:3000/api/xml-field",
+        "bodyType": "form",
+        "formData": [
+          {
+            "key": "data",
+            "value": "<?xml version=\"1.0\"?><root><user>John</user><age>30</age></root>",
+            "formType": "text",
+            "contentType": "application/xml",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "test-3",
+        "name": "Mixed Content Types",
+        "method": "POST",
+        "url": "http://localhost:3000/api/mixed-content",
+        "bodyType": "form",
+        "formData": [
+          {
+            "key": "user_info",
+            "value": "{\"name\": \"John\", \"age\": 30}",
+            "formType": "text",
+            "contentType": "application/json",
+            "enabled": true
+          },
+          {
+            "key": "config",
+            "value": "<?xml version=\"1.0\"?><config><debug>true</debug><version>1.0</version></config>",
+            "formType": "text",
+            "contentType": "application/xml",
+            "enabled": true
+          },
+          {
+            "key": "notes",
+            "value": "This is a plain text field without specific content type",
+            "formType": "text",
+            "contentType": "",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "test-4",
+        "name": "Auto-Detect JSON",
+        "method": "POST",
+        "url": "http://localhost:3000/api/form-data",
+        "bodyType": "form",
+        "description": "Test auto-detection of JSON (content type will be auto-detected when not explicitly set)",
+        "formData": [
+          {
+            "key": "auto_json",
+            "value": "{\"id\": 456, \"active\": true}",
+            "formType": "text",
+            "contentType": "",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "test-5",
+        "name": "Auto-Detect XML",
+        "method": "POST",
+        "url": "http://localhost:3000/api/form-data",
+        "bodyType": "form",
+        "description": "Test auto-detection of XML",
+        "formData": [
+          {
+            "key": "auto_xml",
+            "value": "<product><name>Laptop</name><price>999</price></product>",
+            "formType": "text",
+            "contentType": "",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "test-6",
+        "name": "Complex Mixed Content",
+        "method": "POST",
+        "url": "http://localhost:3000/api/mixed-content",
+        "bodyType": "form",
+        "formData": [
+          {
+            "key": "request_body",
+            "value": "{\"operation\": \"create\", \"payload\": {\"name\": \"Test User\", \"email\": \"test@example.com\"}}",
+            "formType": "text",
+            "contentType": "application/json",
+            "enabled": true
+          },
+          {
+            "key": "template",
+            "value": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><template><header>Test</header><body>Content here</body></template>",
+            "formType": "text",
+            "contentType": "application/xml",
+            "enabled": true
+          },
+          {
+            "key": "csv_data",
+            "value": "name,age,city\\nAlice,28,NYC\\nBob,35,LA\\nCharlie,42,Chicago",
+            "formType": "text",
+            "contentType": "text/csv",
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "value": "A simple text field with plain text content",
+            "formType": "text",
+            "contentType": "text/plain",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  }
+}

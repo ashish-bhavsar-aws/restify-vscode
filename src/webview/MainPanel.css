@@ -1075,14 +1075,20 @@ body.vscode-dark [data-method="OPTIONS"] { --method-color: #94e2d5; }
     background: var(--surface-2);
     border-radius: 3px;
     min-height: 28px;
+    min-width: 0;
 }
 
 .form-file-input {
-    flex: 1;
+    flex: 1 1 0;
     font-size: 10px;
     color: var(--input-fg);
     cursor: pointer;
     min-width: 0;
+    width: 100%;
+}
+
+.form-file-name {
+    max-width: 160px;
 }
 
 .form-file-input::file-selector-button {

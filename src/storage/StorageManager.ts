@@ -62,6 +62,8 @@ export class StorageManager {
   private processingQueue = false;
   private BODY_FILE_DIR = "bodies";
   private BODY_INLINE_LIMIT = 4 * 1024; // keep bodies inline if <= 4KB
+  private readonly DEFAULT_GLOBAL_ENV_ID = "global-environment";
+  private readonly DEFAULT_GLOBAL_ENV_NAME = "Global";
 
   // storageDir: optional file-system directory to persist history to a file
   constructor(
@@ -140,6 +142,32 @@ export class StorageManager {
     }
 
     this.startHousekeeping();
+    this.ensureDefaultGlobalEnvironment();
+  }
+
+  private ensureDefaultGlobalEnvironment(): void {
+    const environments = this.getEnvironments();
+    let changed = false;
+
+    if (!environments.some((env) => env.id === this.DEFAULT_GLOBAL_ENV_ID)) {
+      environments.unshift({
+        id: this.DEFAULT_GLOBAL_ENV_ID,
+        name: this.DEFAULT_GLOBAL_ENV_NAME,
+        variables: [],
+      });
+      changed = true;
+    }
+
+    const activeId = this.globalState.get("restify.activeEnv", null);
+    if (!activeId || !environments.some((env) => env.id === activeId)) {
+      this.globalState.update("restify.activeEnv", this.DEFAULT_GLOBAL_ENV_ID);
+      changed = true;
+    }
+
+    if (changed) {
+      this.globalState.update("restify.environments", environments);
+      this.notifyChange();
+    }
   }
 
   // Enqueue a write operation to be processed in background
@@ -787,10 +815,14 @@ export class StorageManager {
   }
 
   deleteEnvironment(id: string): void {
+    if (id === this.DEFAULT_GLOBAL_ENV_ID) {
+      return;
+    }
+
     const environments = this.getEnvironments().filter((e) => e.id !== id);
     this.globalState.update("restify.environments", environments);
     if (this.globalState.get("restify.activeEnv") === id) {
-      this.globalState.update("restify.activeEnv", null);
+      this.globalState.update("restify.activeEnv", this.DEFAULT_GLOBAL_ENV_ID);
     }
     this.notifyChange();
   }

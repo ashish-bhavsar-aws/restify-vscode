@@ -20,7 +20,7 @@
   --tag-delete: #cf222e;
   --tag-patch:  #7d4e00;
   --tag-head:   #6639ba;
-  --radius: 6px;
+  --radius: 8px;
 }
 
 body.vscode-dark {
@@ -39,6 +39,8 @@ body {
   background: var(--bg); color: var(--fg);
   font-family: var(--vscode-font-family, 'Segoe UI', system-ui, sans-serif);
   font-size: 12px; overflow: hidden; height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 #root { height: 100%; display: flex; flex-direction: column; }
 /* ─── Container ──── */
@@ -47,7 +49,7 @@ body {
 .toolbar {
   display: flex; align-items: center; gap: 4px;
   padding: 6px 8px; border-bottom: 1px solid var(--border);
-  background: var(--surface); flex-shrink: 0; overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); flex-shrink: 0; overflow: hidden;
 }
 .toolbar-label { flex: 1; font-size: 11px; color: var(--muted); }
 .search-wrapper {
@@ -69,7 +71,8 @@ body {
   background: var(--accent); color: var(--accent-fg); border: none;
   padding: 4px 10px; border-radius: var(--radius); font-size: 11px;
   font-weight: 700; cursor: pointer; font-family: inherit;
-  white-space: nowrap; flex-shrink: 0; transition: opacity .15s;
+  white-space: nowrap; flex-shrink: 0; transition: opacity .15s, transform .15s, box-shadow .15s;
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset;
 }
 .btn:hover { opacity: .85; }
 .btn.btn-danger { background: #c0392b; color: #fff; }
@@ -106,7 +109,7 @@ body {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-  cursor: pointer; transition: background .1s;
+  cursor: pointer; transition: background .1s, transform .1s;
 }
 .item:hover { background: var(--hover); }
 .item-content { flex: 1; min-width: 0; }
@@ -147,7 +150,7 @@ body {
 .collection-group { border-bottom: 1px solid var(--border); }
 .collection-header {
   display: flex; align-items: center; gap: 6px; padding: 7px 8px;
-  cursor: pointer; background: color-mix(in srgb, var(--hover) 60%, transparent);
+  cursor: pointer; background: color-mix(in srgb, var(--hover) 45%, transparent);
   user-select: none; transition: background .1s;
 }
 .collection-header:hover { background: var(--hover); }
@@ -192,7 +195,7 @@ body {
   background: var(--vscode-editor-background, #1e1e2e);
   border: 1px solid var(--border); border-radius: 8px;
   padding: 16px; width: 90%; max-width: 320px;
-  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+  box-shadow: 0 20px 48px rgba(0,0,0,.45);
 }
 .modal h3 { font-size: 13px; margin-bottom: 12px; color: var(--fg); }
 .modal-label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; margin-top: 8px; }

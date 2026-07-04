@@ -7,6 +7,7 @@ import * as os from "os";
 import { URL } from "url";
 import { StorageManager } from "../storage/StorageManager";
 import { getMainPanelHtml } from "../webview/mainPanelHtml";
+import { ActivityProvider } from "./ActivityProvider";
 
 // Load https-proxy-agent at runtime to avoid module resolution issues
 let HttpProxyAgent: any;
@@ -93,6 +94,7 @@ export class RestifyPanel {
   private context: vscode.ExtensionContext;
   private storageManager: StorageManager;
   private onDispose: (instance: RestifyPanel) => void;
+  private activityProvider?: ActivityProvider;
   private pendingRequest: RequestData | null = null;
   private webviewReady: boolean = false;
 
@@ -100,10 +102,12 @@ export class RestifyPanel {
     context: vscode.ExtensionContext,
     storageManager: StorageManager,
     onDispose: (instance: RestifyPanel) => void,
+    activityProvider?: ActivityProvider,
   ) {
     this.context = context;
     this.storageManager = storageManager;
     this.onDispose = onDispose;
+    this.activityProvider = activityProvider;
 
     this.panel = vscode.window.createWebviewPanel(
       "restify-main",
@@ -117,6 +121,7 @@ export class RestifyPanel {
     );
 
     this.panel.webview.html = getMainPanelHtml(context, this.panel.webview);
+    this.activityProvider?.append("Restify panel opened", "The request editor is ready.", "info");
     this.panel.webview.onDidReceiveMessage((msg) => {
       this._handleMessage(msg).catch((err) => {
         console.error("Error handling message:", err);
@@ -177,6 +182,7 @@ export class RestifyPanel {
     if (requestData && requestData.name) {
       this.panel.title = requestData.name;
     }
+    this.activityProvider?.append("Request loaded", requestData?.name || "The request editor was populated.", "info");
 
     // If webview is already ready, send immediately
     if (this.webviewReady) {
@@ -645,6 +651,7 @@ export class RestifyPanel {
         vscode.window.showInformationMessage("✓ Settings saved successfully");
         break;
       case "runScript":
+        this.activityProvider?.append("Script started", "Executing post-response script.", "info");
         await this._runScript(msg.script, msg.response);
         break;
     }
@@ -725,6 +732,16 @@ export class RestifyPanel {
         command: "scriptResult",
         result: { success: true, variables, logs },
       });
+      this.activityProvider?.append(
+        "Script completed",
+        [
+          "Result: success",
+          `Logs: ${logs.length}`,
+          `Variables set: ${Object.keys(variables).length}`,
+          ...(Object.keys(variables).length > 0 ? [`Variable names: ${Object.keys(variables).join(", ")}`] : []),
+        ].join("\n"),
+        "info",
+      );
 
       // Save extracted variables to active environment (reuse existing logic)
       if (Object.keys(variables).length > 0) {
@@ -740,6 +757,50 @@ export class RestifyPanel {
           error: err?.message ?? String(err),
         },
       });
+      this.activityProvider?.append(
+        "Script failed",
+        [
+          "Result: failed",
+          `Logs before error: ${logs.length}`,
+          `Variables set: ${Object.keys(variables).length}`,
+          `Error: ${err?.message ?? String(err)}`,
+        ].join("\n"),
+        "error",
+      );
+    }
+  }
+
+  private _formatBytes(bytes: number | undefined): string {
+    const value = Number(bytes || 0);
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  private _formatRequestBodySummary(
+    body: string | Buffer | undefined,
+    bodyType?: string,
+  ): string {
+    if (body === undefined || body === null || body === "") {
+      return "none";
+    }
+
+    const size = Buffer.isBuffer(body)
+      ? body.length
+      : Buffer.byteLength(String(body), "utf8");
+    return `${bodyType || "raw"} (${this._formatBytes(size)})`;
+  }
+
+  private _redactProxyUrl(proxyUrl: string): string {
+    try {
+      const parsed = new URL(proxyUrl);
+      if (parsed.username || parsed.password) {
+        parsed.username = parsed.username ? "***" : "";
+        parsed.password = parsed.password ? "***" : "";
+      }
+      return parsed.toString();
+    } catch {
+      return proxyUrl;
     }
   }
 
@@ -894,6 +955,15 @@ export class RestifyPanel {
         finalUrl = parsedUrl.toString();
       }
     } catch {
+      this.activityProvider?.append(
+        "Invalid request URL",
+        [
+          `Method: ${method}`,
+          `URL: ${rawUrl || "(empty)"}`,
+          "Error: URL must include a valid protocol and host.",
+        ].join("\n"),
+        "error",
+      );
       this.panel.webview.postMessage({
         command: "requestError",
         error: "Invalid URL",
@@ -962,6 +1032,18 @@ export class RestifyPanel {
       /* ignore postMessage failures for debug */
     }
 
+    this.activityProvider?.append(
+      "Request started",
+      [
+        `Method: ${method}`,
+        `URL: ${finalUrl}`,
+        `Headers: ${Object.keys(headers).length}`,
+        `Body: ${this._formatRequestBodySummary(body, req.bodyType)}`,
+        `SSL verification: ${req.rejectUnauthorized === true ? "enabled" : "disabled"}`,
+        `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
+      ].join("\n"),
+      "info",
+    );
     this.panel.webview.postMessage({ command: "requestStart" });
 
     try {
@@ -1153,6 +1235,22 @@ export class RestifyPanel {
         console.error("addToHistory failed:", hErr);
       }
 
+      this.activityProvider?.append(
+        "Request completed",
+        [
+          `Method: ${method}`,
+          `URL: ${finalUrl}`,
+          `Status: ${result.status} ${result.statusText || "OK"}`,
+          `Duration: ${duration}ms`,
+          `Network: ${timings.network ?? 0}ms`,
+          `Size: ${this._formatBytes(responseData.size)}`,
+          `Content-Type: ${this._getHeaderValue(result.headers, "content-type") || "unknown"}`,
+          `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
+          `mTLS: ${mtlsCerts ? `enabled for ${parsedUrl.hostname}` : "not used"}`,
+        ].join("\n"),
+        result.status >= 400 ? "warning" : "info",
+      );
+
       // Log timings for diagnostics
       // eslint-disable-next-line no-console
       console.log("Restify: request timings", {
@@ -1173,6 +1271,17 @@ export class RestifyPanel {
         /* empty */
       }
       const duration = Date.now() - startTime;
+      this.activityProvider?.append(
+        "Request failed",
+        [
+          `Method: ${method}`,
+          `URL: ${finalUrl}`,
+          `Duration: ${duration}ms`,
+          `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
+          `Error: ${err?.message || String(err)}`,
+        ].join("\n"),
+        "error",
+      );
       this.panel.webview.postMessage({
         command: "requestError",
         error: err.message,

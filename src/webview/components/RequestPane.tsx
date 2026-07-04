@@ -4,7 +4,7 @@ import { KeyValueTable } from './KeyValueTable';
 import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
-import { Icon, faEye, faEyeSlash } from './FaIcon';
+import { Icon, faEye, faEyeSlash, faTrash } from './FaIcon';
 import { getSuggestedContentType } from '../utils/formDataTypeDetector';
 
 interface RequestPaneProps {
@@ -396,6 +396,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                   {(request.formData || []).map((item, i) => {
                     const rowType = item.formType || 'text';
                     const suggestedContentType = rowType === 'text' ? getSuggestedContentType(item.value || '', item.contentType) : undefined;
+                    const shouldShowTextContentType = rowType === 'text' && ((item.contentType || '').trim().length > 0 || !!suggestedContentType);
                     return (
                       <div key={i} className="kv-row" style={{ flexDirection: 'column' }}>
                         <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
@@ -459,26 +460,33 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                           )}
 
                           <button className="kv-del" onClick={() => removeKvRow('formData', i)}>
-                            ×
+                            <Icon icon={faTrash} size={12} />
                           </button>
                         </div>
                         
-                        {/* Content-Type field for text form fields */}
-                        {rowType === 'text' && (
-                          <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px', paddingLeft: '24px' }}>
-                            <input
-                              type="text"
-                              className="kv-input"
-                              placeholder="Content-Type (auto-detect)"
-                              value={item.contentType || ''}
-                              onChange={(e) => updateFormDataRow(i, { contentType: e.target.value })}
-                              title="MIME type for this field (e.g., application/json, application/xml)"
-                              style={{ flex: 1 }}
-                            />
-                            {suggestedContentType && (
+                        {/* Content-Type for text fields only when non-plain or already customized */}
+                        {shouldShowTextContentType && (
+                          <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px', paddingLeft: '24px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>
+                              Runtime Content-Type:
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                color: 'var(--accent)',
+                                fontFamily: 'monospace',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                              }}
+                              title={item.contentType || suggestedContentType || 'text/plain'}
+                            >
+                              {item.contentType || suggestedContentType || 'text/plain'}
+                            </span>
+                            {!item.contentType && suggestedContentType && (
                               <button
                                 onClick={() => updateFormDataRow(i, { contentType: suggestedContentType })}
-                                title={`Auto-detect: ${suggestedContentType}`}
+                                title={`Use ${suggestedContentType}`}
                                 style={{
                                   padding: '2px 8px',
                                   fontSize: '11px',
@@ -490,7 +498,25 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                                   color: 'var(--foreground)',
                                 }}
                               >
-                                Auto
+                                Use
+                              </button>
+                            )}
+                            {item.contentType && (
+                              <button
+                                onClick={() => updateFormDataRow(i, { contentType: '' })}
+                                title="Clear custom content type"
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '11px',
+                                  whiteSpace: 'nowrap',
+                                  cursor: 'pointer',
+                                  backgroundColor: 'transparent',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: '3px',
+                                  color: 'var(--muted)',
+                                }}
+                              >
+                                Clear
                               </button>
                             )}
                           </div>

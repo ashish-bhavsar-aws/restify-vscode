@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from './storage/StorageManager';
 import { RestifyPanel } from './panels/RestifyPanel';
 import { SidebarProvider } from './panels/SidebarProvider';
+import { ActivityProvider } from './panels/ActivityProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   // Use the extension's global storage path for file-backed history persistence
@@ -22,6 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
     'collections',
     storageManager
   );
+  const activityProvider = new ActivityProvider(context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       'restify-history',
@@ -30,6 +32,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(
       'restify-collections',
       collectionsProvider
+    ),
+    vscode.window.registerWebviewViewProvider(
+      'restify-activity',
+      activityProvider
     )
   );
 
@@ -39,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
       (requestData?: any) => {
         const panel = new RestifyPanel(context, storageManager, (instance) => {
           openPanels.delete(instance);
-        });
+        }, activityProvider);
 
         openPanels.add(panel);
 

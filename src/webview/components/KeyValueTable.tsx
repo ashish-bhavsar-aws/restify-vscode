@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { KVItem, Environment } from '../types';
-import { Icon } from './FaIcon';
-import { faTrash } from '@fortawesome/free-solid-svg-icons';
+import { Icon,faTrash } from './FaIcon';
+
 import VariableTextInput from './VariableTextInput';
 import { getPredefinedHeaderNames, getHeaderSuggestions } from '../constants/predefinedHeaders';
 

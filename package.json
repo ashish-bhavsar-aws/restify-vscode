@@ -2,7 +2,7 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "license": "MIT",
   "publisher": "AshishBhavsar",
   "engines": {
@@ -21,6 +21,13 @@
           "title": "Restify API Client",
           "icon": "media/icon.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "restify-panel-container",
+          "title": "Restify",
+          "icon": "media/icon.svg"
+        }
       ]
     },
     "views": {
@@ -33,6 +40,13 @@
         {
           "id": "restify-collections",
           "name": "Collections",
+          "type": "webview"
+        }
+      ],
+      "restify-panel-container": [
+        {
+          "id": "restify-activity",
+          "name": "Activity",
           "type": "webview"
         }
       ]

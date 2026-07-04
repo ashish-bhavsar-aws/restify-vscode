@@ -1,23 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { RequestState } from '../types';
+import { Environment, RequestState } from '../types';
 import { generateCode, SUPPORTED_LANGS } from '../utils/codegen';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
 interface CodeGenModalProps {
   open: boolean;
   request: RequestState;
+  environment?: Environment | null;
   onClose: () => void;
 }
 
-export const CodeGenModal: React.FC<CodeGenModalProps> = ({ open, request, onClose }) => {
+export const CodeGenModal: React.FC<CodeGenModalProps> = ({ open, request, environment, onClose }) => {
   const [lang, setLang] = useState<string>(SUPPORTED_LANGS[0].id);
   const [code, setCode] = useState<string>('');
 
   useEffect(() => {
     if (!open) return;
-    const out = generateCode(lang, request);
+    const out = generateCode(lang, request, environment);
     setCode(out);
-  }, [open, lang, request]);
+  }, [open, lang, request, environment]);
 
   if (!open) return null;
 

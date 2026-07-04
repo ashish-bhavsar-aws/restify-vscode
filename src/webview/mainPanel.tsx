@@ -105,11 +105,17 @@ export const MainPanel: React.FC = () => {
         case "requestStart":
           setLoading(true);
           setResponse(null);
+          setRequestInfo({
+            networkLogs: [],
+          });
           break;
         case "requestComplete":
           setLoading(false);
           setResponse(msg.response);
-          setRequestInfo(msg.requestInfo);
+          setRequestInfo((prev: any) => ({
+            ...(msg.requestInfo || {}),
+            networkLogs: prev?.networkLogs || [],
+          }));
           // If the current request has a post-response script, delegate to extension host
           try {
             const script = requestRef.current?.script;
@@ -155,7 +161,7 @@ export const MainPanel: React.FC = () => {
             const entry = `${ts} — ${msg.data?.stage || "debug"}: ${JSON.stringify(msg.data?.info || {})}`;
             setRequestInfo((prev: any) => ({
               ...(prev || {}),
-              scriptLogs: [...(prev?.scriptLogs || []), entry],
+              networkLogs: [...(prev?.networkLogs || []), entry],
             }));
           } catch(e) {
             console.error("Failed to append debugLog", e);
@@ -523,6 +529,7 @@ export const MainPanel: React.FC = () => {
       <CodeGenModal
         open={codeGenOpen}
         request={buildPayload()}
+        environment={activeEnvironment}
         onClose={() => setCodeGenOpen(false)}
       />
     </div>

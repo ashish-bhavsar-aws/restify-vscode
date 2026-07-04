@@ -1,4 +1,4 @@
-import { RequestState } from '../types';
+import { Environment, RequestState } from '../types';
 
 export const SUPPORTED_LANGS: Array<{ id: string; label: string }> = [
   { id: 'curl', label: 'cURL' },
@@ -20,6 +20,55 @@ function headerObj(headers: Array<{ key?: string; value?: string }>) {
     if (h.key) obj[h.key] = h.value || '';
   });
   return obj;
+}
+
+function resolveVariables(text: string | undefined, environment?: Environment | null): string {
+  if (!text || !environment?.variables) return text || '';
+
+  return text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name) => {
+    const variable = environment.variables.find((item) => item.key === String(name).trim());
+    return variable ? variable.value || '' : match;
+  });
+}
+
+function resolveRequest(req: RequestState, environment?: Environment | null): RequestState {
+  return {
+    ...req,
+    url: resolveVariables(req.url, environment),
+    body: resolveVariables(req.body, environment),
+    gqlQuery: resolveVariables(req.gqlQuery, environment),
+    gqlVars: resolveVariables(req.gqlVars, environment),
+    headers: (req.headers || []).map((item) => ({
+      ...item,
+      key: resolveVariables(item.key, environment),
+      value: resolveVariables(item.value, environment),
+    })),
+    queryParams: (req.queryParams || []).map((item) => ({
+      ...item,
+      key: resolveVariables(item.key, environment),
+      value: resolveVariables(item.value, environment),
+    })),
+    formData: (req.formData || []).map((item) => ({
+      ...item,
+      key: resolveVariables(item.key, environment),
+      value: resolveVariables(item.value, environment),
+      fileName: resolveVariables(item.fileName, environment),
+      contentType: resolveVariables(item.contentType, environment),
+    })),
+    urlencoded: (req.urlencoded || []).map((item) => ({
+      ...item,
+      key: resolveVariables(item.key, environment),
+      value: resolveVariables(item.value, environment),
+    })),
+    authData: {
+      ...req.authData,
+      token: resolveVariables(req.authData.token, environment),
+      username: resolveVariables(req.authData.username, environment),
+      password: resolveVariables(req.authData.password, environment),
+      keyName: resolveVariables(req.authData.keyName, environment),
+      keyValue: resolveVariables(req.authData.keyValue, environment),
+    },
+  };
 }
 
 function getEnabledFormFields(req: RequestState) {
@@ -84,7 +133,8 @@ function buildHeaders(req: RequestState, isMultipart: boolean): Record<string, s
   return merged;
 }
 
-export function generateCode(lang: string, req: RequestState): string {
+export function generateCode(lang: string, request: RequestState, environment?: Environment | null): string {
+  const req = resolveRequest(request, environment);
   const method = req.method || 'GET';
   const url = req.url || '';
   const body = req.body || '';

@@ -303,9 +303,9 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             {tab === 'headers' && (
               <span className="tab-badge">{headerRows.length}</span>
             )}
-            {tab === 'logs' && request?.scriptLogs && request.scriptLogs.length > 0 && (
+            {tab === 'logs' && ((request?.networkLogs?.length || 0) > 0 || (request?.scriptLogs?.length || 0) > 0) && (
               <span className="tab-badge" style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: '#000' }}>
-                {request.scriptSuccess === false ? '✗' : '✓'}
+                {request.scriptSuccess === false ? '✗' : ((request?.networkLogs?.length || 0) + (request?.scriptLogs?.length || 0))}
               </span>
             )}
           </div>
@@ -710,6 +710,14 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       {request?.body && (
         <CollapsibleSection title={<><Icon icon={faFileCode} size={11} style={{ marginRight: 5 }} />Request Body</>} defaultOpen={false}>
           <pre style={{ fontSize: 11, color: 'var(--input-fg)', background: 'color-mix(in srgb, var(--input-bg) 50%, transparent)', padding: '8px 10px', borderRadius: '4px', overflow: 'auto', maxHeight: '150px', margin: '0', border: '1px solid var(--border)' }}>{request.body}</pre>
+        </CollapsibleSection>
+      )}
+
+      {request?.networkLogs && request.networkLogs.length > 0 && (
+        <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />Network Logs</>} defaultOpen={true} badge={request.networkLogs.length}>
+          {request.networkLogs.map((ln: string, idx: number) => (
+            <div key={idx} style={{ fontFamily: "'Cascadia Code', 'Fira Code', monospace", padding: '3px 0', fontSize: 11, color: 'var(--input-fg)', wordBreak: 'break-word' }}>{ln}</div>
+          ))}
         </CollapsibleSection>
       )}
 

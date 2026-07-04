@@ -103,4 +103,33 @@ module.exports = [
     },
     resolve: { extensions: ['.tsx', '.ts', '.js'] },
   },
+
+  // ─── Bottom Activity View Webview (React) ──────────────────
+  {
+    name: 'bottomView',
+    target: 'web',
+    mode: 'development',
+    entry: './src/webview/bottom-view/index.tsx',
+    output: {
+      filename: 'bottomView.js',
+      path: path.resolve(__dirname, 'dist/webview'),
+    },
+    plugins: [
+      new MiniCssExtractPlugin({ filename: 'bottomView.css' }),
+    ],
+    module: {
+      rules: [
+        {
+          test: /\.tsx?$/,
+          use: 'ts-loader',
+          exclude: /node_modules/,
+        },
+        {
+          test: /\.css$/,
+          use: [MiniCssExtractPlugin.loader, 'css-loader'],
+        },
+      ],
+    },
+    resolve: { extensions: ['.tsx', '.ts', '.js'] },
+  },
 ];

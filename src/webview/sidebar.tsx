@@ -39,6 +39,8 @@ function listNavKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
   if (e.key === 'ArrowDown') items[Math.min(idx + 1, items.length - 1)]?.focus();
   else items[Math.max(0, idx - 1)]?.focus();
 }
+const vscodeApi = (window as any).acquireVsCodeApi?.();
+
 export const Sidebar: React.FC = () => {
   const [sidebarType, setSidebarType] = useState<SidebarType>('history');
   const [history, setHistory]           = useState<HistoryEntry[]>([]);
@@ -46,13 +48,11 @@ export const Sidebar: React.FC = () => {
   const [expansionStates, setExpansionStates] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [triggerNewCollection, setTriggerNewCollection] = useState(false);
-  const vscodeApi = useRef<any>(null);
   const pendingToggleRef = useRef<{ id: string; state: boolean } | null>(null);
 
   useEffect(() => {
     const root = document.getElementById('root');
     setSidebarType((root?.getAttribute('data-type') || 'history') as SidebarType);
-    vscodeApi.current = (window as any).acquireVsCodeApi?.();
     const handler = (event: MessageEvent) => {
       const d = event.data;
       if (d.command === 'openNewCollectionModal') { setTriggerNewCollection(true); }
@@ -70,11 +70,11 @@ export const Sidebar: React.FC = () => {
       }
     };
     window.addEventListener('message', handler);
-    vscodeApi.current?.postMessage({ command: 'requestData' });
+    vscodeApi?.postMessage({ command: 'requestData' });
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  const post = useCallback((msg: any) => vscodeApi.current?.postMessage(msg), []);
+  const post = useCallback((msg: any) => vscodeApi?.postMessage(msg), []);
 
   const handleToggleCollection = useCallback((id: string, isOpen: boolean) => {
     // Mark this as a pending toggle so backend updates don't overwrite it
@@ -627,7 +627,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                         onStartRenameRequest={(gid, rid) => setEditingGroupRequest({ groupId: gid, requestId: rid })}
                         onCommitRenameRequest={(gid, rid, name) => {
                           setEditingGroupRequest(null);
-                          (window as any).acquireVsCodeApi?.()?.postMessage?.({ command: 'renameGroupRequest', collectionId: col.id, groupId: gid, requestId: rid, name });
+                          vscodeApi?.postMessage?.({ command: 'renameGroupRequest', collectionId: col.id, groupId: gid, requestId: rid, name });
                         }}
                         onCancelRenameRequest={() => setEditingGroupRequest(null)}
                         onSaveGroup={(g, pId) => onSaveGroup(col.id, g, pId ?? grp.id)}

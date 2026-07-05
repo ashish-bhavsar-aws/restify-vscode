@@ -21,6 +21,8 @@ import {
   SettingsState,
 } from "./types";
 
+const vscodeApi = (window as any).acquireVsCodeApi?.();
+
 export const MainPanel: React.FC = () => {
   /* ── State ───────────────────────────────────────── */
   const [request, setRequest] = useState<RequestState>(DEFAULT_REQUEST);
@@ -45,7 +47,6 @@ export const MainPanel: React.FC = () => {
   );
   const [isDirty, setIsDirty] = useState(false);
 
-  const vscodeApi = useRef<any>(null);
   const requestRef = useRef<RequestState>(request);
   const savedCollectionNameRef = useRef<string | null>(null);
   const savedGroupIdRef = useRef<string | undefined>(undefined);
@@ -63,8 +64,6 @@ export const MainPanel: React.FC = () => {
       else if (kind === 3) document.body.classList.add("vscode-high-contrast");
       else document.body.classList.add("vscode-dark");
     };
-
-    vscodeApi.current = (window as any).acquireVsCodeApi?.();
 
     const handler = (event: MessageEvent) => {
       const msg = event.data;
@@ -173,7 +172,7 @@ export const MainPanel: React.FC = () => {
     window.addEventListener("message", handler);
 
     // Signal that the webview is ready to receive messages
-    vscodeApi.current?.postMessage({ command: "webviewReady" });
+    vscodeApi?.postMessage({ command: "webviewReady" });
 
     return () => window.removeEventListener("message", handler);
   }, []);
@@ -193,7 +192,7 @@ export const MainPanel: React.FC = () => {
   }, [activeEnvId]);
 
   /* ── Helpers ─────────────────────────────────────── */
-  const post = (message: any) => vscodeApi.current?.postMessage(message);
+  const post = (message: any) => vscodeApi?.postMessage(message);
 
   const updateRequest = (updates: Partial<RequestState>) => {
     setRequest((prev: RequestState) => {
@@ -258,7 +257,7 @@ export const MainPanel: React.FC = () => {
         e.preventDefault();
         const colName = savedCollectionNameRef.current;
         if (colName) {
-          vscodeApi.current?.postMessage({
+          vscodeApi?.postMessage({
             command: "saveToCollection",
             request: {
               ...requestRef.current,

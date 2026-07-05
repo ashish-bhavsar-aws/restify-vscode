@@ -39,6 +39,7 @@ class NoProxyAgentHttps extends https.Agent {
 
 const noProxyAgentHttp = new NoProxyAgent();
 const noProxyAgentHttps = new NoProxyAgentHttps();
+const MAX_RESPONSE_SIZE = 100 * 1024 * 1024; // 100MB
 
 interface RequestData {
   id?: string;
@@ -1484,10 +1485,20 @@ export class RestifyPanel {
       const lib = isHttps ? https : http;
       const req = lib.request(options, (res) => {
         const chunks: Buffer[] = [];
+        let totalSize = 0;
+        let aborted = false;
         res.on("data", (chunk) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          totalSize += buf.length;
+          if (totalSize > MAX_RESPONSE_SIZE) {
+            aborted = true;
+            req.destroy(new Error("Response exceeded maximum allowed size of 100MB"));
+            return;
+          }
+          chunks.push(buf);
         });
         res.on("end", () => {
+          if (aborted) return;
           const rawData = Buffer.concat(chunks);
           const result = this._buildRequestResult(
             res.statusCode || 0,

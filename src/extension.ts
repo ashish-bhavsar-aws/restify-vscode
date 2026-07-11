@@ -61,7 +61,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.newRequest', () => {
-      vscode.commands.executeCommand('restify.openMain');
+  vscode.commands.executeCommand('restify.openMain');
     })
   );
 

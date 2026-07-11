@@ -6,293 +6,319 @@ A fast, lightweight REST API client built right into VS Code. Test APIs, debug e
 
 ## Table of Contents
 
-- [Installation & Getting Started](#installation--getting-started)
-- [Making Your First Request](#making-your-first-request)
+- [Getting Started](#getting-started)
+- [Sidebar & Views](#sidebar--views)
 - [Request Builder](#request-builder)
   - [URL & Method](#url--method)
   - [Query Parameters](#query-parameters)
   - [Headers](#headers)
   - [Request Body](#request-body)
-  - [Code Generation](#code-generation)
+  - [Scripts](#scripts)
   - [Authentication](#authentication)
-- [Understanding Responses](#understanding-responses)
+- [Response Viewer](#response-viewer)
   - [Response Tabs](#response-tabs)
-  - [Viewing Results](#viewing-results)
-- [Saving Requests to Collections](#saving-requests-to-collections)
-  - [Create a Collection](#create-a-collection)
-  - [Save a Request](#save-a-request)
-  - [Organize with Folders](#organize-with-folders)
-  - [Reuse Saved Requests](#reuse-saved-requests)
-  - [Move & Copy Requests](#move--copy-requests)
+  - [File Previews](#file-previews)
+- [Code Generation](#code-generation)
+- [Environments & Variables](#environments--variables)
+- [Collections](#collections)
 - [Request History](#request-history)
-- [Environments & Reusable Values](#environments--reusable-values)
-  - [Create an Environment](#create-an-environment)
-  - [Use Values in Requests](#use-values-in-requests)
-  - [Switch Environments](#switch-environments)
-- [Advanced Features](#advanced-features)
+- [Settings](#settings)
   - [Proxy Configuration](#proxy-configuration)
   - [Client Certificates (mTLS)](#client-certificates-mtls)
   - [SSL Settings](#ssl-settings)
-- [Tips & Shortcuts](#tips--shortcuts)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
 
 ---
 
-## Installation & Getting Started
+## Getting Started
 
-1. **Install Restify** from the VS Code Extensions marketplace
-2. **Open Restify** by clicking the icon in the VS Code activity bar (left sidebar), or use the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for "Restify"
-3. The main request panel opens automatically — you're ready to test APIs!
+1. **Install Restify** from the VS Code Extensions Marketplace
+2. **Open Restify** using any of these methods:
+   - **Sidebar icon** — click the Restify icon in the Activity Bar (left sidebar) to open the panel
+   - **Command Palette** — press `Ctrl+Shift+P` / `Cmd+Shift+P` and search for "Restify: Open"
+3. The main request panel opens automatically — you're ready to test APIs
+
+![Main Panel](media/screenshots/01-main-panel-empty.png)
 
 ---
 
-## Making Your First Request
+## Sidebar & Views
 
-1. **Choose an HTTP method** — click the dropdown next to the URL bar to select GET, POST, PUT, DELETE, PATCH, HEAD, or OPTIONS. Each has its own color for easy recognition.
-2. **Enter a URL** — type your API endpoint into the address bar
-3. **Click Send** or press `Enter` — the request fires immediately
-4. **View the response** — results appear below with the status code, response time, and formatted data
+The Restify sidebar contains two collapsible panels:
 
-That's it! You've just made your first request with Restify.
+![Sidebar Open](media/screenshots/02-sidebar-open.png)
+
+### History
+
+- Shows your last **25 executed requests** with method, URL, status code, and response time
+- **Click** any entry to restore the full request and response
+- **Save** an entry to a collection by clicking the "+" button on hover
+- **Delete** individual entries or **clear all** history at once
+
+![Request History](media/screenshots/09-history-entries.png)
+
+### Collections
+
+- Create and organize saved requests into named collections
+- Supports **nested folders** for grouping related requests (e.g., Auth, Users, Products)
+- **Drag and drop** requests between folders and collections
+- **Copy, rename, or delete** requests via hover actions
+- **Import/Export** collections as JSON for sharing with teammates
+
+![Collections in Sidebar](media/screenshots/04-collection-in-sidebar.png)
 
 ---
 
 ## Request Builder
 
-The request panel is organized into sections, each handling a specific part of your request.
-
 ### URL & Method
 
-- **HTTP Method dropdown** — select the appropriate method for your request
-- **Address bar** — paste or type your full URL
-- **Send button** — fires the request, or press `Enter` while in the URL bar
+- **HTTP Method dropdown** — select from GET, POST, PUT, DELETE, PATCH, HEAD, or OPTIONS. Each method has a distinct color for quick recognition
+- **Address bar** — paste or type your full URL. Environment variables like `{{baseUrl}}` are resolved automatically
+- **Send** — click Send or press `Enter` while in the URL bar
+
+![Request Loaded](media/screenshots/05-request-loaded.png)
 
 ### Query Parameters
 
-Query parameters are the `?key=value` pairs in a URL. Restify makes them easy:
-
-- **Type in the URL** — parameters you type directly into the URL automatically populate the table below
-- **Use the table** — add rows to the **Params** tab; they're automatically added to the URL
-- **Enable/disable** — check or uncheck rows without deleting them — useful for testing with/without specific parameters
+- **Type directly in the URL** — parameters you add to the URL auto-populate the Params table
+- **Use the Params tab** — add key/value rows; they're reflected in the URL
+- **Enable/disable** — toggle rows on/off without deleting them
 
 ### Headers
 
-Headers provide metadata about your request. Restify includes autocomplete to speed up entry:
+- **Autocomplete** — common header names (Content-Type, Authorization, etc.) and values (application/json, Bearer, etc.) are suggested as you type
+- **Enable/disable** — toggle headers on/off without removing them
 
-- **Click to add** — start typing a header name and suggestions appear (like "Content-Type", "Authorization")
-- **Common values** — value suggestions also appear (like "application/json" or "Bearer")
-- **Key/value pairs** — each header is a simple name-value row
-- **Enable/disable** — uncheck rows to temporarily remove them without deletion
+![Request Headers](media/screenshots/15-request-headers-tab.png)
 
 ### Request Body
 
-Some requests need to send data. Choose your body format from the options:
+Choose from seven body formats:
 
-- **None** — no body sent (typical for GET requests)
-- **JSON** — send structured data as JSON, with syntax highlighting
-- **XML** — send XML-formatted data
-- **Text** — send raw text
-- **Form Data** — key/value pairs sent as a form (useful for uploading files)
-- **URL Encoded** — standard form submission format
-- **GraphQL** — send GraphQL queries and variables
+| Format | Use Case |
+|--------|----------|
+| **None** | No body (typical for GET requests) |
+| **JSON** | Structured data with syntax highlighting and auto-formatting |
+| **XML** | XML-formatted payloads |
+| **Text** | Raw text |
+| **Form Data** | Key/value pairs with file upload support |
+| **URL Encoded** | Standard form submission format |
+| **GraphQL** | GraphQL queries and variables |
 
-The body editor includes formatting options to clean up your data.
+The body editor includes formatting options and auto-detects content type.
 
-### Code Generation
+![Request Body](media/screenshots/15-request-body-tab.png)
 
-Restify can turn the current request into ready-to-run code snippets for popular languages and tooling:
+![POST Request with JSON Body](media/screenshots/16-post-request-body.png)
 
-- **Generate code** — click the code icon in the top bar to open the generator from the current request
-- **Multiple languages** — generate snippets for cURL, JavaScript, Node.js, Python, Java, Go, Swift, PowerShell, PHP, and C#
-- **Copy-ready output** — quickly copy the generated snippet into your app, script, or terminal
-- **Request-aware** — the snippet reflects the selected method, URL, headers, body, and auth details
+### Scripts
 
-This is useful when you want to reuse an API call outside the extension or share it with teammates.
+Write post-response scripts to automate workflows:
+
+- **Extract values** from responses and store them as environment variables
+- **Access response data** — `response.status`, `response.body`, `response.headers`, `response.rawBody`
+- **Set variables** — `vars['token'] = response.body.access_token`
+- **Log output** — `log(...)` writes to the Script Logs tab in the response pane
+
+Scripts run in the extension host (not the webview) for full Node.js capabilities.
+
+![Script Tab](media/screenshots/15-request-script-tab.png)
 
 ### Authentication
 
-Authentication proves your identity to the API. Choose your auth method:
+Choose your auth method — Restify handles the headers automatically:
 
-- **None** — no authentication
-- **Bearer Token** — paste an access token; Restify adds the auth header automatically
-- **Basic Auth** — enter username and password; they're automatically encoded
-- **API Key** — provide a key/value pair and choose whether it goes in headers or as a query parameter
+| Method | Details |
+|--------|---------|
+| **None** | No authentication |
+| **Bearer Token** | Paste an access token; `Authorization: Bearer <token>` is added automatically |
+| **Basic Auth** | Enter username/password; Base64-encoded automatically |
+| **API Key** | Key/value pair with option to send in headers or as a query parameter |
 
-You don't need to manually create auth headers — Restify handles it all.
+![Authentication Tab](media/screenshots/15-request-auth-tab.png)
 
 ---
 
-## Understanding Responses
+## Response Viewer
 
 ### Response Tabs
 
-Once you send a request, the response appears in tabs:
+- **Body** — the main response data with automatic formatting (JSON syntax highlighting, XML pretty-printing)
+- **Headers** — all response headers from the server
+- **Logs** — detailed debug information: request/response breakdown, headers, parameters, and script logs
+- **Raw** — the unformatted response output
 
-- **Body** — the main response data, automatically formatted (JSON with syntax highlighting, XML pretty-printed)
-- **Headers** — all headers sent back by the server
-- **Logs** — detailed debug information about the request and response
-- **Raw** — the unformatted response if you need to see the raw output
+![GET Response](media/screenshots/06-response-received.png)
 
-### Viewing Results
+![Response Logs](media/screenshots/07-response-logs.png)
 
-- **Status code** — top of the response shows the HTTP status (200 OK, 404 Not Found, 500 Server Error, etc.)
-- **Response time & size** — how long the request took and how much data was returned
-- **Formatted data** — JSON and XML are automatically pretty-printed and highlighted
+![Request & Response Logs](media/screenshots/08-request-response-logs.png)
+
+### Response Info
+
+- **Status code** — displayed prominently (200 OK, 404 Not Found, 500 Server Error, etc.)
+- **Response time** — how long the request took
+- **Response size** — how much data was returned
 - **Search** — click the search icon to find text within large responses
-- **Copy as cURL** — copy a curl command to run the same request from your terminal
+- **Copy as cURL** — copy a curl command to reproduce the same request from your terminal
 
-The Logs tab gives you a complete breakdown: exactly what was sent, what was received, headers, parameters, and more — perfect for debugging.
+### File Previews
 
-### File Previews (CSV, PDF, Text, Excel)
+Restify detects and previews common file types inline:
 
-- Restify shows native previews for common file responses: **CSV**, **Excel (XLS/XLSX)**, **plain text**, and **PDF**.
-- CSV and Excel files are parsed in the webview and displayed as read-only tables for quick inspection.
-- PDF files are rendered in the webview using a bundled PDF renderer (`react-pdf` / `pdfjs`) so they display inline without relying on external CDNs. If rendering fails, you can download the PDF to view it locally.
-- Preview size limit: in-webview previews are capped at **5 MB**; files larger than this will prompt you to download instead of rendering inline.
-- Download behavior: the Download button attempts to suggest a filename (from the `Content-Disposition` header or the URL) and will save the binary to your chosen location.
+- **CSV** — parsed and displayed as a read-only table
+- **Excel (XLS/XLSX)** — parsed and displayed as a table
+- **Plain text** — rendered inline
+- **PDF** — rendered using a bundled PDF renderer (no external CDNs)
 
+**Limits:** In-webview previews are capped at **5 MB**. Files larger than this prompt a download. The Download button saves the binary to your chosen location.
 
 ---
 
-## Saving Requests to Collections
+## Code Generation
 
-Collections let you organize and reuse requests. Instead of typing the same URL over and over, save it once and open it instantly.
+Turn any request into ready-to-run code snippets:
+
+1. Build your request (method, URL, headers, body, auth)
+2. Click the **code icon** (`< >`) in the top bar
+3. Select a language from the dropdown
+4. Copy the generated snippet
+
+![Code Generation](media/screenshots/10-code-generation.png)
+
+**Supported languages:**
+
+- cURL
+- JavaScript (fetch)
+- JavaScript (axios)
+- Node.js (node-fetch)
+- Python (requests)
+- Java (OkHttp)
+- Swift (URLSession)
+- Go (net/http)
+- PowerShell (Invoke-RestMethod)
+- PHP (cURL)
+- C# (HttpClient)
+
+Snippets reflect the full request state including method, URL, headers, body, and authentication.
+
+---
+
+## Environments & Variables
+
+Environments store reusable values so you don't repeat yourself across requests.
+
+### Create an Environment
+
+1. Click the **environment dropdown** at the top of the request panel
+2. Select **"Manage Environments"**
+3. Click **"+ New Environment"**
+4. Name it (e.g., "Development", "Production")
+5. Add key/value pairs:
+   - `baseUrl` = `https://api.example.com`
+   - `token` = `abc123xyz`
+6. Save
+
+![Environment Manager](media/screenshots/11-environment-manager.png)
+
+### Use Variables
+
+Reference variables anywhere in your request using `{{variableName}}` syntax:
+
+- **URLs** — `{{baseUrl}}/users`
+- **Headers** — `Authorization: Bearer {{token}}`
+- **Body** — `"username": "{{username}}"`
+
+**Visual feedback:** variable names turn **green** if resolved, **red** if not found in the active environment.
+
+### Switch Environments
+
+- Use the **dropdown** at the top to switch instantly
+- All `{{variable}}` references update automatically
+- Select **"No Environment"** to disable variable resolution
+
+---
+
+## Collections
 
 ### Create a Collection
 
-1. **Open the Collections panel** — click the "Collections" tab in the Restify sidebar
-2. **Click the "+" button** in the panel header
-3. **Name your collection** — something like "My API", "GitHub API", "Stripe API", etc.
-4. **Done** — your collection is ready to receive requests
+1. Open the **Collections** panel in the sidebar
+2. Click the **"+"** button in the panel header
+3. Name your collection
 
 ### Save a Request
 
-1. **Build your request** — enter the URL, headers, body, auth, etc.
-2. **Click the Save button** (💾) next to the URL bar
-3. **Give it a name** — something descriptive like "Get User Profile" or "Create Order"
-4. **Choose a collection** — select where to save it, or create a new collection
-5. **Click Save** — it's now stored and reusable
+1. Build your request (URL, headers, body, auth)
+2. Click the **Save** button next to the URL bar
+3. Name the request and choose a collection
+4. Click **Save**
 
-### Organize with Folders
+### Organize
 
-Collections support nested folders for better organization:
+- **Folders** — right-click a collection to add nested folders
+- **Drag & drop** — move requests between folders and collections
+- **Copy** — duplicate requests within a collection
+- **Rename/Delete** — hover over a request for action buttons
 
-1. **Right-click a collection** and select "Add Folder", or use the "+" folder button
-2. **Name the folder** — group related requests like "Auth", "Users", "Products"
-3. **Drag requests** into folders to organize them
-4. **Nested folders** are fully supported — create folders within folders for deep organization
+### Import & Export
 
-### Reuse Saved Requests
+- **Export** a collection as JSON for backup or sharing
+- **Import** a JSON file to restore or merge collections
 
-1. **Open the Collections panel** in the Restify sidebar
-2. **Browse your collections** — expand folders to see requests
-3. **Click any request** — it opens instantly with all settings restored (URL, headers, body, auth)
-4. **Make changes** — modify the request as needed, then click Send
-
-You can also save a new version by clicking the Save button again — it updates the existing request.
-
-### Move & Copy Requests
-
-- **Move between folders** — drag a request from one folder to another (even across collections)
-- **Copy a request** — hover over a request and click the copy button to duplicate it within the same collection
-- **Rename** — hover and click the edit button to rename requests
-- **Delete** — hover and click the delete button to remove requests
+![Import Complete](media/screenshots/03f-import-complete.png)
 
 ---
 
 ## Request History
 
-Restify automatically keeps a record of your last 25 executed requests:
+Every request you send is automatically recorded:
 
-1. **Open the History panel** — click the "History" tab in the sidebar
-2. **Browse your requests** — each shows the method, URL, status code, and response time
-3. **Click to reload** — click any history entry to restore the full request and response
-4. **Save to collection** — hover an entry and click "+" to save it to a collection
-5. **Delete** — hover and click "×" to remove from history
-6. **Clear all** — use the Clear button to wipe entire history
+- **Last 25 requests** are stored with full request/response data
+- **Click** any entry to restore it instantly
+- **Save to collection** by clicking the "+" on hover
+- **Delete** entries individually or **clear all** at once
 
-History is automatic — every request you send is recorded. This is perfect for testing workflows or coming back to something you tried earlier.
+![History Entries](media/screenshots/09-history-entries.png)
 
 ---
 
-## Environments & Reusable Values
+## Settings
 
-Environments let you store reusable values (like API URLs, tokens, or server names) so you don't have to type them repeatedly. You can have multiple environments and switch between them for different scenarios (dev, staging, production).
+Click the **gear icon** (top right of the request panel) to open Settings.
 
-### Create an Environment
-
-1. **Click the environment dropdown** at the top of the request panel
-2. **Select "Manage Environments"**
-3. **Click "+ New Environment"**
-4. **Name it** — something like "Development", "Production", or "Local Testing"
-5. **Add values** — enter key/value pairs:
-   - Base URL: `https://api.example.com`
-   - API Token: `abc123xyz`
-   - Username: `testuser`
-6. **Save** — your environment is ready to use
-
-### Use Values in Requests
-
-Once you've created an environment with values, reference them anywhere in your request:
-
-1. **In URLs** — type `{{baseUrl}}/users` instead of typing the full URL
-2. **In headers** — type `{{apiToken}}` in an Authorization header
-3. **In body** — reference values like `{{username}}`
-4. **Visual feedback** — the variable name turns green if it exists, red if not found
-
-The `{{variableName}}` syntax is replaced with the actual value when you send the request.
-
-### Switch Environments
-
-- **Use the dropdown** at the top to switch between environments instantly
-- **Different data, same requests** — switch from "Development" to "Production" and all values update automatically
-- **Edit anytime** — click "Manage Environments" to add, edit, or delete values
-
----
-
-## Advanced Features
+![Settings](media/screenshots/12-settings-proxy-mtls.png)
 
 ### Proxy Configuration
 
-If you need to route requests through a proxy server:
+Route all requests through a proxy server:
 
-1. **Open Settings** — click the gear icon (⚙) at the top right
-2. **Go to Proxy Settings**
-3. **Enter your proxy details:**
-   - **Host** — the proxy server address
-   - **Port** — the proxy port number
-   - **Username/Password** — if authentication is required, check the box and enter credentials
-   - **No Proxy Hosts** — list hostnames that should bypass the proxy
-4. **Save** — all requests now route through the proxy
-
-The proxy is now active for all requests. Hosts in the "No Proxy" list will connect directly, bypassing the proxy.
+- **Host** — proxy server address
+- **Port** — proxy port number
+- **Authentication** — optional username/password for proxy auth
+- **No Proxy Hosts** — hostnames that bypass the proxy
 
 ### Client Certificates (mTLS)
 
-If an API requires client certificates for mutual TLS authentication:
+For APIs requiring mutual TLS authentication:
 
-1. **Open Settings** (⚙ icon) and go to **Client Certificates**
-2. **Add a certificate entry:**
-   - **Hostname** — the domain that requires the certificate (e.g., `api.internal.company.com`)
-   - **Certificate Path** — path to your certificate file
-   - **Key Path** — path to your private key file
-   - **CA Path** (optional) — path to a CA certificate for additional verification
-3. **Save** — requests to that hostname automatically use the certificate
+- **Hostname** — the domain that requires the certificate
+- **Certificate Path** — path to your certificate file
+- **Key Path** — path to your private key file
+- **CA Path** (optional) — path to a CA certificate
 
-Certificates can be added for multiple hostnames. Restify handles certificate validation automatically.
+Certificates are matched by hostname and applied automatically.
 
 ### SSL Settings
 
-For requests with SSL/TLS concerns:
-
-- **"Verify SSL Connection" checkbox** — located below the URL bar
+- **Verify SSL Connection** checkbox (below the URL bar)
 - **Enabled (default)** — strict certificate verification
-- **Disabled** — allows self-signed or untrusted certificates (useful for testing, not recommended for production)
+- **Disabled** — allows self-signed or untrusted certificates (for testing only)
 
 ---
 
-## Tips & Shortcuts
-
-### Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Action | Shortcut |
 |--------|----------|
@@ -301,19 +327,8 @@ For requests with SSL/TLS concerns:
 | Format body (JSON/XML) | `Shift+Alt+F` |
 | Close search | `Esc` |
 
-### Pro Tips
-
-- **Organize by API** — create one collection per API service you use
-- **Use environments** — keeps requests clean and makes switching between servers effortless
-- **Reference history** — check recent requests to jog your memory about a workflow
-- **Drag to organize** — drag requests between folders for quick reorganization
-- **Copy requests** — duplicate complex requests as a starting point for similar ones
-- **Check the logs** — when something goes wrong, the Logs tab shows exactly what happened
-
 ---
 
-## Need Help?
+## Overview
 
-- **Stuck on a request?** — check the Logs tab for detailed debugging information
-- **Want to organize better?** — create folders within collections for better structure
-- **Testing multiple APIs?** — use environments to switch between different servers instantly
+![Final Overview](media/screenshots/17-final-overview.png)

@@ -1,0 +1,6 @@
+{
+  "name": "Swagger Petstore",
+  "exportedAt": "2026-07-11T10:03:39.483Z",
+  "source": "Restify E2E Test",
+  "preview": "Swagger Petstore\n20\npet\n8\nstore\n4\nGET\nReturns pet inventories by status\nPOST\nPlace an order for a pet\nGET\nFind purchase order by ID\nDELETE\nDelete purchase order by ID\nuser\n8\nPOST\nCreates list of users with given input array\nGET\nGet user by user name\nPUT\nUpdated user\nDELETE\nDelete user\nGET\nLogs user into the system\nGET\nLogs out current logged in user session\nPOST\nCreates list of users with given input array\nPOST\nCreate user"
+}

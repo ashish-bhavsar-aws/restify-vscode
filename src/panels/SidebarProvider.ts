@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as os from 'os';
 import * as https from 'https';
 import * as http from 'http';
 import { URL } from 'url';
@@ -193,17 +195,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           const col = cols.find((c) => String(c.id) === String(msg.id));
           if (!col) break;
           const data = JSON.stringify(col, null, 2);
-          // sanitize name for filesystem
           const safe = (col.name || 'collection').replace(/[^a-z0-9._-]/gi, '-').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
           const defaultName = `${safe || 'collection'}-restify.collection.json`;
-          const uri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(defaultName),
-            filters: { 'JSON': ['json'] },
+          const fileName = await vscode.window.showInputBox({
+            prompt: 'Enter a filename for the exported collection',
+            value: defaultName,
+            validateInput: (v) => v.trim() ? null : 'Filename cannot be empty',
           });
-          if (uri) {
-            await vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8'));
-            vscode.window.showInformationMessage('✓ Collection exported');
-          }
+          if (!fileName) break;
+          const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+          const targetUri = wsFolder
+            ? vscode.Uri.joinPath(wsFolder, fileName)
+            : vscode.Uri.file(path.join(os.homedir(), fileName));
+          await vscode.workspace.fs.writeFile(targetUri, Buffer.from(data, 'utf8'));
+          vscode.window.showInformationMessage('✓ Collection exported');
           break;
         }
         case 'exportAllCollections': {
@@ -213,14 +218,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             break;
           }
           const data = JSON.stringify(cols, null, 2);
-          const uri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file('restify.collections.json'),
-            filters: { 'JSON': ['json'] },
+          const defaultName = 'restify.collections.json';
+          const fileName = await vscode.window.showInputBox({
+            prompt: 'Enter a filename for the exported collections',
+            value: defaultName,
+            validateInput: (v) => v.trim() ? null : 'Filename cannot be empty',
           });
-          if (uri) {
-            await vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8'));
-            vscode.window.showInformationMessage(`\u2713 Exported ${cols.length} collection${cols.length !== 1 ? 's' : ''}`);
-          }
+          if (!fileName) break;
+          const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+          const targetUri = wsFolder
+            ? vscode.Uri.joinPath(wsFolder, fileName)
+            : vscode.Uri.file(path.join(os.homedir(), fileName));
+          await vscode.workspace.fs.writeFile(targetUri, Buffer.from(data, 'utf8'));
+          vscode.window.showInformationMessage(`✓ Exported ${cols.length} collection${cols.length !== 1 ? 's' : ''}`);
           break;
         }
         case 'importCollections':

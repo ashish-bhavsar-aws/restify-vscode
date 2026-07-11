@@ -5,3 +5,6 @@ file.js
 **.vscode-**
 test-results
 *.log
+test/node_modules
+test/out
+test/screenshots/*.png

@@ -1,0 +1,20 @@
+{
+  "name": "restify-vscode-e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end Playwright tests for Restify VS Code extension",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:ui": "npx playwright test --ui",
+    "test:report": "npx playwright show-report",
+    "demo": "npx playwright test specs/demo.spec.ts --project=vscode",
+    "demo:headed": "npx playwright test specs/demo.spec.ts --project=vscode --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@vscode/test-electron": "^2.4.1",
+    "typescript": "^5.5.0"
+  }
+}

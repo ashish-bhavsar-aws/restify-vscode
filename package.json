@@ -2,9 +2,13 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "license": "MIT",
   "publisher": "AshishBhavsar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashish-bhavsar-aws/restify-vscode.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },

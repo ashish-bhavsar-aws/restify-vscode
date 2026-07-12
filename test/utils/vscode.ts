@@ -15,14 +15,14 @@ let _step = 0;
 export function log(msg: string): void {
   _step++;
   const ts = new Date().toISOString().slice(11, 23);
-  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${msg}`);
+  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${msg}`); // eslint-disable-line no-console
 }
 
 export function logCheck(msg: string, result: boolean | string | number): void {
   _step++;
   const ts = new Date().toISOString().slice(11, 23);
   const icon = result === false || result === 0 ? '✗' : '✓';
-  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${icon} CHECK: ${msg} → ${JSON.stringify(result)}`);
+  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${icon} CHECK: ${msg} → ${JSON.stringify(result)}`); // eslint-disable-line no-console
 }
 
 export function logError(msg: string, err?: unknown): void {
@@ -38,7 +38,7 @@ export function resetLog(): void {
 
 export async function dumpPageState(page: Page, label: string): Promise<void> {
   const title = await page.title().catch(() => '<unknown>');
-  const url = page.url();
+  const _url = page.url();
   const frames = page.frames();
   const webviewFrames = frames.filter(f => f.url().includes('vscode-webview://'));
   const iframeCount = await page.locator('iframe').count().catch(() => 0);
@@ -56,8 +56,8 @@ export async function dumpPageState(page: Page, label: string): Promise<void> {
 
   for (let i = 0; i < webviewFrames.length; i++) {
     const f = webviewFrames[i];
-    const hasUrlBar = await f.locator('.url-bar').count().catch(() => 0);
-    const hasSendBtn = await f.locator('.send-btn').count().catch(() => 0);
+    const hasUrlBar = await f.locator('[data-testid="url-input"], .url-input').count().catch(() => 0);
+    const hasSendBtn = await f.locator('[data-testid="send-btn"]').count().catch(() => 0);
     const bodyText = await f.evaluate(() => document.body?.innerText?.slice(0, 120) || '', () => '').catch(() => '<err>');
     log(`  webview[${i}]: urlBar=${hasUrlBar} sendBtn=${hasSendBtn} body="${bodyText.replace(/\n/g, ' ').trim()}"`);
   }
@@ -72,8 +72,8 @@ export async function dumpSidebarState(page: Page): Promise<void> {
   const text = await sidebar.textContent().catch(() => '');
   log(`Sidebar visible, content preview: "${(text || '').slice(0, 200).replace(/\n/g, ' ').trim()}"`);
 
-  const historyItems = await sidebar.locator('.item').count().catch(() => 0);
-  const collectionItems = await sidebar.locator('.collection-group, .collection-header').count().catch(() => 0);
+  const historyItems = await sidebar.locator('[class*="item"], .item').count().catch(() => 0);
+  const collectionItems = await sidebar.locator('[class*="collection"], .collection-group, .collection-header').count().catch(() => 0);
   log(`  historyItems=${historyItems} collectionGroups=${collectionItems}`);
 }
 
@@ -147,12 +147,18 @@ export async function closeVSCode(app: VSCodeApp): Promise<void> {
 
   // Save recorded video before closing
   try {
-    const videoPath = await app.window.video.path();
-    if (videoPath && fs.existsSync(videoPath)) {
-      fs.mkdirSync(VIDEO_DIR, { recursive: true });
-      const dest = path.join(VIDEO_DIR, 'final-demo.webm');
-      fs.copyFileSync(videoPath, dest);
-      log(`Video saved: ${dest}`);
+    const video = app.window.video;
+    if (video) {
+      // Playwright auto-saves to recordVideo.dir; try to copy final video
+      const videoPath = typeof video.path === 'function' ? await video.path() : null;
+      if (videoPath && fs.existsSync(videoPath)) {
+        fs.mkdirSync(VIDEO_DIR, { recursive: true });
+        const dest = path.join(VIDEO_DIR, 'final-demo.webm');
+        fs.copyFileSync(videoPath, dest);
+        log(`Video saved: ${dest}`);
+      } else {
+        log('Video recorded to recordVideo.dir (auto-saved)');
+      }
     }
   } catch (e) {
     log(`  Could not save video: ${e}`);
@@ -340,7 +346,7 @@ async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | nu
   const prefix = '  '.repeat(depth + 1);
 
   // Check this frame for Send button
-  const hasSend = await frame.locator('button:has-text("Send")').count().catch(() => 0);
+  const hasSend = await frame.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
   if (hasSend > 0) {
     log(`${prefix}✓ Found frame with Send button: ${frame.url().slice(0, 60)}`);
     return frame;
@@ -348,14 +354,14 @@ async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | nu
 
   // Check child frames (webview panels use nested iframes)
   for (const child of frame.childFrames()) {
-    const childSend = await child.locator('button:has-text("Send")').count().catch(() => 0);
+    const childSend = await child.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
     if (childSend > 0) {
       log(`${prefix}✓ Found child frame with Send button: ${child.url().slice(0, 60)}`);
       return child;
     }
     // One more level
     for (const gc of child.childFrames()) {
-      const gcSend = await gc.locator('button:has-text("Send")').count().catch(() => 0);
+      const gcSend = await gc.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
       if (gcSend > 0) {
         log(`${prefix}✓ Found grandchild frame with Send button: ${gc.url().slice(0, 60)}`);
         return gc;
@@ -374,9 +380,9 @@ export async function findSidebarWebviewFrames(page: Page): Promise<Frame[]> {
   const sidebarFrames: Frame[] = [];
   for (const frame of allFrames) {
     // Check if this frame contains sidebar content (Filter input, collection items, etc.)
-    const hasFilter = await frame.locator('input[placeholder*="Filter"], input[placeholder*="filter"]').count().catch(() => 0);
-    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"]').count().catch(() => 0);
-    const hasCollection = await frame.locator('text=Swagger Petstore, text=collection, .collection-header, .collection-name').count().catch(() => 0);
+    const hasFilter = await frame.locator('input[placeholder*="Filter"], input[placeholder*="filter"], [class*="filter"], [class*="search"]').count().catch(() => 0);
+    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"], [class*="expand"], [class*="collapse"]').count().catch(() => 0);
+    const hasCollection = await frame.locator('text=Swagger Petstore, text=collection, [class*="collection"], [class*="collection-name"]').count().catch(() => 0);
     log(`  Frame ${frame.url().slice(0, 50)}: filter=${hasFilter} expandBtn=${hasExpandAll} collection=${hasCollection}`);
 
     if (hasFilter > 0 || hasExpandAll > 0 || hasCollection > 0) {
@@ -392,7 +398,7 @@ export async function findCollectionsFrame(page: Page): Promise<Frame | null> {
   const allFrames = page.frames().filter(f => f.url().includes('vscode-webview://'));
 
   for (const frame of allFrames) {
-    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"]').count().catch(() => 0);
+    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"], [class*="expand"], [class*="collapse"]').count().catch(() => 0);
     const hasCollectionName = await frame.locator('text=Swagger Petstore, text=Petstore').count().catch(() => 0);
     if (hasExpandAll > 0 || hasCollectionName > 0) {
       log(`  ✓ Found collections frame: ${frame.url().slice(0, 60)}`);
@@ -516,12 +522,83 @@ export async function selectQuickPick(page: Page, label: string): Promise<void> 
 
 export async function typeInQuickInput(page: Page, text: string): Promise<void> {
   log(`Typing in quick input: "${text}"...`);
-  await page.locator('.quick-input-widget input').waitFor({ state: 'visible', timeout: 10_000 });
-  const input = page.locator('.quick-input-widget input');
+  // Wait for the quick input widget to be attached. After a quick pick
+  // closes and showInputBox opens, VS Code reuses the same container —
+  // the widget is always attached, but may briefly hide during transition.
+  try {
+    await page.locator('.quick-input-widget').waitFor({ state: 'attached', timeout: 10_000 });
+  } catch {
+    log('  .quick-input-widget not attached, trying .quick-input-box...');
+    await page.locator('.quick-input-box').waitFor({ state: 'attached', timeout: 5_000 });
+  }
+
+  const input = page.locator('.quick-input-widget input, .quick-input-box input');
+
+  // Wait for the actual input element to be visible inside the widget.
+  // This ensures the showInputBox input has rendered (not a stale quick-pick filter).
+  try {
+    await input.first().waitFor({ state: 'visible', timeout: 5_000 });
+  } catch {
+    log('  Input not visible within timeout, continuing anyway...');
+  }
+
+  // Strategy 1: click to focus, select all, then type via keyboard.
+  // This simulates real user interaction and is the most reliable with
+  // VS Code's quick input widget which may not react to synthetic events.
+  try {
+    await input.first().click({ force: true, timeout: 3_000 });
+    await page.waitForTimeout(100);
+    await page.keyboard.press('Meta+a');
+    await page.waitForTimeout(50);
+    await page.keyboard.type(text, { delay: 15 });
+    log('  Input filled via click + keyboard type');
+    await page.waitForTimeout(200);
+    return;
+  } catch {
+    log('  click+keyboard failed, trying fill()...');
+  }
+
+  // Strategy 2: try Playwright fill
   const count = await input.count();
   logCheck('Quick input field found', count);
-  await input.fill(text);
-  log('  Text filled');
+  if (count > 0) {
+    try {
+      await input.first().fill(text, { timeout: 3_000 });
+      log('  Input filled via fill()');
+      await page.waitForTimeout(200);
+      return;
+    } catch {
+      log('  fill() failed, trying evaluate...');
+    }
+  }
+
+  // Strategy 3: use evaluate to directly set the input value + dispatch events
+  try {
+    const set = await page.evaluate((t) => {
+      const inp = document.querySelector('.quick-input-widget input, .quick-input-box input') as HTMLInputElement | null;
+      if (!inp) return false;
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (nativeSetter) {
+        nativeSetter.call(inp, t);
+      } else {
+        inp.value = t;
+      }
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, text);
+    if (set) {
+      log('  Input value set via evaluate');
+      await page.waitForTimeout(200);
+      return;
+    }
+  } catch (e) {
+    log(`  evaluate set failed: ${e}`);
+  }
+
+  // Strategy 4: just type via keyboard (last resort)
+  await page.keyboard.type(text, { delay: 20 });
+  log('  Text filled via keyboard (last resort)');
   await page.waitForTimeout(200);
 }
 
@@ -622,17 +699,42 @@ export async function clickTabInFrame(frame: Frame, tabName: string, containerSe
 //   1. focus() + keyboard Space/Enter — works if element is focusable
 //   2. force:true click — fallback for non-focusable elements
 
-export async function clickInFrame(frame: Frame, selector: string, opts?: { force?: boolean }): Promise<void> {
+export async function clickInFrame(frame: Frame, selector: string, _opts?: { force?: boolean }): Promise<void> {
   log(`Clicking "${selector}" in frame (webview-safe)...`);
   const el = frame.locator(selector);
   const count = await el.count();
   logCheck(`"${selector}" found`, count);
   if (count === 0) return;
 
-  // Strategy 1: focus + keyboard Space (most reliable in webview iframes)
+  // Strategy 1: evaluate-based click (dispatches a real MouseEvent that React picks up)
+  try {
+    const dispatched = await frame.evaluate((sel) => {
+      const btn = document.querySelector(sel) as HTMLElement | null;
+      if (!btn) return false;
+      const rect = btn.getBoundingClientRect();
+      const evt = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      });
+      btn.dispatchEvent(evt);
+      return true;
+    }, selector);
+    if (dispatched) {
+      log(`  Clicked "${selector}" via evaluate dispatch`);
+      await frame.waitForTimeout(500);
+      return;
+    }
+  } catch {
+    log(`  evaluate click failed for "${selector}", trying focus+Space...`);
+  }
+
+  // Strategy 2: focus + keyboard Space
   try {
     await el.first().focus({ timeout: 3_000 });
-    await frame.locator('body').press('Space');
+    await el.first().press('Space');
     log(`  Clicked "${selector}" via focus + Space`);
     await frame.waitForTimeout(300);
     return;
@@ -640,7 +742,7 @@ export async function clickInFrame(frame: Frame, selector: string, opts?: { forc
     log(`  focus+Space failed for "${selector}", trying force:true...`);
   }
 
-  // Strategy 2: force:true click
+  // Strategy 3: force:true click
   try {
     await el.first().click({ force: true, timeout: 3_000 });
     log(`  Clicked "${selector}" via force:true`);
@@ -678,7 +780,7 @@ export async function fillVariableInput(
   // Step 1: Use evaluate to dispatch a React-compatible mouseup on the display div.
   // This triggers the onMouseUp handler which calls focusInputWithSelection().
   await frame.evaluate((sel) => {
-    const display = document.querySelector(`${sel} .variable-text-display`);
+    const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
     if (display) {
       const rect = display.getBoundingClientRect();
       const evt = new MouseEvent('mouseup', {
@@ -694,13 +796,13 @@ export async function fillVariableInput(
   await frame.waitForTimeout(300);
 
   // Step 2: The <input> should now be visible — find and fill it
-  const input = frame.locator(`${wrapperSelector} input.variable-text-input`);
+  const input = frame.locator(`${wrapperSelector} [data-testid="variable-text-input"]`);
   try {
     await input.first().waitFor({ state: 'visible', timeout: 3_000 });
   } catch {
     log('  Input still not visible after mouseup dispatch, trying direct focus...');
     await frame.evaluate((sel) => {
-      const display = document.querySelector(`${sel} .variable-text-display`);
+      const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
       if (display) (display as HTMLElement).click();
     }, wrapperSelector);
     await frame.waitForTimeout(300);
@@ -720,17 +822,17 @@ export async function getVariableInputValue(
   wrapperSelector: string,
 ): Promise<string> {
   // When focused, the input shows the value
-  const input = frame.locator(`${wrapperSelector} input.variable-text-input`);
+  const input = frame.locator(`${wrapperSelector} [data-testid="variable-text-input"]`);
   if (await input.count() > 0) {
     return await input.first().inputValue().catch(() => '');
   }
   // When unfocused, check if it's showing a placeholder (empty value)
-  const placeholder = frame.locator(`${wrapperSelector} .variable-text-display .placeholder`);
+  const placeholder = frame.locator(`${wrapperSelector} .placeholder`);
   if (await placeholder.count() > 0) {
     return ''; // Value is empty, showing placeholder
   }
   // When unfocused with a value, the display shows VariableDisplay
-  const display = frame.locator(`${wrapperSelector} .variable-text-display`);
+  const display = frame.locator(`${wrapperSelector} [data-testid="variable-text-display"]`);
   if (await display.count() > 0) {
     const text = await display.first().textContent().catch(() => '');
     return (text || '').trim();
@@ -747,7 +849,7 @@ export async function sendRequestViaEnter(frame: Frame): Promise<void> {
 
   // Step 1: Focus the display to switch VariableTextInput to input mode
   await frame.evaluate(() => {
-    const display = document.querySelector('.url-input .variable-text-display');
+    const display = document.querySelector('.url-input [data-testid="variable-text-display"]');
     if (display) {
       const rect = display.getBoundingClientRect();
       const evt = new MouseEvent('mouseup', {
@@ -763,7 +865,7 @@ export async function sendRequestViaEnter(frame: Frame): Promise<void> {
   await frame.waitForTimeout(300);
 
   // Step 2: Wait for the input to appear
-  const input = frame.locator('.url-input input.variable-text-input');
+  const input = frame.locator('.url-input [data-testid="variable-text-input"]');
   try {
     await input.first().waitFor({ state: 'visible', timeout: 3_000 });
     // Step 3: Press Enter on the input — triggers React's onKeyDown → onSend()

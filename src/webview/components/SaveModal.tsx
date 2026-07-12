@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import styled from 'styled-components';
 import { Collection, CollectionGroup } from '../types';
 
 interface SaveModalProps {
@@ -9,7 +10,6 @@ interface SaveModalProps {
   onClose: () => void;
 }
 
-/** Flatten nested groups into a list with indented label for display. */
 function flattenGroups(groups: CollectionGroup[], prefix = ''): Array<{ id: string; label: string }> {
   const result: Array<{ id: string; label: string }> = [];
   for (const g of groups) {
@@ -20,6 +20,111 @@ function flattenGroups(groups: CollectionGroup[], prefix = ''): Array<{ id: stri
   }
   return result;
 }
+
+const Overlay = styled.div<{ $open: boolean }>`
+  display: ${({ $open }) => ($open ? 'flex' : 'none')};
+  position: fixed;
+  inset: 0;
+  background: ${({ theme }) => theme.overlayBg};
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+`;
+
+const Modal = styled.div`
+  background: ${({ theme }) => theme.bg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  padding: 18px;
+  width: 340px;
+  box-shadow: 0 20px 60px ${({ theme }) => theme.overlayBg};
+`;
+
+const Title = styled.h3`
+  font-size: 14px;
+  margin-bottom: 14px;
+`;
+
+const Label = styled.label`
+  display: block;
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  margin-bottom: 4px;
+`;
+
+const Input = styled.input`
+  width: 100%;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  padding: 7px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 10px;
+  font-family: inherit;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const Select = styled.select`
+  width: 100%;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  padding: 7px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 10px;
+  font-family: inherit;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const Actions = styled.div`
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+`;
+
+const PrimaryButton = styled.button`
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  border: none;
+  padding: 6px 14px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 0.85;
+  }
+`;
+
+const GhostButton = styled.button`
+  background: transparent;
+  color: ${({ theme }) => theme.fg};
+  border: 1px solid ${({ theme }) => theme.border};
+  padding: 6px 14px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+  }
+`;
 
 export const SaveModal: React.FC<SaveModalProps> = ({
   open,
@@ -33,10 +138,7 @@ export const SaveModal: React.FC<SaveModalProps> = ({
   const [newCollectionName, setNewCollectionName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('__none__');
 
-  /* sync name when prop changes */
   useEffect(() => { setName(requestName); }, [requestName]);
-
-  /* reset group when collection changes */
   useEffect(() => { setSelectedGroup('__none__'); }, [selectedCollection]);
 
   if (!open) return null;
@@ -53,21 +155,19 @@ export const SaveModal: React.FC<SaveModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay open" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Save to Collection</h3>
+    <Overlay $open={open} onClick={onClose}>
+      <Modal onClick={(e) => e.stopPropagation()}>
+        <Title>Save to Collection</Title>
 
-        <label className="modal-label">Request Name</label>
-        <input
-          className="modal-input"
+        <Label>Request Name</Label>
+        <Input
           placeholder="My Request"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
 
-        <label className="modal-label">Collection</label>
-        <select
-          className="modal-input"
+        <Label>Collection</Label>
+        <Select
           value={selectedCollection}
           onChange={(e) => setSelectedCollection(e.target.value)}
         >
@@ -77,13 +177,12 @@ export const SaveModal: React.FC<SaveModalProps> = ({
               {c.name}
             </option>
           ))}
-        </select>
+        </Select>
 
         {selectedCollection === '__new__' && (
           <>
-            <label className="modal-label">New Collection Name</label>
-            <input
-              className="modal-input"
+            <Label>New Collection Name</Label>
+            <Input
               placeholder="My Collection"
               value={newCollectionName}
               onChange={(e) => setNewCollectionName(e.target.value)}
@@ -93,9 +192,8 @@ export const SaveModal: React.FC<SaveModalProps> = ({
 
         {availableGroups.length > 0 && (
           <>
-            <label className="modal-label">Folder (optional)</label>
-            <select
-              className="modal-input"
+            <Label>Folder (optional)</Label>
+            <Select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
             >
@@ -105,16 +203,15 @@ export const SaveModal: React.FC<SaveModalProps> = ({
                   {g.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </>
         )}
 
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={handleSave}>Save</button>
-        </div>
-      </div>
-    </div>
+        <Actions>
+          <GhostButton onClick={onClose}>Cancel</GhostButton>
+          <PrimaryButton onClick={handleSave}>Save</PrimaryButton>
+        </Actions>
+      </Modal>
+    </Overlay>
   );
 };
-

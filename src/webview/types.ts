@@ -72,25 +72,7 @@ export interface Collection {
   groups?: CollectionGroup[];
 }
 
-export const METHOD_COLORS: Record<string, string> = {
-  GET: '#a6e3a1',
-  POST: '#fab387',
-  PUT: '#89dceb',
-  DELETE: '#f38ba8',
-  PATCH: '#f9e2af',
-  HEAD: '#cba6f7',
-  OPTIONS: '#94e2d5',
-};
-
 export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
-
-export const getStatusColor = (status: number): string => {
-  if (status >= 200 && status < 300) return '#a6e3a1';
-  if (status >= 300 && status < 400) return '#f9e2af';
-  if (status >= 400 && status < 500) return '#fab387';
-  if (status >= 500) return '#f38ba8';
-  return '#6c7086';
-};
 
 export const getStatusClass = (status: number): string => {
   if (status >= 200 && status < 300) return 'status-2xx';

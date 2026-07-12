@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { ThemeProvider, restifyTheme } from './theme';
+import GlobalStyles from './theme/GlobalStyles';
 import { MainPanel } from './mainPanel';
 
 const root = ReactDOM.createRoot(
@@ -8,7 +10,9 @@ const root = ReactDOM.createRoot(
 
 root.render(
   <React.StrictMode>
-    <MainPanel />
+    <ThemeProvider theme={restifyTheme}>
+      <GlobalStyles />
+      <MainPanel />
+    </ThemeProvider>
   </React.StrictMode>
 );
-

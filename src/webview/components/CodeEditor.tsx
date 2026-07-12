@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import styled from 'styled-components';
 import { formatJSON, minifyJSON, prettyPrintXml } from './PrettyBodyViewer';
 
 type Language = 'json' | 'xml' | 'text' | 'javascript';
@@ -15,6 +16,210 @@ interface CodeEditorProps {
   readOnly?: boolean;
   minHeight?: string;
 }
+
+const Wrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: ${({ theme }) => theme.inputBg};
+  height: 100%;
+`;
+
+const Toolbar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  flex-shrink: 0;
+`;
+
+const ToolbarButtons = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+`;
+
+const EditorBtn = styled.button`
+  background: ${({ theme }) => theme.surface2};
+  color: ${({ theme }) => theme.fg};
+  border: 1px solid ${({ theme }) => theme.border};
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: ${({ theme }) => theme.hover};
+    border-color: ${({ theme }) => theme.accent};
+    color: ${({ theme }) => theme.accent};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const LanguageBadge = styled.span`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  padding: 2px 6px;
+  background: color-mix(in srgb, ${({ theme }) => theme.accent} 10%, transparent);
+  border-radius: 3px;
+  font-weight: 600;
+  margin-left: 8px;
+`;
+
+const EditorBody = styled.div`
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: ${({ theme }) => theme.inputBg};
+`;
+
+const Gutter = styled.div`
+  width: 44px;
+  min-width: 44px;
+  overflow: hidden;
+  background: ${({ theme }) => theme.lineNumberBg};
+  border-right: 1px solid ${({ theme }) => theme.border};
+  padding: 10px 5px 10px 10px;
+  text-align: right;
+  user-select: none;
+  flex-shrink: 0;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.6;
+  color: ${({ theme }) => theme.lineNumberFg};
+`;
+
+const GutterLine = styled.div<{ $active: boolean }>`
+  padding: 0 8px 0 0;
+  transition: color 0.1s;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-start;
+  color: ${({ $active, theme }) => ($active ? theme.lineNumberActiveFg : 'inherit')};
+  font-weight: ${({ $active }) => ($active ? 600 : 'normal')};
+`;
+
+const GutterNumber = styled.span`
+  display: block;
+`;
+
+const GutterContinuation = styled.span`
+  display: block;
+  opacity: 0.45;
+`;
+
+const EditorShell = styled.div`
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: ${({ theme }) => theme.inputBg};
+`;
+
+const SyntaxPre = styled.pre<{ $readonly: boolean }>`
+  color: ${({ theme }) => theme.inputFg};
+  pointer-events: ${({ $readonly }) => ($readonly ? 'auto' : 'none')};
+  overflow: hidden;
+  margin: 0;
+  padding: 10px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+  background: ${({ theme }) => theme.inputBg};
+  position: absolute;
+  inset: 0;
+`;
+
+const OverlayTextarea = styled.textarea<{ $hidden: boolean }>`
+  color: transparent;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+  background: transparent;
+  position: absolute;
+  inset: 0;
+  outline: none;
+  border: none;
+  resize: none;
+  caret-color: ${({ theme }) => theme.inputFg};
+
+  &::selection {
+    background: color-mix(in srgb, ${({ theme }) => theme.accent} 35%, transparent);
+  }
+
+  ${({ $hidden }) =>
+    $hidden &&
+    `
+    pointer-events: none;
+  `}
+`;
+
+const Ruler = styled.div`
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+  visibility: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 14px;
+  tab-size: 2;
+  overflow: hidden;
+  margin: 0;
+  border: none;
+`;
+
+const StatusBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 3px 10px;
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  background: color-mix(in srgb, ${({ theme }) => theme.surface} 80%, ${({ theme }) => theme.inputBg});
+  border-top: 1px solid ${({ theme }) => theme.border};
+  flex-shrink: 0;
+  font-family: ${({ theme }) => theme.monoFamily};
+`;
+
+const StatusHint = styled.span`
+  margin-left: auto;
+  opacity: 0.6;
+  font-style: italic;
+`;
+
+const Placeholder = styled.div<{ $static: boolean }>`
+  position: ${({ $static }) => ($static ? 'static' : 'absolute')};
+  ${({ $static }) => ($static ? 'padding: 10px 14px;' : 'top: 10px; left: 14px; right: 14px;')}
+  color: ${({ theme }) => theme.muted};
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+`;
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({
   value,
@@ -289,60 +494,58 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [editorValue, measureWrappedLineHeights, minHeight]);
 
   return (
-    <div className="code-editor-wrapper">
-      <div className="code-editor-toolbar">
-        <div className="toolbar-buttons">
+    <Wrapper>
+      <Toolbar>
+        <ToolbarButtons>
           {canFormat && (
             <>
-              <button
-                className="editor-btn"
+              <EditorBtn
                 onClick={formatCode}
                 disabled={readOnly || isFormatting || !editorValue.trim()}
                 title="Format (Shift+Alt+F)"
               >
                 Format
-              </button>
-              <button
-                className="editor-btn"
+              </EditorBtn>
+              <EditorBtn
                 onClick={minifyCode}
                 disabled={readOnly || !editorValue.trim()}
                 title="Minify"
               >
                 Minify
-              </button>
+              </EditorBtn>
             </>
           )}
-          <span className="language-badge">{langLabel}</span>
-        </div>
-      </div>
+          <LanguageBadge>{langLabel}</LanguageBadge>
+        </ToolbarButtons>
+      </Toolbar>
 
-      <div className="code-editor-body" style={{ minHeight }}>
-        <div ref={gutterRef} className="code-editor-gutter" aria-hidden="true">
+      <EditorBody style={{ minHeight }}>
+        <Gutter ref={gutterRef} aria-hidden="true">
           {lineNumbers.map((line, index) => (
-            <div
+            <GutterLine
               key={line}
-              className={`gutter-line ${line === cursorLine ? 'active-gutter-line' : ''}`}
+              $active={line === cursorLine}
               style={{ height: `${lineHeights[line - 1] || baseLineHeight}px` }}
             >
-              <span className="gutter-number">{line}</span>
+              <GutterNumber>{line}</GutterNumber>
               {Array.from({ length: Math.max(0, (wrapCounts[index] || 1) - 1) }).map((_, markerIndex) => (
-                <span key={markerIndex} className="gutter-continuation">·</span>
+                <GutterContinuation key={markerIndex}>·</GutterContinuation>
               ))}
-            </div>
+            </GutterLine>
           ))}
-        </div>
+        </Gutter>
 
-        <div ref={shellRef} className="code-editor-shell">
-          {!editorValue && <div className="code-editor-placeholder">{placeholder}</div>}
-          <pre
+        <EditorShell ref={shellRef}>
+          {!editorValue && <Placeholder $static={false}>{placeholder}</Placeholder>}
+          <SyntaxPre
             ref={syntaxRef}
-            className={`code-editor-syntax ${readOnly ? 'readonly' : ''}`}
+            $readonly={readOnly}
             aria-hidden="true"
             dangerouslySetInnerHTML={{ __html: syntaxHtml || ' ' }}
           />
-          <textarea
+          <OverlayTextarea
             ref={textareaRef}
-            className={`code-editor-overlay ${readOnly ? 'hidden-editor' : ''}`}
+            $hidden={readOnly}
             value={editorValue}
             placeholder={placeholder}
             readOnly={readOnly}
@@ -357,17 +560,17 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             onSelect={updateCursorFromSelection}
             onScroll={syncScroll}
           />
-          <div ref={rulerRef} className="code-editor-ruler" aria-hidden="true" />
-        </div>
-      </div>
+          <Ruler ref={rulerRef} aria-hidden="true" />
+        </EditorShell>
+      </EditorBody>
 
       {!readOnly && (
-        <div className="code-editor-statusbar">
+        <StatusBar>
           <span>Ln {cursorLine}, Col {cursorCol}</span>
           <span>{lineCount} lines</span>
-          {statusHint && <span className="statusbar-hint">{statusHint}</span>}
-        </div>
+          {statusHint && <StatusHint>{statusHint}</StatusHint>}
+        </StatusBar>
       )}
-    </div>
+    </Wrapper>
   );
 };

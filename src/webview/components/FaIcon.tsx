@@ -3,6 +3,7 @@
  * Renders inline SVGs — no font files needed, safe under VS Code's strict CSP.
  */
 import React from 'react';
+import styled from 'styled-components';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { library } from '@fortawesome/fontawesome-svg-core';
 import {
@@ -49,6 +50,13 @@ library.add(
 export type { IconProp };
 export { FontAwesomeIcon, faEye, faEyeSlash, faCode, faTrash, faChevronDown, faUpload, faArrowUp, faBars };
 
+const IconWrapper = styled.span<{ $size?: number }>`
+  display: inline-flex;
+  align-items: center;
+  font-size: ${({ $size = 14 }) => $size}px;
+  vertical-align: middle;
+`;
+
 /** Convenience alias with sensible size default */
 export const Icon: React.FC<{
   icon: IconProp;
@@ -57,12 +65,9 @@ export const Icon: React.FC<{
   style?: React.CSSProperties;
   fixedWidth?: boolean;
 }> = ({ icon, size = 14, className, style, fixedWidth }) => (
-  <FontAwesomeIcon
-    icon={icon}
-    fixedWidth={fixedWidth ?? true}
-    style={{ fontSize: size, verticalAlign: 'middle', ...style }}
-    className={className}
-  />
+  <IconWrapper $size={size} className={className} style={style}>
+    <FontAwesomeIcon icon={icon} fixedWidth={fixedWidth ?? true} />
+  </IconWrapper>
 );
 
 export default Icon;

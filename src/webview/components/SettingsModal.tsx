@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import styled from 'styled-components';
 import { SettingsState, CertEntry } from '../types';
 
 interface SettingsModalProps {
@@ -8,13 +9,342 @@ interface SettingsModalProps {
   initialSettings?: SettingsState;
 }
 
+const Overlay = styled.div<{ $open: boolean }>`
+  display: ${({ $open }) => ($open ? 'flex' : 'none')};
+  position: fixed;
+  inset: 0;
+  background: ${({ theme }) => theme.overlayBg};
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+`;
+
+const Modal = styled.div`
+  background: ${({ theme }) => theme.bg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  padding: 18px;
+  width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px ${({ theme }) => theme.overlayBg};
+`;
+
+const Title = styled.h3`
+  font-size: 14px;
+  margin-bottom: 14px;
+`;
+
+const Section = styled.div`
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+
+  &:last-of-type {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+`;
+
+const ProxyRow = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 100px;
+  gap: 10px;
+  margin-bottom: 10px;
+`;
+
+const ProxyField = styled.div`
+  display: flex;
+  flex-direction: column;
+
+  input {
+    margin-bottom: 0;
+  }
+`;
+
+const Label = styled.label`
+  display: block;
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  margin-bottom: 4px;
+`;
+
+const Input = styled.input`
+  width: 100%;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  padding: 7px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 10px;
+  font-family: inherit;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const CheckboxLabel = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: ${({ theme }) => theme.fg};
+
+  input {
+    cursor: pointer;
+  }
+`;
+
+const ProxyAuthSection = styled.div`
+  background: color-mix(in srgb, ${({ theme }) => theme.accent} 8%, transparent);
+  padding: 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, ${({ theme }) => theme.accent} 25%, transparent);
+`;
+
+const HelperText = styled.p`
+  display: block;
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  margin-bottom: 8px;
+  opacity: 0.8;
+  margin-top: -6px;
+`;
+
+const TagsContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  margin-bottom: 10px;
+`;
+
+const Tag = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+`;
+
+const TagRemove = styled.button`
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+const CertList = styled.div`
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  padding: 0;
+  margin-bottom: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+`;
+
+const CertEntry_ = styled.div`
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const CertHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+  background: color-mix(in srgb, ${({ theme }) => theme.accent2} 5%, transparent);
+
+  &:hover {
+    background: color-mix(in srgb, ${({ theme }) => theme.accent2} 10%, transparent);
+  }
+`;
+
+const CertToggle = styled.span<{ $open: boolean }>`
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  color: ${({ theme }) => theme.muted};
+  font-size: 10px;
+  transition: transform 0.2s;
+  transform: rotate(${({ $open }) => ($open ? '90deg' : '0deg')});
+`;
+
+const CertHostname = styled.span`
+  font-weight: 600;
+  color: ${({ theme }) => theme.fg};
+  flex: 1;
+  font-size: 12px;
+`;
+
+const RemoveBtn = styled.button`
+  background: transparent;
+  color: ${({ theme }) => theme.fg};
+  border: none;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: color 0.15s;
+  opacity: 0.6;
+
+  &:hover {
+    opacity: 1;
+    color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const CertContent = styled.div`
+  padding: 10px 12px;
+  background: ${({ theme }) => theme.shadowSm};
+  border-top: 1px solid ${({ theme }) => theme.border};
+
+  ${Label} {
+    margin-bottom: 4px;
+    margin-top: 8px;
+
+    &:first-of-type {
+      margin-top: 0;
+    }
+  }
+
+  ${Input} {
+    margin-bottom: 8px;
+  }
+`;
+
+const CertForm = styled.div`
+  background: ${({ theme }) => theme.innerHighlight};
+  padding: 10px;
+  border-radius: 4px;
+
+  h5 {
+    margin-top: 16px;
+    margin-bottom: 12px;
+  }
+`;
+
+const PrimaryButton = styled.button`
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  border: none;
+  padding: 6px 14px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 0.85;
+  }
+`;
+
+const GhostButton = styled.button`
+  background: transparent;
+  color: ${({ theme }) => theme.fg};
+  border: 1px solid ${({ theme }) => theme.border};
+  padding: 6px 14px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+  }
+`;
+
+const SecondaryButton = styled.button`
+  background: ${({ theme }) => theme.inputBg};
+  color: ${({ theme }) => theme.fg};
+  border: 1px solid ${({ theme }) => theme.border};
+  padding: 6px 14px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+  width: 100%;
+  margin-top: 8px;
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+  }
+`;
+
+const Actions = styled.div`
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 6px;
+`;
+
+const ErrorBanner = styled.div`
+  color: ${({ theme }) => theme.error};
+  font-size: 11px;
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: color-mix(in srgb, ${({ theme }) => theme.error} 10%, transparent);
+  border-radius: 4px;
+`;
+
+const SuccessBanner = styled.div`
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  animation: slideDown 0.2s ease-out;
+  background: ${({ theme }) => theme.success};
+  color: ${({ theme }) => theme.bg};
+  border: 1px solid ${({ theme }) => theme.success};
+`;
+
+const ErrorBanner2 = styled.div`
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  animation: slideDown 0.2s ease-out;
+  background: ${({ theme }) => theme.error};
+  color: ${({ theme }) => theme.bg};
+  border: 1px solid ${({ theme }) => theme.error};
+`;
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   onClose,
   onSave,
   initialSettings,
 }) => {
-  // Proxy settings
   const [proxyHost, setProxyHost] = useState('');
   const [proxyPort, setProxyPort] = useState('');
   const [useProxyAuth, setUseProxyAuth] = useState(false);
@@ -23,7 +353,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [noProxyInput, setNoProxyInput] = useState('');
   const [noProxyTags, setNoProxyTags] = useState<string[]>([]);
 
-  // Certificate settings
   const [certificates, setCertificates] = useState<CertEntry[]>([]);
   const [expandedCert, setExpandedCert] = useState<number | null>(null);
   const [newCert, setNewCert] = useState<CertEntry>({
@@ -33,15 +362,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     caPath: '',
   });
 
-  // Proxy error state
   const [proxyError, setProxyError] = useState<string | null>(null);
-
-  // Message state
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (initialSettings) {
-      // Parse proxy URL
       if (initialSettings.proxy) {
         try {
           const url = new URL(initialSettings.proxy);
@@ -51,7 +376,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           setProxyHost(initialSettings.proxy);
         }
       } else {
-        // Clear proxy fields if no proxy configured
         setProxyHost('');
         setProxyPort('');
         setUseProxyAuth(false);
@@ -59,7 +383,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setProxyPassword('');
       }
 
-      // Parse proxy auth
       if (initialSettings.proxyAuthorization) {
         setUseProxyAuth(true);
         try {
@@ -72,7 +395,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
       }
 
-      // Parse no proxy tags
       if (initialSettings.noProxy) {
         const tags = initialSettings.noProxy
           .split(',')
@@ -85,8 +407,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       setCertificates(initialSettings.certificates || []);
     }
-    
-    // Clear message when modal closes
+
     if (!open) {
       setMessage(null);
     }
@@ -94,21 +415,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!open) return null;
 
-  // Build proxy URL from components
   const buildProxyUrl = (): string => {
     if (!proxyHost) return '';
     const port = proxyPort ? `:${proxyPort}` : '';
     return `http://${proxyHost}${port}`;
   };
 
-  // Build proxy auth from components
   const buildProxyAuth = (): string => {
     if (!useProxyAuth || !proxyUsername) return '';
     return btoa(`${proxyUsername}:${proxyPassword || ''}`);
   };
 
   const handleSave = () => {
-    // Validate proxy host
     if (proxyHost) {
       if (/\s/.test(proxyHost) || /^https?:\/\//i.test(proxyHost)) {
         setProxyError('Enter hostname only (e.g. proxy.example.com), without http:// prefix or spaces.');
@@ -151,12 +469,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
     setCertificates([...certificates, { ...newCert }]);
-    setNewCert({
-      hostname: '',
-      certPath: '',
-      keyPath: '',
-      caPath: '',
-    });
+    setNewCert({ hostname: '', certPath: '', keyPath: '', caPath: '' });
   };
 
   const removeCertificate = (index: number) => {
@@ -171,126 +484,101 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay open" onClick={onClose}>
-      <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>⚙️ Settings</h3>
+    <Overlay $open={open} onClick={onClose} data-testid="settings-overlay">
+      <Modal onClick={(e) => e.stopPropagation()} data-testid="settings-modal">
+        <Title>⚙️ Settings</Title>
 
-        {/* Proxy Settings */}
-        <div className="settings-section">
+        <Section>
           <h4>Proxy Settings (Optional)</h4>
 
-          {/* Host and Port */}
-          <div className="proxy-row">
-            <div className="proxy-field">
-              <label className="modal-label">Host</label>
-              <input
-                className="modal-input"
+          <ProxyRow>
+            <ProxyField>
+              <Label>Host</Label>
+              <Input
                 placeholder="proxy.example.com"
                 value={proxyHost}
                 onChange={(e) => { setProxyHost(e.target.value); setProxyError(null); }}
               />
-            </div>
-            <div className="proxy-field">
-              <label className="modal-label">Port</label>
-              <input
-                className="modal-input"
+            </ProxyField>
+            <ProxyField>
+              <Label>Port</Label>
+              <Input
                 type="number"
                 placeholder="8080"
                 value={proxyPort}
                 onChange={(e) => { setProxyPort(e.target.value); setProxyError(null); }}
               />
-            </div>
-          </div>
-          {proxyError && (
-            <div style={{ color: 'var(--error, #f44336)', fontSize: 11, marginTop: 4, padding: '4px 6px', background: 'color-mix(in srgb, var(--error, #f44336) 10%, transparent)', borderRadius: 4 }}>
-              ⚠️ {proxyError}
-            </div>
-          )}
+            </ProxyField>
+          </ProxyRow>
+          {proxyError && <ErrorBanner>⚠️ {proxyError}</ErrorBanner>}
 
-          {/* Proxy Authentication Checkbox */}
-          <label className="checkbox-label">
+          <CheckboxLabel>
             <input
               type="checkbox"
               checked={useProxyAuth}
               onChange={(e) => setUseProxyAuth(e.target.checked)}
             />
             Use Proxy Authentication
-          </label>
+          </CheckboxLabel>
 
-          {/* Username and Password - shown when auth is enabled */}
           {useProxyAuth && (
-            <div className="proxy-auth-section">
-              <label className="modal-label">Username</label>
-              <input
-                className="modal-input"
+            <ProxyAuthSection>
+              <Label>Username</Label>
+              <Input
                 placeholder="username"
                 value={proxyUsername}
                 onChange={(e) => setProxyUsername(e.target.value)}
               />
-
-              <label className="modal-label">Password</label>
-              <input
-                className="modal-input"
+              <Label>Password</Label>
+              <Input
                 type="password"
                 placeholder="password"
                 value={proxyPassword}
                 onChange={(e) => setProxyPassword(e.target.value)}
               />
-            </div>
+            </ProxyAuthSection>
           )}
 
-          {/* No Proxy Tags */}
-          <label className="modal-label">No Proxy Hosts (press Enter to add)</label>
-          <p className="helper-text">
+          <Label>No Proxy Hosts (press Enter to add)</Label>
+          <HelperText>
             Exact domain match only: Add ubstest.com to bypass proxy only for ubstest.com (not subdomains)
-          </p>
-          <input
-            className="modal-input"
+          </HelperText>
+          <Input
             placeholder="localhost"
             value={noProxyInput}
             onChange={(e) => setNoProxyInput(e.target.value)}
             onKeyDown={handleAddNoProxyTag}
           />
-          
-          {noProxyTags.length > 0 && (
-            <div className="tags-container">
-              {noProxyTags.map((tag, idx) => (
-                <span key={idx} className="tag">
-                  {tag}
-                  <button
-                    className="tag-remove"
-                    onClick={() => handleRemoveNoProxyTag(idx)}
-                    title="Remove"
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
 
-        {/* Certificates Settings */}
-        <div className="settings-section">
+          {noProxyTags.length > 0 && (
+            <TagsContainer>
+              {noProxyTags.map((tag, idx) => (
+                <Tag key={idx}>
+                  {tag}
+                  <TagRemove onClick={() => handleRemoveNoProxyTag(idx)} title="Remove">
+                    ✕
+                  </TagRemove>
+                </Tag>
+              ))}
+            </TagsContainer>
+          )}
+        </Section>
+
+        <Section>
           <h4>Client Certificates (Optional)</h4>
 
           {certificates.length > 0 && (
-            <div className="cert-list">
+            <CertList>
               {certificates.map((cert, index) => (
-                <div key={index} className="cert-entry">
-                  {/* Collapsible Header */}
-                  <div
-                    className="cert-header"
+                <CertEntry_ key={index}>
+                  <CertHeader
                     onClick={() =>
                       setExpandedCert(expandedCert === index ? null : index)
                     }
                   >
-                    <span className={`cert-toggle ${expandedCert === index ? 'open' : ''}`}>
-                      ▶
-                    </span>
-                    <span className="cert-hostname">{cert.hostname}</span>
-                    <button
-                      className="btn-remove"
+                    <CertToggle $open={expandedCert === index}>▶</CertToggle>
+                    <CertHostname>{cert.hostname}</CertHostname>
+                    <RemoveBtn
                       onClick={(e) => {
                         e.stopPropagation();
                         removeCertificate(index);
@@ -298,125 +586,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       title="Remove certificate"
                     >
                       ✕
-                    </button>
-                  </div>
+                    </RemoveBtn>
+                  </CertHeader>
 
-                  {/* Collapsible Content */}
                   {expandedCert === index && (
-                    <div className="cert-content">
-                      <label className="modal-label">Certificate Path</label>
-                      <input
-                        className="modal-input"
+                    <CertContent>
+                      <Label>Certificate Path</Label>
+                      <Input
                         placeholder="/path/to/cert.pem"
                         value={cert.certPath}
                         onChange={(e) =>
                           updateCertificate(index, 'certPath', e.target.value)
                         }
                       />
-
-                      <label className="modal-label">Key Path</label>
-                      <input
-                        className="modal-input"
+                      <Label>Key Path</Label>
+                      <Input
                         placeholder="/path/to/key.pem"
                         value={cert.keyPath}
                         onChange={(e) =>
                           updateCertificate(index, 'keyPath', e.target.value)
                         }
                       />
-
-                      <label className="modal-label">CA Path (Optional)</label>
-                      <input
-                        className="modal-input"
+                      <Label>CA Path (Optional)</Label>
+                      <Input
                         placeholder="/path/to/ca.pem"
                         value={cert.caPath}
                         onChange={(e) =>
                           updateCertificate(index, 'caPath', e.target.value)
                         }
                       />
-                    </div>
+                    </CertContent>
                   )}
-                </div>
+                </CertEntry_>
               ))}
-            </div>
+            </CertList>
           )}
 
-          {/* Add New Certificate Form */}
-          <div className="cert-form">
-            <h5 style={{ marginTop: '16px', marginBottom: '12px' }}>Add New Certificate</h5>
-            <label className="modal-label">Hostname</label>
-            <input
-              className="modal-input"
+          <CertForm>
+            <h5>Add New Certificate</h5>
+            <Label>Hostname</Label>
+            <Input
               placeholder="api.example.com"
               value={newCert.hostname}
-              onChange={(e) =>
-                setNewCert({ ...newCert, hostname: e.target.value })
-              }
+              onChange={(e) => setNewCert({ ...newCert, hostname: e.target.value })}
             />
-
-            <label className="modal-label">Certificate Path</label>
-            <input
-              className="modal-input"
+            <Label>Certificate Path</Label>
+            <Input
               placeholder="/path/to/cert.pem"
               value={newCert.certPath}
-              onChange={(e) =>
-                setNewCert({ ...newCert, certPath: e.target.value })
-              }
+              onChange={(e) => setNewCert({ ...newCert, certPath: e.target.value })}
             />
-
-            <label className="modal-label">Key Path</label>
-            <input
-              className="modal-input"
+            <Label>Key Path</Label>
+            <Input
               placeholder="/path/to/key.pem"
               value={newCert.keyPath}
-              onChange={(e) =>
-                setNewCert({ ...newCert, keyPath: e.target.value })
-              }
+              onChange={(e) => setNewCert({ ...newCert, keyPath: e.target.value })}
             />
-
-            <label className="modal-label">CA Path (Optional)</label>
-            <input
-              className="modal-input"
+            <Label>CA Path (Optional)</Label>
+            <Input
               placeholder="/path/to/ca.pem"
               value={newCert.caPath}
-              onChange={(e) =>
-                setNewCert({ ...newCert, caPath: e.target.value })
-              }
+              onChange={(e) => setNewCert({ ...newCert, caPath: e.target.value })}
             />
-
-            <button className="btn-secondary" onClick={addCertificate}>
-              + Add Certificate
-            </button>
-          </div>
-        </div>
+            <SecondaryButton onClick={addCertificate}>+ Add Certificate</SecondaryButton>
+          </CertForm>
+        </Section>
 
         {message && (
-          <div
-            style={{
-              padding: '10px 12px',
-              marginBottom: '12px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              fontWeight: 600,
-              animation: 'slideDown 0.2s ease-out',
-              background: message.type === 'success' ? '#a6e3a1' : '#f38ba8',
-              color: message.type === 'success' ? '#1e1e2e' : '#1e1e2e',
-              border: `1px solid ${message.type === 'success' ? '#a6e3a1' : '#f38ba8'}`,
-            }}
-          >
-            {message.text}
-          </div>
+          message.type === 'success'
+            ? <SuccessBanner>{message.text}</SuccessBanner>
+            : <ErrorBanner2>{message.text}</ErrorBanner2>
         )}
 
-        <div className="modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
-          <button className="btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn" onClick={handleSave}>
-            Save Settings
-          </button>
-        </div>
-      </div>
-    </div>
+        <Actions>
+          <GhostButton onClick={onClose}>Cancel</GhostButton>
+          <PrimaryButton onClick={handleSave}>Save Settings</PrimaryButton>
+        </Actions>
+      </Modal>
+    </Overlay>
   );
 };
-

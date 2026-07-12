@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-// We will lazy-load `react-pdf` at runtime to keep the main bundle small.
-// The worker URI is provided by the webview HTML as `window.restifyPdfWorker`.
+import styled, { keyframes } from 'styled-components';
 
 interface PdfViewerProps {
   fileBase64: string;
@@ -8,7 +7,45 @@ interface PdfViewerProps {
   post?: (msg: any) => void;
 }
 
-// Worker configuration will be applied after `react-pdf` is dynamically imported.
+const spin = keyframes`
+  to { transform: rotate(360deg); }
+`;
+
+const Spinner = styled.div`
+  width: 32px;
+  height: 32px;
+  border: 3px solid color-mix(in srgb, ${({ theme }) => theme.accent} 20%, transparent);
+  border-top-color: ${({ theme }) => theme.accent};
+  border-radius: 50%;
+  animation: ${spin} 0.7s linear infinite;
+`;
+
+const InlineSpinner = styled(Spinner)`
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+  display: inline-block;
+  margin-right: 8px;
+`;
+
+const MessageWrapper = styled.div`
+  padding: 12px;
+  font-size: 12px;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const ErrorText = styled.div`
+  color: ${({ theme }) => theme.error};
+  margin-bottom: 6px;
+`;
+
+const PdfContainer = styled.div`
+  padding: 8px;
+`;
+
+const PageWrapper = styled.div`
+  margin-bottom: 12px;
+`;
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -17,7 +54,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pdfLibRef = useRef<any | null>(null);
   const [width, setWidth] = useState<number>(800);
-  // Notify host to hide search while PDF viewer is active (host may ignore)
+
   useEffect(() => {
     try {
       post?.({ type: 'setSearchVisibility', visible: false });
@@ -29,7 +66,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
     };
   }, [post]);
 
-  // Lazy-load react-pdf when component mounts and set up worker; revoke blob on unmount
   useEffect(() => {
     let mounted = true;
     let createdBlobUrl: string | null = null;
@@ -40,7 +76,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
           const workerUri = (window as any)?.restifyPdfWorker;
           if (workerUri && mod?.pdfjs) {
             try {
-              // Fetch the worker script via the webview URI and create a blob URL
               const resp = await fetch(workerUri as string);
               if (resp.ok) {
                 const code = await resp.text();
@@ -48,11 +83,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
                 createdBlobUrl = URL.createObjectURL(blob);
                 (mod.pdfjs as any).GlobalWorkerOptions.workerSrc = createdBlobUrl;
               } else {
-                // Fallback to using the provided URI directly
                 (mod.pdfjs as any).GlobalWorkerOptions.workerSrc = workerUri;
               }
             } catch {
-              // If fetching fails, fall back to direct assignment
               (mod.pdfjs as any).GlobalWorkerOptions.workerSrc = workerUri;
             }
           }
@@ -70,12 +103,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
     })();
     return () => {
       mounted = false;
-      // Revoke created blob URL to free memory and worker resources
       try {
         if (createdBlobUrl) {
           URL.revokeObjectURL(createdBlobUrl);
         }
-        // Clear workerSrc to allow GC of underlying worker
         if (pdfLibRef.current?.pdfjs?.GlobalWorkerOptions) {
           try { pdfLibRef.current.pdfjs.GlobalWorkerOptions.workerSrc = '';} catch { /* ignore */ }
         }
@@ -96,19 +127,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
 
   if (libError) {
     return (
-      <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-        <div style={{ color: 'var(--error, #c0392b)', marginBottom: 6 }}>Failed to load PDF renderer: {libError}</div>
+      <MessageWrapper>
+        <ErrorText>Failed to load PDF renderer: {libError}</ErrorText>
         <div>Use Download to save the PDF and open it locally.</div>
-      </div>
+      </MessageWrapper>
     );
   }
 
   if (!pdfLib) {
     return (
-      <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-        <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2, display: 'inline-block', marginRight: 8 }} />
+      <MessageWrapper>
+        <InlineSpinner />
         Loading PDF renderer…
-      </div>
+      </MessageWrapper>
     );
   }
 
@@ -116,17 +147,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileBase64, post }) => {
   const Page = pdfLib.Page;
 
   return (
-    <div ref={containerRef} style={{ padding: 8 }}>
-      {/* Render PDF only (no parsed-text view) */}
-        <Document file={dataUrl} onLoadSuccess={({ numPages: n }: any) => setNumPages(n)}>
-          {Array.from(new Array(numPages || 1), (_el, index) => (
-            <div key={`page_${index + 1}`} style={{ marginBottom: 12 }}>
-              <Page pageNumber={index + 1} width={Math.max(200, width - 16)} renderTextLayer={false} renderAnnotationLayer={false} />
-            </div>
-          ))}
-        </Document>
-      
-    </div>
+    <PdfContainer ref={containerRef}>
+      <Document file={dataUrl} onLoadSuccess={({ numPages: n }: any) => setNumPages(n)}>
+        {Array.from(new Array(numPages || 1), (_el, index) => (
+          <PageWrapper key={`page_${index + 1}`}>
+            <Page pageNumber={index + 1} width={Math.max(200, width - 16)} renderTextLayer={false} renderAnnotationLayer={false} />
+          </PageWrapper>
+        ))}
+      </Document>
+    </PdfContainer>
   );
 };
 

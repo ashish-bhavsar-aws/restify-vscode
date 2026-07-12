@@ -4,9 +4,6 @@ export function getBottomViewHtml(context: vscode.ExtensionContext, webview: vsc
   const scriptUri = webview.asWebviewUri(
     vscode.Uri.joinPath(context.extensionUri, 'dist/webview', 'bottomView.js')
   );
-  const cssUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'dist/webview', 'bottomView.css')
-  );
   const nonce = getNonce();
 
   return `<!DOCTYPE html>
@@ -15,7 +12,6 @@ export function getBottomViewHtml(context: vscode.ExtensionContext, webview: vsc
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-eval';" />
-  <link rel="stylesheet" href="${cssUri}" />
   <title>Restify Activity</title>
 </head>
 <body>

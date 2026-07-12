@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import './BottomView.css';
+import styled, { css } from 'styled-components';
+import { ThemeProvider, restifyTheme } from '../theme';
+import GlobalStyles from '../theme/GlobalStyles';
 
 declare const acquireVsCodeApi: () => {
   postMessage(message: unknown): void;
@@ -17,7 +19,116 @@ export interface ActivityEntry {
   detail?: string;
 }
 
-export function BottomView(): JSX.Element {
+/* ─── Styled Components ─────────────────────────────────────── */
+
+const BottomView = styled.div`
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 2px;
+`;
+
+const Toolbar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  flex-shrink: 0;
+`;
+
+const Title = styled.span`
+  font-weight: 600;
+`;
+
+const ClearBtn = styled.button`
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.cardStrong};
+  color: ${({ theme }) => theme.fg};
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+  &:hover {
+    background: ${({ theme }) => theme.card};
+    transform: translateY(-1px);
+  }
+`;
+
+const EmptyState = styled.div`
+  color: ${({ theme }) => theme.muted};
+  padding: 12px 6px;
+  border: 1px dashed ${({ theme }) => theme.border};
+  border-radius: 6px;
+  text-align: center;
+  flex: 1;
+`;
+
+const EntryList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
+`;
+
+const entryLevelStyles = {
+  warning: css`
+    border-left: 3px solid ${({ theme }) => theme.warning};
+  `,
+  error: css`
+    border-left: 3px solid ${({ theme }) => theme.error};
+  `,
+  info: css`
+    border-left: 3px solid ${({ theme }) => theme.info};
+  `,
+};
+
+const Entry = styled.div<{ $level?: 'info' | 'warning' | 'error' }>`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: ${({ theme }) => theme.cardStrong};
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-shadow: 0 1px 0 ${({ theme }) => theme.innerHighlight} inset;
+  ${({ $level }) => $level && entryLevelStyles[$level ?? 'info']}
+`;
+
+const EntryHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+`;
+
+const EntryTitle = styled.span`
+  font-weight: 600;
+  overflow-wrap: anywhere;
+`;
+
+const EntryTime = styled.span`
+  color: ${({ theme }) => theme.muted};
+  font-size: 11px;
+  white-space: nowrap;
+`;
+
+const EntryDetail = styled.div`
+  color: ${({ theme }) => theme.muted};
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family, sans-serif));
+  line-height: 1.5;
+`;
+
+/* ─── Component ─────────────────────────────────────────────── */
+
+function BottomViewInner(): JSX.Element {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
 
   const handleClear = () => {
@@ -39,28 +150,37 @@ export function BottomView(): JSX.Element {
   }, []);
 
   return (
-    <div className="bottom-view">
-      <div className="bottom-view__toolbar">
-        <span className="bottom-view__title">Activity</span>
-        <button className="bottom-view__clear" type="button" onClick={handleClear}>
+    <BottomView>
+      <Toolbar>
+        <Title>Activity</Title>
+        <ClearBtn type="button" onClick={handleClear}>
           Clear
-        </button>
-      </div>
+        </ClearBtn>
+      </Toolbar>
       {entries.length === 0 ? (
-        <div className="empty-state">No activity yet.</div>
+        <EmptyState>No activity yet.</EmptyState>
       ) : (
-        <div className="entry-list">
+        <EntryList>
           {[...entries].reverse().map((entry) => (
-            <div key={entry.id} className={`entry entry--${entry.level || 'info'}`}>
-              <div className="entry__header">
-                <span className="entry__title">{entry.title}</span>
-                <span className="entry__time">{entry.timestamp}</span>
-              </div>
-              {entry.detail ? <div className="entry__detail">{entry.detail}</div> : null}
-            </div>
+            <Entry key={entry.id} $level={entry.level || 'info'}>
+              <EntryHeader>
+                <EntryTitle>{entry.title}</EntryTitle>
+                <EntryTime>{entry.timestamp}</EntryTime>
+              </EntryHeader>
+              {entry.detail ? <EntryDetail>{entry.detail}</EntryDetail> : null}
+            </Entry>
           ))}
-        </div>
+        </EntryList>
       )}
-    </div>
+    </BottomView>
+  );
+}
+
+export function BottomViewRoot(): JSX.Element {
+  return (
+    <ThemeProvider theme={restifyTheme}>
+      <GlobalStyles />
+      <BottomViewInner />
+    </ThemeProvider>
   );
 }

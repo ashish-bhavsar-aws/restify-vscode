@@ -15,9 +15,7 @@ export class ActivityProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private readonly _entries: ActivityEntry[] = [];
 
-  constructor(private readonly context: vscode.ExtensionContext) {
-    this.append('Restify activated', 'The activity panel is ready.', 'info');
-  }
+  constructor(private readonly context: vscode.ExtensionContext) {}
 
   public append(
     title: string,
@@ -37,8 +35,8 @@ export class ActivityProvider implements vscode.WebviewViewProvider {
     };
 
     this._entries.push(entry);
-    if (this._entries.length > 250) {
-      this._entries.splice(0, this._entries.length - 250);
+    if (this._entries.length > 25) {
+      this._entries.splice(0, this._entries.length - 25);
     }
 
     this._view?.webview.postMessage({
@@ -48,7 +46,7 @@ export class ActivityProvider implements vscode.WebviewViewProvider {
   }
 
   public getEntries(): ActivityEntry[] {
-    return [...this._entries].slice(-250);
+    return [...this._entries].slice(-25);
   }
 
   public clear(): void {

@@ -7,31 +7,57 @@ const EXTENSION_PATH = path.resolve(__dirname, '..', '..');
 const TEST_USER_DATA = path.resolve(__dirname, '..', '.vscode-test-user-data');
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', 'screenshots');
 const VIDEO_DIR = path.resolve(__dirname, '..', 'videos');
+const LOG_FILE = path.resolve(__dirname, '..', 'test.log');
 
 // ─── Debug Logger ───────────────────────────────────────────────────
 
 let _step = 0;
+let _logStream: import('fs').WriteStream | null = null;
+
+function _ensureLogStream(): import('fs').WriteStream {
+  if (!_logStream) {
+    _logStream = require('fs').createWriteStream(LOG_FILE, { flags: 'w' });
+  }
+  return _logStream!;
+}
+
+function _writeToFile(line: string): void {
+  try {
+    _ensureLogStream().write(line + '\n');
+  } catch { /* ignore */ }
+}
 
 export function log(msg: string): void {
   _step++;
   const ts = new Date().toISOString().slice(11, 23);
-  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${msg}`); // eslint-disable-line no-console
+  const line = `[${ts}] [step ${String(_step).padStart(3, '0')}] ${msg}`;
+  console.log(`  ${line}`); // eslint-disable-line no-console
+  _writeToFile(line);
 }
 
 export function logCheck(msg: string, result: boolean | string | number): void {
   _step++;
   const ts = new Date().toISOString().slice(11, 23);
   const icon = result === false || result === 0 ? '✗' : '✓';
-  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${icon} CHECK: ${msg} → ${JSON.stringify(result)}`); // eslint-disable-line no-console
+  const line = `[${ts}] [step ${String(_step).padStart(3, '0')}] ${icon} CHECK: ${msg} → ${JSON.stringify(result)}`;
+  console.log(`  ${line}`); // eslint-disable-line no-console
+  _writeToFile(line);
 }
 
 export function logError(msg: string, err?: unknown): void {
   const ts = new Date().toISOString().slice(11, 23);
-  console.error(`  [${ts}] ✗ ERROR: ${msg}`, err ? String(err) : '');
+  const line = `[${ts}] ✗ ERROR: ${msg}${err ? ' ' + String(err) : ''}`;
+  console.error(`  ${line}`); // eslint-disable-line no-console
+  _writeToFile(line);
 }
 
 export function resetLog(): void {
   _step = 0;
+  if (_logStream) {
+    _logStream.end();
+    _logStream = null;
+  }
+  _writeToFile(`\n${'='.repeat(60)}\nTest run started at ${new Date().toISOString()}\n${'='.repeat(60)}\n`);
 }
 
 // ─── Frame/State diagnostics ────────────────────────────────────────

@@ -38,8 +38,6 @@ A fast, lightweight REST API client built right into VS Code. Test APIs, debug e
    - **Command Palette** — press `Ctrl+Shift+P` / `Cmd+Shift+P` and search for "Restify: Open"
 3. The main request panel opens automatically — you're ready to test APIs
 
-![Main Panel](media/screenshots/01-main-panel-empty.png)
-
 ---
 
 ## Sidebar & Views
@@ -168,9 +166,15 @@ Choose your auth method — Restify handles the headers automatically:
 Restify detects and previews common file types inline:
 
 - **CSV** — parsed and displayed as a read-only table
-- **Excel (XLS/XLSX)** — parsed and displayed as a table
+- **Excel (XLS/XLSX)** — parsed and displayed as a table with support for multiple sheets, cell formatting, and large datasets
 - **Plain text** — rendered inline
 - **PDF** — rendered using a bundled PDF renderer (no external CDNs)
+
+![PDF Response](media/screenshots/18-pdf-response.png)
+
+For Excel files, Restify automatically detects `.xls` and `.xlsx` formats, parses the spreadsheet data, and renders it as an interactive table. You can view all sheets and scroll through rows without downloading the file.
+
+![Excel Response](media/screenshots/19-download-file-response.png)
 
 **Limits:** In-webview previews are capped at **5 MB**. Files larger than this prompt a download. The Download button saves the binary to your chosen location.
 
@@ -222,6 +226,8 @@ Environments store reusable values so you don't repeat yourself across requests.
 
 ![Environment Manager](media/screenshots/11-environment-manager.png)
 
+![Environment Variable Created](media/screenshots/05b-env-variable-created.png)
+
 ### Use Variables
 
 Reference variables anywhere in your request using `{{variableName}}` syntax:
@@ -267,6 +273,8 @@ Reference variables anywhere in your request using `{{variableName}}` syntax:
 - **Export** a collection as JSON for backup or sharing
 - **Import** a JSON file to restore or merge collections
 
+![Import Options](media/screenshots/03b-import-quickpick-options.png)
+
 ![Import Complete](media/screenshots/03f-import-complete.png)
 
 ---
@@ -289,6 +297,10 @@ Every request you send is automatically recorded:
 Click the **gear icon** (top right of the request panel) to open Settings.
 
 ![Settings](media/screenshots/12-settings-proxy-mtls.png)
+
+### General
+
+- **Show Activity Log** — enable or disable the activity log panel that records request events (starts, completions, errors, scripts)
 
 ### Proxy Configuration
 
@@ -315,6 +327,14 @@ Certificates are matched by hostname and applied automatically.
 - **Verify SSL Connection** checkbox (below the URL bar)
 - **Enabled (default)** — strict certificate verification
 - **Disabled** — allows self-signed or untrusted certificates (for testing only)
+
+---
+
+## Activity Log
+
+The bottom panel shows a real-time activity log of request events, including starts, completions, errors, and script execution. Toggle visibility from Settings.
+
+![Activity Log](media/screenshots/14-bottom-panel-activity.png)
 
 ---
 

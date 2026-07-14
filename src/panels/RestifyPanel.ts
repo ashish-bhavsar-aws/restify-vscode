@@ -169,10 +169,13 @@ export class RestifyPanel {
         command: "collections",
         data: this.storageManager.getCollections(),
       });
+      const settings = this.storageManager.getSettings();
       this.panel.webview.postMessage({
         command: "loadSettings",
-        settings: this.storageManager.getSettings(),
+        settings,
       });
+      // Sync activity log enabled state
+      this.activityProvider?.setEnabled(settings.showActivityLog !== false);
     }, 100);
   }
 
@@ -634,6 +637,8 @@ export class RestifyPanel {
         break;
       case "saveSettings":
         this.storageManager.saveSettings(msg.settings);
+        // Sync activity log enabled state
+        this.activityProvider?.setEnabled(msg.settings.showActivityLog !== false);
         // Send confirmation back with the saved settings
         this.panel.webview.postMessage({
           command: "loadSettings",

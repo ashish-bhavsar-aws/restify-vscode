@@ -867,7 +867,7 @@ interface RequestRowProps {
   onDragEnd?(e: React.DragEvent): void;
 }
 const RequestRow: React.FC<RequestRowProps> = ({ req, collectionName: _collectionName, editing, onLoad, onDelete, onCopy, onRename, onCommitRename, onCancelRename, onDragStart, onDragEnd }) => (
-  <SubItem tabIndex={0} draggable
+  <SubItem tabIndex={0} draggable data-testid="collection-request"
     onClick={onLoad} onKeyDown={e => { if (e.key === 'Enter') onLoad(); }}
     onDragStart={onDragStart} onDragEnd={onDragEnd}>
     <DragHandle><Icon icon={faGripVertical} size={11} /></DragHandle>
@@ -992,7 +992,7 @@ const GroupTree: React.FC<GroupTreeProps> = ({
       onDragOver={handleGroupDragOver}
       onDragLeave={handleGroupDragLeave}
       onDrop={handleGroupDrop}>
-      <GroupHeader tabIndex={0}
+      <GroupHeader tabIndex={0} data-testid="group-header"
         onClick={() => onToggle(group.id, !isOpen)}
         onKeyDown={e => { if (e.key === 'Enter') onToggle(group.id, !isOpen); }}>
         <Caret $open={isOpen}><Icon icon={faChevronRight} size={10} /></Caret>
@@ -1130,7 +1130,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
 
             return (
               <CollectionGroup key={col.id} $isDragOver={topLevelDropTarget === col.id}>
-                <CollectionHeader tabIndex={0}
+                <CollectionHeader tabIndex={0} data-testid="collection-header"
                   onClick={() => onToggle(col.id, !isOpen)}
                   onKeyDown={e => { if (e.key === 'Enter') onToggle(col.id, !isOpen); }}
                   onDragOver={e => {
@@ -1240,7 +1240,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                     </NewGroupInline>
                   )}
                   {filteredTopReqs.map((req) => (
-                    <SubItem key={req.id} tabIndex={0} draggable
+                    <SubItem key={req.id} tabIndex={0} draggable data-testid="collection-request"
                       onClick={() => onLoad(req, col.name)}
                       onKeyDown={e => { if (e.key === 'Enter') onLoad(req, col.name); }}
                       onDragStart={e => { dragRef.current = { requestId: req.id!, fromCollectionId: col.id, fromGroupId: null }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).setAttribute('data-dragging', ''); }}

@@ -14,14 +14,24 @@ export interface ActivityEntry {
 export class ActivityProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private readonly _entries: ActivityEntry[] = [];
+  private _enabled = true;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  setEnabled(enabled: boolean): void {
+    this._enabled = enabled;
+  }
+
+  isEnabled(): boolean {
+    return this._enabled;
+  }
 
   public append(
     title: string,
     detail?: string,
     level: ActivityLevel = 'info',
   ): void {
+    if (!this._enabled) return;
     const entry: ActivityEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       timestamp: new Date().toLocaleTimeString([], {

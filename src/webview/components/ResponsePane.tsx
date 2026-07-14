@@ -1299,6 +1299,13 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     }
   }, [hideSearchButton]);
 
+  const hideBodyTab = !!response?.isFileResponse && (response.filePreviewType === 'pdf' || response.filePreviewType === 'excel') && !!response.fileBase64;
+  useEffect(() => {
+    if (hideBodyTab && activeTab === 'body') {
+      setActiveTab('headers');
+    }
+  }, [hideBodyTab]);
+
   const isLargeFilePreviewBlocked = !!response?.isFileResponse && response.size > FILE_PREVIEW_RENDER_THRESHOLD;
   const isPdfPreview = !!response?.isFileResponse && response.filePreviewType === 'pdf' && !!response.fileBase64;
   const searchableText = isPdfPreview ? '' : (response?.body || decodedFileText || '');

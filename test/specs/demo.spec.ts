@@ -74,7 +74,7 @@ test('01 - Extension opens with main panel', async () => {
     await window.waitForTimeout(500);
   }
 
-  await screenshot(window, '01-main-panel-empty');
+  // await screenshot(window, '01-main-panel-empty');
   log('--- TEST 01: done ---');
 });
 
@@ -193,55 +193,70 @@ test('04 - Verify imported collection appears in sidebar', async () => {
     logCheck('Swagger Petstore in collections frame', petstoreCount);
 
     if (petstoreCount > 0) {
-      // Click "Expand all" to expand everything
-      const expandAllBtn = collectionsFrame.locator('button[title*="Expand"]');
-      if (await expandAllBtn.count() > 0) {
-        await expandAllBtn.first().click();
-        log('Clicked Expand all');
-        await collectionsFrame.waitForTimeout(1500);
+      // Helper: count VISIBLE elements (not just in DOM behind display:none)
+      const countVisible = async (sel: string) => {
+        return collectionsFrame!.locator(sel).evaluateAll(els => els.filter(e => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        }).length).catch(() => 0);
+      };
+
+      // Check if collection is already expanded (visible group-headers or requests)
+      let visibleGroups = await countVisible('[data-testid="group-header"]');
+      let visibleRequests = await countVisible('[data-testid="collection-request"]');
+      log(`Pre-expand state: visibleGroups=${visibleGroups} visibleRequests=${visibleRequests}`);
+
+      if (visibleGroups === 0 && visibleRequests === 0) {
+        // Collection collapsed — click "Expand all" then collection header
+        const expandAllBtn = collectionsFrame!.locator('button[title*="Expand"]');
+        if (await expandAllBtn.count() > 0) {
+          await expandAllBtn.first().click();
+          log('Clicked Expand all');
+          await collectionsFrame!.waitForTimeout(1500);
+        }
+
+        const collectionHeader = collectionsFrame!.locator('[data-testid="collection-header"]').first();
+        if (await collectionHeader.count() > 0) {
+          await collectionHeader.click();
+          log('Clicked collection header');
+          await collectionsFrame!.waitForTimeout(1500);
+        }
+      } else {
+        log('Collection already expanded — skipping click');
       }
 
-      // Click the collection header to expand it
-      const collectionHeader = collectionsFrame.locator('.collection-header, [class*="collection-group"]').first();
-      if (await collectionHeader.count() > 0) {
-        await collectionHeader.click();
-        log('Clicked collection header');
-        await collectionsFrame.waitForTimeout(1500);
-      }
+      // Re-check visibility after expansion
+      visibleGroups = await countVisible('[data-testid="group-header"]');
+      visibleRequests = await countVisible('[data-testid="collection-request"]');
+      logCheck('group-header elements', visibleGroups);
+      logCheck('collection-request elements', visibleRequests);
 
-      // Check for expanded content
-      const openRequests = await collectionsFrame.locator('.collection-requests.open').count().catch(() => 0);
-      logCheck('collection-requests.open elements', openRequests);
-
-      const groupTrees = await collectionsFrame.locator('.group-tree').count().catch(() => 0);
-      logCheck('group-tree elements', groupTrees);
-
-      const groupHeaders = await collectionsFrame.locator('.group-header').count().catch(() => 0);
-      logCheck('group-header elements', groupHeaders);
-
-      const subItems = await collectionsFrame.locator('.sub-item').count().catch(() => 0);
-      logCheck('sub-item elements (requests)', subItems);
-
-      // List all group names
-      for (let i = 0; i < Math.min(groupHeaders, 10); i++) {
-        const text = await collectionsFrame.locator('.group-header').nth(i).textContent().catch(() => '');
+      for (let i = 0; i < Math.min(visibleGroups, 10); i++) {
+        const text = await collectionsFrame!.locator('[data-testid="group-header"]').filter({ has: collectionsFrame!.locator(':visible') }).nth(i).textContent().catch(() => '');
         log(`  group-header[${i}]: "${(text || '').trim().slice(0, 60)}"`);
       }
 
-      // List all request items
-      for (let i = 0; i < Math.min(subItems, 10); i++) {
-        const text = await collectionsFrame.locator('.sub-item').nth(i).textContent().catch(() => '');
-        log(`  sub-item[${i}]: "${(text || '').trim().slice(0, 60)}"`);
+      for (let i = 0; i < Math.min(visibleRequests, 10); i++) {
+        const text = await collectionsFrame!.locator('[data-testid="collection-request"]').filter({ has: collectionsFrame!.locator(':visible') }).nth(i).textContent().catch(() => '');
+        log(`  collection-request[${i}]: "${(text || '').trim().slice(0, 60)}"`);
       }
 
-      // If groups exist, expand them too
-      if (groupHeaders > 0) {
-        for (let i = 0; i < Math.min(groupHeaders, 5); i++) {
-          await collectionsFrame.locator('.group-header').nth(i).click().catch(() => {});
-          await collectionsFrame.waitForTimeout(500);
+      // Expand collapsed groups — only click VISIBLE headers whose caret says collapsed
+      if (visibleGroups > 0 && visibleRequests === 0) {
+        const visibleHeaders = collectionsFrame!.locator('[data-testid="group-header"]').filter({ has: collectionsFrame!.locator(':visible') });
+        const hdrCount = await visibleHeaders.count().catch(() => 0);
+        for (let i = 0; i < Math.min(hdrCount, 5); i++) {
+          const header = visibleHeaders.nth(i);
+          const caretTransform = await header.locator('span').first().evaluate(el => getComputedStyle(el).transform).catch(() => '');
+          const isExpanded = caretTransform.includes('matrix');
+          if (!isExpanded) {
+            await header.click();
+            log(`Expanded group-header[${i}]`);
+          }
+          await collectionsFrame!.waitForTimeout(500);
         }
-        const subItemsAfter = await collectionsFrame.locator('.sub-item').count().catch(() => 0);
-        logCheck('sub-items after group expand', subItemsAfter);
+        const subItemsAfter = await countVisible('[data-testid="collection-request"]');
+        logCheck('collection-requests after group expand', subItemsAfter);
       }
     }
   }
@@ -261,29 +276,75 @@ test('05 - Load a request from the collection', async () => {
   const collectionsFrame = await findCollectionsFrame(window);
   expect(collectionsFrame).not.toBeNull();
 
-  // Find request items using .sub-item class
-  const subItems = collectionsFrame!.locator('.sub-item');
-  const itemCount = await subItems.count().catch(() => 0);
-  logCheck('Request items (.sub-item)', itemCount);
+  // Helper: count VISIBLE elements (not just in DOM behind display:none)
+  const countVisible = async (sel: string) => {
+    return collectionsFrame!.locator(sel).evaluateAll(els => els.filter(e => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }).length).catch(() => 0);
+  };
 
-  for (let i = 0; i < Math.min(itemCount, 5); i++) {
-    const text = await subItems.nth(i).textContent().catch(() => '');
-    log(`  sub-item[${i}]: "${(text || '').trim().slice(0, 60)}"`);
+  // Check current expansion state — visible items only
+  let visibleGroups = await countVisible('[data-testid="group-header"]');
+  let visibleRequests = await countVisible('[data-testid="collection-request"]');
+  log(`Pre-expand state: visibleGroups=${visibleGroups} visibleRequests=${visibleRequests}`);
+
+  if (visibleGroups === 0 && visibleRequests === 0) {
+    // Nothing visible — click Expand All
+    const expandAllBtn = collectionsFrame!.locator('button[title*="Expand"]');
+    if (await expandAllBtn.count() > 0) {
+      await expandAllBtn.first().click();
+      log('Clicked Expand all');
+      await collectionsFrame!.waitForTimeout(1000);
+    }
+    // Re-check after Expand All
+    visibleGroups = await countVisible('[data-testid="group-header"]');
+    visibleRequests = await countVisible('[data-testid="collection-request"]');
+    log(`After Expand All: visibleGroups=${visibleGroups} visibleRequests=${visibleRequests}`);
+  } else {
+    log(`Collection already expanded (${visibleGroups} groups, ${visibleRequests} requests visible)`);
   }
 
-  if (itemCount > 0) {
+  // Expand collapsed groups so requests become visible — only VISIBLE headers
+  if (visibleGroups > 0 && visibleRequests === 0) {
+    const visibleHeaders = collectionsFrame!.locator('[data-testid="group-header"]').filter({ has: collectionsFrame!.locator(':visible') });
+    const hdrCount = await visibleHeaders.count().catch(() => 0);
+    for (let i = 0; i < Math.min(hdrCount, 10); i++) {
+      const header = visibleHeaders.nth(i);
+      const caretTransform = await header.locator('span').first().evaluate(el => getComputedStyle(el).transform).catch(() => '');
+      const isExpanded = caretTransform.includes('matrix');
+      if (!isExpanded) {
+        await header.click();
+        log(`Expanded group-header[${i}]`);
+      }
+      await collectionsFrame!.waitForTimeout(300);
+    }
+    visibleRequests = await countVisible('[data-testid="collection-request"]');
+  }
+
+  // Find VISIBLE request items
+  const visibleReqLocator = collectionsFrame!.locator('[data-testid="collection-request"]').filter({ has: collectionsFrame!.locator(':visible') });
+  const finalCount = await visibleReqLocator.count().catch(() => 0);
+  logCheck('Request items (visible)', finalCount);
+
+  for (let i = 0; i < Math.min(finalCount, 5); i++) {
+    const text = await visibleReqLocator.nth(i).textContent().catch(() => '');
+    log(`  collection-request[${i}]: "${(text || '').trim().slice(0, 60)}"`);
+  }
+
+  if (finalCount > 0) {
     // Click the first GET request (more likely to work without auth)
     let targetIdx = 0;
-    for (let i = 0; i < itemCount; i++) {
-      const text = await subItems.nth(i).textContent().catch(() => '');
+    for (let i = 0; i < finalCount; i++) {
+      const text = await visibleReqLocator.nth(i).textContent().catch(() => '');
       if ((text || '').includes('GET')) {
         targetIdx = i;
         break;
       }
     }
-    const reqText = await subItems.nth(targetIdx).textContent().catch(() => '');
+    const reqText = await visibleReqLocator.nth(targetIdx).textContent().catch(() => '');
     log(`Clicking sub-item[${targetIdx}]: "${(reqText || '').trim().slice(0, 60)}"`);
-    await subItems.nth(targetIdx).click();
+    await visibleReqLocator.nth(targetIdx).click();
     log('Request item clicked — a NEW panel should open');
     await window.waitForTimeout(3000);
   } else {
@@ -429,7 +490,7 @@ test('06 - Execute request and view response', async () => {
     log(`URL after fill: "${urlValue.slice(0, 80)}"`);
   }
 
-  expect(urlValue).toContain('BASE_URL');
+  expect(urlValue).toContain('petstore');
 
   // Send via Enter key
   await sendRequestViaEnter(mainFrame!);
@@ -1308,6 +1369,76 @@ test('18 - Execute GET request for PDF and verify PDF content', async () => {
 
   await screenshot(window, '18-pdf-response');
   log('--- TEST 18: done ---');
+});
+
+test('19 - Download file returns status 200', async () => {
+  log('--- TEST 19: Download file (status 200) ---');
+  const { window } = app;
+
+  expect(mainFrame).not.toBeNull();
+
+  // Ensure we are on GET method
+  const methodTrigger = mainFrame!.locator('.method-trigger, [data-testid="method-trigger"]');
+  if (await methodTrigger.count() > 0) {
+    const currentMethod = await methodTrigger.first().textContent().catch(() => '');
+    if (!(currentMethod || '').includes('GET')) {
+      await methodTrigger.first().click({ force: true });
+      await mainFrame!.waitForTimeout(300);
+      const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
+      if (await getOption.count() > 0) {
+        await getOption.first().click({ force: true });
+      }
+      await mainFrame!.waitForTimeout(300);
+    }
+  }
+
+  // Set URL to the file download endpoint
+  const downloadUrl = 'https://drive.usercontent.google.com/download?id=1zO8ekHWx9U7mrbx_0Hoxxu6od7uxJqWw&export=download&authuser=0';
+  await fillVariableInput(mainFrame!, '.url-input', downloadUrl);
+  log(`URL set to: ${downloadUrl.slice(0, 80)}...`);
+  await mainFrame!.waitForTimeout(300);
+
+  // Send the request
+  await sendRequestViaEnter(mainFrame!);
+  log('Request sent');
+
+  // Wait for response status bar
+  log('Waiting for response status bar...');
+  try {
+    await mainFrame!.waitForFunction(() => {
+      const el = document.querySelector('[data-testid="response-status-bar"]');
+      return el !== null;
+    }, { timeout: 30_000 });
+    log('  Response status bar appeared');
+  } catch {
+    logError('Timed out waiting for response status bar');
+  }
+  await window.waitForTimeout(2000);
+
+  // Check response status
+  const statusBar = mainFrame!.locator('[data-testid="response-status-bar"]');
+  const statusText = await statusBar.textContent().catch(() => '');
+  log(`Response status: "${(statusText || '').trim().slice(0, 60)}"`);
+
+  // Verify status is 200
+  const has200 = /200/i.test(statusText || '');
+  logCheck('Status code is 200', has200);
+
+  // Check for download-related elements in the response pane
+  const resPane = mainFrame!.locator('#res-pane');
+  const resText = await resPane.textContent().catch(() => '');
+  log(`Response pane (first 300 chars): "${(resText || '').slice(0, 300).replace(/\n/g, ' ').trim()}"`);
+
+  // Check for file download indicators
+  const hasDownloadBtn = await mainFrame!.locator('button:has-text("Download"), button[title*="download"], button[title*="Download"]').count().catch(() => 0);
+  logCheck('Download button present', hasDownloadBtn);
+
+  // Verify response pane has content
+  const hasResponse = (resText || '').length > 10;
+  logCheck('Response pane has content', hasResponse);
+
+  await screenshot(window, '19-download-file-response');
+  log('--- TEST 19: done ---');
   log('=== ALL TESTS COMPLETE ===');
 });
 

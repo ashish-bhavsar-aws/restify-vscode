@@ -49,6 +49,7 @@ export interface SettingsState {
   proxyAuthorization: string;
   noProxy: string;
   certificates: CertEntry[];
+  showActivityLog: boolean;
 }
 
 export class StorageManager {
@@ -862,6 +863,7 @@ export class StorageManager {
       proxyAuthorization: "",
       noProxy: "",
       certificates: [],
+      showActivityLog: true,
     });
   }
 

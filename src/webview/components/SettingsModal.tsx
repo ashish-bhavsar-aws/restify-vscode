@@ -361,6 +361,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     keyPath: '',
     caPath: '',
   });
+  const [showActivityLog, setShowActivityLog] = useState(true);
 
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -406,6 +407,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
 
       setCertificates(initialSettings.certificates || []);
+      setShowActivityLog(initialSettings.showActivityLog !== false);
     }
 
     if (!open) {
@@ -443,6 +445,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       proxyAuthorization: buildProxyAuth(),
       noProxy: noProxyTags.join(','),
       certificates,
+      showActivityLog,
     });
   };
 
@@ -487,6 +490,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     <Overlay $open={open} onClick={onClose} data-testid="settings-overlay">
       <Modal onClick={(e) => e.stopPropagation()} data-testid="settings-modal">
         <Title>⚙️ Settings</Title>
+
+        <Section>
+          <h4>General</h4>
+          <CheckboxLabel data-testid="activity-log-toggle">
+            <input
+              type="checkbox"
+              checked={showActivityLog}
+              onChange={(e) => setShowActivityLog(e.target.checked)}
+            />
+            Show Activity Log
+          </CheckboxLabel>
+          <HelperText>
+            Enable or disable the activity log panel that records request events.
+          </HelperText>
+        </Section>
 
         <Section>
           <h4>Proxy Settings (Optional)</h4>

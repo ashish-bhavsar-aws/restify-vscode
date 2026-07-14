@@ -94,6 +94,7 @@ export interface SettingsState {
   proxyAuthorization: string;
   noProxy: string;          // comma-separated
   certificates: CertEntry[];
+  showActivityLog: boolean;
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -101,6 +102,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   proxyAuthorization: '',
   noProxy: '',
   certificates: [],
+  showActivityLog: true,
 };
 
 export const DEFAULT_REQUEST: RequestState = {

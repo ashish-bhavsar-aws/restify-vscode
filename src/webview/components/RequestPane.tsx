@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import styled from 'styled-components';
 import { KVItem, FormDataItem, RequestState, Environment } from '../types';
 import { KeyValueTable } from './KeyValueTable';
 import VariableTextInput from './VariableTextInput';
@@ -11,12 +12,674 @@ interface RequestPaneProps {
   request: RequestState;
   onUpdate: (updates: Partial<RequestState>) => void;
   themeKind?: number;
-  environment?: Environment | null; // Current environment for variable resolution
+  environment?: Environment | null;
 }
 
 type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth';
 type BodyType = RequestState['bodyType'];
 type AuthType = RequestState['authType'];
+
+/* ─── Styled Components ──────────────────────────── */
+
+const PaneWrapper = styled.div`
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid ${({ theme }) => theme.border};
+  min-width: 0;
+  background: color-mix(in srgb, ${({ theme }) => theme.bg} 96%, ${({ theme }) => theme.surface} 4%);
+`;
+
+const TabBarContainer = styled.div`
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  padding: 0 14px;
+  background: color-mix(in srgb, ${({ theme }) => theme.surface} 92%, transparent);
+  flex-shrink: 0;
+  gap: 2px;
+`;
+
+const TabItem = styled.div<{ $active?: boolean }>`
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: all .15s;
+  color: ${({ $active, theme }) => ($active ? theme.accent : theme.muted)};
+  border-bottom: 2px solid ${({ $active, theme }) => ($active ? theme.accent : 'transparent')};
+  background: ${({ $active, theme }) =>
+    $active ? `color-mix(in srgb, ${theme.accent} 8%, transparent)` : 'transparent'};
+
+  &:hover {
+    color: ${({ $active, theme }) => ($active ? theme.accent : theme.fg)};
+  }
+`;
+
+const TabBadgeCount = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  font-size: 9px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  margin-left: 4px;
+  font-weight: 700;
+  vertical-align: middle;
+  line-height: 1;
+`;
+
+const TabBadgeDot = styled(TabBadgeCount)`
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  border-radius: 50%;
+  padding: 0;
+`;
+
+const TabPanel = styled.div`
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+`;
+
+const ScrollContainer = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: ${({ theme }) => theme.border};
+    border-radius: 3px;
+  }
+`;
+
+const BodyTypeBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  flex-shrink: 0;
+  flex-wrap: wrap;
+`;
+
+const BodyTypeBtn = styled.button<{ $active?: boolean }>`
+  background: ${({ $active, theme }) => ($active ? theme.surface2 : 'none')};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.border : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.fg : theme.muted)};
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  transition: all .15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.fg};
+    border-color: ${({ theme }) => theme.border};
+  }
+`;
+
+const EmptyBodyText = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: ${({ theme }) => theme.muted};
+  font-size: 12px;
+`;
+
+const BodyEditorWrap = styled.div`
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+`;
+
+/* ─── Form Data Section ──────────────────────────── */
+
+const FormWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const FormRow = styled.div`
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  min-height: 36px;
+
+  &:last-of-type {
+    border-bottom: none;
+  }
+`;
+
+const FormCheck = styled.div`
+  padding: 0 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+
+  input[type='checkbox'] {
+    cursor: pointer;
+    accent-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const FormInput = styled.input`
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.fg};
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  outline: none;
+  min-width: 0;
+  border-right: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  transition: background-color 0.2s, color 0.2s;
+
+  &:last-of-type {
+    border-right: none;
+  }
+
+  &:focus {
+    background: color-mix(in srgb, ${({ theme }) => theme.accent} 8%, ${({ theme }) => theme.inputBg});
+    color: ${({ theme }) => theme.fg};
+  }
+
+  &::placeholder {
+    color: ${({ theme }) => theme.muted};
+  }
+`;
+
+const FormKeyWrap = styled.div`
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  border-right: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  gap: 0;
+
+  & ${FormInput} {
+    flex: 1;
+    border-right: none;
+  }
+`;
+
+const FormTypeSelect = styled.select`
+  flex: 0 0 40px;
+  background: ${({ theme }) => theme.surface2};
+  border: none;
+  color: ${({ theme }) => theme.fg};
+  padding: 0 4px;
+  font-size: 10px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: center;
+  font-weight: 600;
+  border-left: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+
+  &:hover {
+    background: ${({ theme }) => theme.surface};
+  }
+
+  &:focus {
+    outline: none;
+    background: color-mix(in srgb, ${({ theme }) => theme.accent} 15%, ${({ theme }) => theme.surface2});
+    color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const FormFileWrap = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: ${({ theme }) => theme.surface2};
+  border-radius: 3px;
+  min-height: 28px;
+  min-width: 0;
+`;
+
+const FormFileInput = styled.input`
+  flex: 1 1 0;
+  font-size: 10px;
+  color: ${({ theme }) => theme.inputFg};
+  cursor: pointer;
+  min-width: 0;
+  width: 100%;
+
+  &::file-selector-button {
+    background: ${({ theme }) => theme.surface};
+    color: ${({ theme }) => theme.fg};
+    border: 1px solid ${({ theme }) => theme.border};
+    padding: 3px 8px;
+    border-radius: 2px;
+    font-size: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    margin-right: 4px;
+
+    &:hover {
+      background: ${({ theme }) => theme.hover};
+    }
+  }
+`;
+
+const FormFileName = styled.span<{ $hasFile?: boolean }>`
+  max-width: 160px;
+  font-size: 10px;
+  color: ${({ $hasFile, theme }) => ($hasFile ? theme.success : theme.muted)};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  padding: 0 4px;
+`;
+
+const FormDelBtn = styled.button`
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.muted};
+  padding: 4px 8px;
+  font-size: 15px;
+  flex-shrink: 0;
+  transition: color .1s;
+  display: flex;
+  align-items: center;
+
+  &:hover {
+    color: ${({ theme }) => theme.error};
+  }
+`;
+
+const FormAddBtn = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.accent};
+  cursor: pointer;
+  font-size: 11px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  transition: opacity .15s;
+
+  &:hover {
+    opacity: .8;
+  }
+`;
+
+/* ─── Content-Type Sub-Row ───────────────────────── */
+
+const CtypeRow = styled.div`
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  margin-top: 4px;
+  padding-left: 24px;
+  align-items: center;
+`;
+
+const CtypeLabel = styled.span`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  flex-shrink: 0;
+`;
+
+const CtypeBadge = styled.span`
+  font-size: 11px;
+  color: ${({ theme }) => theme.accent};
+  font-family: monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, ${({ theme }) => theme.accent} 10%, transparent);
+`;
+
+const CtypeUseBtn = styled.button`
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  background-color: ${({ theme }) => theme.accent};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 3px;
+  color: ${({ theme }) => theme.accentFg};
+`;
+
+const CtypeClearBtn = styled.button`
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  background-color: transparent;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 3px;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const CtypeFileRow = styled.div`
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  margin-top: 4px;
+  padding-left: 24px;
+`;
+
+/* ─── GraphQL Section ────────────────────────────── */
+
+const GqlLabel = styled.div<{ $hasBorderTop?: boolean }>`
+  padding: 6px 10px;
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  ${({ $hasBorderTop, theme }) =>
+    $hasBorderTop && `border-top: 1px solid ${theme.border};`}
+`;
+
+const CodeTextarea = styled.textarea`
+  flex: 1;
+  background: ${({ theme }) => theme.inputBg};
+  border: none;
+  color: ${({ theme }) => theme.inputFg};
+  padding: 10px 14px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  resize: none;
+  outline: none;
+  line-height: 1.6;
+  tab-size: 2;
+`;
+
+/* ─── Script Tab ─────────────────────────────────── */
+
+const ScriptTitle = styled.div`
+  font-size: 12px;
+  font-weight: 600;
+`;
+
+const ScriptDesc = styled.div`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  margin-bottom: 6px;
+`;
+
+const Mono = styled.span`
+  font-family: monospace;
+`;
+
+/* ─── Auth Panel ─────────────────────────────────── */
+
+const AuthPanelWrapper = styled.div`
+  padding: 12px;
+`;
+
+const FieldLabel = styled.label`
+  display: block;
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  margin-bottom: 4px;
+`;
+
+const AuthFieldsContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const AuthInput = styled(VariableTextInput)`
+  width: 100%;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  display: flex;
+  align-items: stretch;
+  transition: border-color .15s;
+
+  &:focus-within {
+    border-color: ${({ theme }) => theme.accent};
+    background: ${({ theme }) => theme.inputBg};
+    color: ${({ theme }) => theme.fg};
+  }
+
+  .variable-text-display,
+  .variable-text-input {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 7px 10px;
+    width: 100%;
+    font-size: 12px;
+    font-family: monospace;
+    color: ${({ theme }) => theme.fg};
+    min-width: 0;
+    flex: 1;
+  }
+
+  .variable-text-display:hover {
+    border: none !important;
+    background: transparent !important;
+  }
+
+  .variable-text-input:focus {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+`;
+
+const RelativeWrap = styled.div`
+  position: relative;
+`;
+
+const PasswordToggleBtn = styled.button`
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.muted};
+  padding: 2px;
+  line-height: 1;
+`;
+
+/* ─── Auth Type Dropdown ─────────────────────────── */
+
+const AuthTypeWrap = styled.div`
+  position: relative;
+  width: 100%;
+  margin-bottom: 12px;
+`;
+
+const AuthTypeTriggerBtn = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  height: auto;
+  background: ${({ theme }) => theme.surface2};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  color: ${({ theme }) => theme.fg};
+  transition: border-color .15s, background .15s;
+  outline: none;
+  text-align: left;
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const AuthTypeTriggerLabel = styled.span`
+  flex: 1;
+`;
+
+const AuthTypeChevron = styled.svg<{ $open?: boolean }>`
+  fill: ${({ theme }) => theme.muted};
+  transition: transform .18s;
+  flex-shrink: 0;
+  margin-left: 6px;
+  transform: ${({ $open }) => ($open ? 'rotate(180deg)' : 'rotate(0)')};
+`;
+
+const AuthTypeMenu = styled.ul`
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  list-style: none;
+  padding: 4px;
+  z-index: 9999;
+  box-shadow: 0 8px 24px ${({ theme }) => theme.shadowSm};
+  margin: 0;
+`;
+
+const AuthTypeOption = styled.li<{ $selected?: boolean; $highlighted?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  transition: background .1s;
+  color: ${({ $selected, theme }) => ($selected ? theme.accent : theme.fg)};
+  font-weight: ${({ $selected }) => ($selected ? 600 : 400)};
+  background: ${({ $selected, $highlighted, theme }) =>
+    $selected
+      ? `color-mix(in srgb, ${theme.accent} 12%, transparent)`
+      : $highlighted
+        ? theme.hover
+        : 'transparent'};
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+  }
+`;
+
+const AuthTypeOptLabel = styled.span`
+  flex: 1;
+`;
+
+/* ─── Add-To Dropdown ────────────────────────────── */
+
+const AddToWrap = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const AddToTriggerBtn = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  height: auto;
+  background: ${({ theme }) => theme.surface2};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  color: ${({ theme }) => theme.fg};
+  transition: border-color .15s, background .15s;
+  outline: none;
+  text-align: left;
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const AddToTriggerLabel = styled.span`
+  flex: 1;
+`;
+
+const AddToChevron = styled.svg<{ $open?: boolean }>`
+  fill: ${({ theme }) => theme.muted};
+  transition: transform .18s;
+  flex-shrink: 0;
+  margin-left: 6px;
+  transform: ${({ $open }) => ($open ? 'rotate(180deg)' : 'rotate(0)')};
+`;
+
+const AddToMenu = styled.ul`
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  list-style: none;
+  padding: 4px;
+  z-index: 9999;
+  box-shadow: 0 8px 24px ${({ theme }) => theme.shadowSm};
+  margin: 0;
+`;
+
+const AddToOption = styled.li<{ $selected?: boolean; $highlighted?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  transition: background .1s;
+  color: ${({ $selected, theme }) => ($selected ? theme.accent : theme.fg)};
+  font-weight: ${({ $selected }) => ($selected ? 600 : 400)};
+  background: ${({ $selected, $highlighted, theme }) =>
+    $selected
+      ? `color-mix(in srgb, ${theme.accent} 12%, transparent)`
+      : $highlighted
+        ? theme.hover
+        : 'transparent'};
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+  }
+`;
+
+const AddToOptLabel = styled.span`
+  flex: 1;
+`;
+
+/* ─── Constants ──────────────────────────────────── */
 
 const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
   { value: 'none', label: 'None' },
@@ -24,6 +687,10 @@ const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
   { value: 'basic', label: 'Basic Auth' },
   { value: 'apikey', label: 'API Key' },
 ];
+
+const BODY_TYPES: BodyType[] = ['none', 'json', 'form', 'urlencoded', 'text', 'xml', 'graphql'];
+
+/* ─── AddToDropdown ──────────────────────────────── */
 
 const AddToDropdown: React.FC<{ value: 'header' | 'query'; onChange: (v: 'header' | 'query') => void }> = ({ value, onChange }) => {
   const [open, setOpen] = useState(false);
@@ -71,29 +738,29 @@ const AddToDropdown: React.FC<{ value: 'header' | 'query'; onChange: (v: 'header
   const label = value === 'header' ? 'Header' : 'Query Param';
 
   return (
-    <div className="add-to-dropdown" ref={ref}>
-      <button
-        className="add-to-trigger"
+    <AddToWrap ref={ref}>
+      <AddToTriggerBtn
         onClick={() => setOpen((o) => !o)}
         onKeyDown={handleKeyDown}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="add-to-trigger-label">{label}</span>
-        <svg className={`add-to-chevron${open ? ' open' : ''}`} viewBox="0 0 10 6" width="10" height="6">
+        <AddToTriggerLabel>{label}</AddToTriggerLabel>
+        <AddToChevron $open={open} viewBox="0 0 10 6" width="10" height="6">
           <path d="M0 0l5 6 5-6z" />
-        </svg>
-      </button>
+        </AddToChevron>
+      </AddToTriggerBtn>
 
       {open && (
-        <ul className="add-to-menu" role="listbox">
+        <AddToMenu role="listbox">
           {options.map((opt, idx) => (
-            <li
+            <AddToOption
               key={opt.val}
               role="option"
               aria-selected={opt.val === value}
-              className={`add-to-option${opt.val === value ? ' selected' : ''}${idx === activeIndex ? ' highlighted' : ''}`}
+              $selected={opt.val === value}
+              $highlighted={idx === activeIndex}
               onMouseDown={(e) => {
                 e.preventDefault();
                 onChange(opt.val);
@@ -101,14 +768,16 @@ const AddToDropdown: React.FC<{ value: 'header' | 'query'; onChange: (v: 'header
               }}
               onMouseEnter={() => setActiveIndex(idx)}
             >
-              <span className="add-to-option-label">{opt.label}</span>
-            </li>
+              <AddToOptLabel>{opt.label}</AddToOptLabel>
+            </AddToOption>
           ))}
-        </ul>
+        </AddToMenu>
       )}
-    </div>
+    </AddToWrap>
   );
 };
+
+/* ─── AuthTypeDropdown ───────────────────────────── */
 
 const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType) => void }> = ({ authType, onChange }) => {
   const [open, setOpen] = useState(false);
@@ -152,29 +821,29 @@ const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType
   const label = AUTH_TYPES.find((t) => t.value === authType)?.label || 'None';
 
   return (
-    <div className="auth-type-dropdown" ref={ref}>
-      <button
-        className="auth-type-trigger"
+    <AuthTypeWrap ref={ref}>
+      <AuthTypeTriggerBtn
         onClick={() => setOpen((o) => !o)}
         onKeyDown={handleKeyDown}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="auth-type-trigger-label">{label}</span>
-        <svg className={`auth-type-chevron${open ? ' open' : ''}`} viewBox="0 0 10 6" width="10" height="6">
+        <AuthTypeTriggerLabel>{label}</AuthTypeTriggerLabel>
+        <AuthTypeChevron $open={open} viewBox="0 0 10 6" width="10" height="6">
           <path d="M0 0l5 6 5-6z" />
-        </svg>
-      </button>
+        </AuthTypeChevron>
+      </AuthTypeTriggerBtn>
 
       {open && (
-        <ul className="auth-type-menu" role="listbox">
+        <AuthTypeMenu role="listbox">
           {AUTH_TYPES.map((t, idx) => (
-            <li
+            <AuthTypeOption
               key={t.value}
               role="option"
               aria-selected={t.value === authType}
-              className={`auth-type-option${t.value === authType ? ' selected' : ''}${idx === activeIndex ? ' highlighted' : ''}`}
+              $selected={t.value === authType}
+              $highlighted={idx === activeIndex}
               onMouseDown={(e) => {
                 e.preventDefault();
                 onChange(t.value);
@@ -182,16 +851,16 @@ const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType
               }}
               onMouseEnter={() => setActiveIndex(idx)}
             >
-              <span className="auth-type-option-label">{t.label}</span>
-            </li>
+              <AuthTypeOptLabel>{t.label}</AuthTypeOptLabel>
+            </AuthTypeOption>
           ))}
-        </ul>
+        </AuthTypeMenu>
       )}
-    </div>
+    </AuthTypeWrap>
   );
 };
 
-const BODY_TYPES: BodyType[] = ['none', 'json', 'form', 'urlencoded', 'text', 'xml', 'graphql'];
+/* ─── RequestPane ────────────────────────────────── */
 
 export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment }) => {
   const [activeTab, setActiveTab] = useState<ReqTab>('params');
@@ -280,7 +949,6 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
 
     const desired = mapping[bt];
 
-    // If a Content-Type-like header already exists, do not override
     const existingIndex = (request.headers || []).findIndex((h) => (h.key || '').toLowerCase() === 'content-type');
 
     if (desired && existingIndex === -1) {
@@ -288,93 +956,97 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
       return;
     }
 
-    // Just update bodyType otherwise
     onUpdate({ bodyType: bt });
   };
 
   return (
-    <div className="request-pane" id="req-pane">
+    <PaneWrapper id="req-pane">
       {/* Tab Bar */}
-      <div className="tab-bar" id="req-tabs">
+      <TabBarContainer id="req-tabs">
         {(['params', 'headers', 'body', 'script', 'auth'] as ReqTab[]).map((tab) => (
-          <div
+          <TabItem
             key={tab}
-            className={`tab ${activeTab === tab ? 'active' : ''}`}
+            $active={activeTab === tab}
             onClick={() => setActiveTab(tab)}
+            role="tab"
+            data-testid={`req-tab-${tab}`}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'params' && activeParamCount > 0 && (
-              <span className="tab-badge">{activeParamCount}</span>
+              <TabBadgeCount>{activeParamCount}</TabBadgeCount>
             )}
             {tab === 'headers' && activeHeaderCount > 0 && (
-              <span className="tab-badge">{activeHeaderCount}</span>
+              <TabBadgeCount>{activeHeaderCount}</TabBadgeCount>
             )}
             {tab === 'body' && hasBody && (
-              <span className="tab-badge tab-badge-dot" />
+              <TabBadgeDot />
             )}
             {tab === 'auth' && hasAuth && (
-              <span className="tab-badge tab-badge-dot" />
+              <TabBadgeDot />
             )}
             {tab === 'script' && hasScript && (
-              <span className="tab-badge tab-badge-dot" />
+              <TabBadgeDot />
             )}
-          </div>
+          </TabItem>
         ))}
-      </div>
+      </TabBarContainer>
 
       {/* Params Tab */}
       {activeTab === 'params' && (
-        <div className="tab-content active scroll-area">
-          <KeyValueTable
-            items={request.queryParams}
-            addLabel="+ Add Parameter"
-            onAdd={() => addKvRow('queryParams')}
-            onUpdate={(i, f, v) => updateKvList('queryParams', i, f, v)}
-            onRemove={(i) => removeKvRow('queryParams', i)}
-            environment={environment}
-          />
-        </div>
+        <TabPanel>
+          <ScrollContainer>
+            <KeyValueTable
+              items={request.queryParams}
+              addLabel="+ Add Parameter"
+              onAdd={() => addKvRow('queryParams')}
+              onUpdate={(i, f, v) => updateKvList('queryParams', i, f, v)}
+              onRemove={(i) => removeKvRow('queryParams', i)}
+              environment={environment}
+            />
+          </ScrollContainer>
+        </TabPanel>
       )}
 
       {/* Headers Tab */}
       {activeTab === 'headers' && (
-        <div className="tab-content active scroll-area">
-          <KeyValueTable
-            items={request.headers}
-            addLabel="+ Add Header"
-            onAdd={() => addKvRow('headers')}
-            onUpdate={(i, f, v) => updateKvList('headers', i, f, v)}
-            onRemove={(i) => removeKvRow('headers', i)}
-            environment={environment}
-            isHeaderTable={true}
-          />
-        </div>
+        <TabPanel>
+          <ScrollContainer>
+            <KeyValueTable
+              items={request.headers}
+              addLabel="+ Add Header"
+              onAdd={() => addKvRow('headers')}
+              onUpdate={(i, f, v) => updateKvList('headers', i, f, v)}
+              onRemove={(i) => removeKvRow('headers', i)}
+              environment={environment}
+              isHeaderTable={true}
+            />
+          </ScrollContainer>
+        </TabPanel>
       )}
 
       {/* Body Tab */}
       {activeTab === 'body' && (
-        <div className="tab-content active" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        <BodyEditorWrap>
           {/* Body type selector */}
-          <div className="body-type-bar">
+          <BodyTypeBar>
             {BODY_TYPES.map((bt) => (
-              <button
+              <BodyTypeBtn
                 key={bt}
-                className={`body-type-btn ${request.bodyType === bt ? 'active' : ''}`}
+                data-testid={`body-type-${bt}`}
+                $active={request.bodyType === bt}
                 onClick={() => handleBodyTypeChange(bt)}
               >
                 {bt}
-              </button>
+              </BodyTypeBtn>
             ))}
-          </div>
+          </BodyTypeBar>
 
           {request.bodyType === 'none' && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>
-              This request has no body
-            </div>
+            <EmptyBodyText>This request has no body</EmptyBodyText>
           )}
 
           {(request.bodyType === 'json' || request.bodyType === 'text' || request.bodyType === 'xml') && (
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <BodyEditorWrap>
               <CodeEditor
                 value={request.body}
                 onChange={(body) => onUpdate({ body })}
@@ -384,39 +1056,35 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                 onJsonFormatModeChange={(bodyFormat) => onUpdate({ bodyFormat })}
                 placeholder={request.bodyType === 'json' ? '{\n}' : 'Enter request body…'}
               />
-            </div>
+            </BodyEditorWrap>
           )}
 
-          {/* Post-response script editor moved to Script tab */}
-
           {request.bodyType === 'form' && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-              <div className="scroll-area" style={{ flex: 1 }}>
-                <div className="kv-wrap">
+            <BodyEditorWrap>
+              <ScrollContainer style={{ flex: 1 }}>
+                <FormWrap>
                   {(request.formData || []).map((item, i) => {
                     const rowType = item.formType || 'text';
                     const suggestedContentType = rowType === 'text' ? getSuggestedContentType(item.value || '', item.contentType) : undefined;
                     const shouldShowTextContentType = rowType === 'text' && ((item.contentType || '').trim().length > 0 || !!suggestedContentType);
                     return (
-                      <div key={i} className="kv-row" style={{ flexDirection: 'column' }}>
+                      <FormRow key={i}>
                         <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
-                          <div className="kv-check">
+                          <FormCheck>
                             <input
                               type="checkbox"
                               checked={item.enabled !== false}
                               onChange={(e) => updateFormDataRow(i, { enabled: e.target.checked })}
                             />
-                          </div>
-                          <div className="form-key-wrapper">
-                            <input
+                          </FormCheck>
+                          <FormKeyWrap>
+                            <FormInput
                               type="text"
-                              className="kv-input"
                               placeholder="Key"
                               value={item.key}
                               onChange={(e) => updateFormDataRow(i, { key: e.target.value })}
                             />
-                            <select
-                              className="form-type-select"
+                            <FormTypeSelect
                               value={rowType}
                               onChange={(e) => {
                                 const nextType = e.target.value as 'text' | 'file';
@@ -432,123 +1100,86 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                             >
                               <option value="text">T</option>
                               <option value="file">F</option>
-                            </select>
-                          </div>
+                            </FormTypeSelect>
+                          </FormKeyWrap>
 
                           {rowType === 'file' ? (
-                            <div className="form-file-wrapper" data-has-file={!!item.fileName}>
-                              <input
+                            <FormFileWrap>
+                              <FormFileInput
                                 type="file"
-                                className="form-file-input"
                                 onChange={(e) => handleSelectFormFile(i, e.target.files?.[0])}
                               />
-                              <span
-                                className="form-file-name"
+                              <FormFileName
+                                $hasFile={!!item.fileName}
                                 title={item.fileName || 'No file selected'}
                               >
                                 {item.fileName || 'No file selected'}
-                              </span>
-                            </div>
+                              </FormFileName>
+                            </FormFileWrap>
                           ) : (
-                            <input
+                            <FormInput
                               type="text"
-                              className="kv-input"
                               placeholder="Value"
                               value={item.value || ''}
                               onChange={(e) => updateFormDataRow(i, { value: e.target.value })}
                             />
                           )}
 
-                          <button className="kv-del" onClick={() => removeKvRow('formData', i)}>
+                          <FormDelBtn onClick={() => removeKvRow('formData', i)}>
                             <Icon icon={faTrash} size={12} />
-                          </button>
+                          </FormDelBtn>
                         </div>
-                        
-                        {/* Content-Type for text fields only when non-plain or already customized */}
+
                         {shouldShowTextContentType && (
-                          <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px', paddingLeft: '24px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>
-                              Runtime Content-Type:
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                color: 'var(--accent)',
-                                fontFamily: 'monospace',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
-                              }}
-                              title={item.contentType || suggestedContentType || 'text/plain'}
-                            >
+                          <CtypeRow>
+                            <CtypeLabel>Runtime Content-Type:</CtypeLabel>
+                            <CtypeBadge title={item.contentType || suggestedContentType || 'text/plain'}>
                               {item.contentType || suggestedContentType || 'text/plain'}
-                            </span>
+                            </CtypeBadge>
                             {!item.contentType && suggestedContentType && (
-                              <button
+                              <CtypeUseBtn
                                 onClick={() => updateFormDataRow(i, { contentType: suggestedContentType })}
                                 title={`Use ${suggestedContentType}`}
-                                style={{
-                                  padding: '2px 8px',
-                                  fontSize: '11px',
-                                  whiteSpace: 'nowrap',
-                                  cursor: 'pointer',
-                                  backgroundColor: 'var(--button-background)',
-                                  border: '1px solid var(--button-border)',
-                                  borderRadius: '3px',
-                                  color: 'var(--foreground)',
-                                }}
                               >
                                 Use
-                              </button>
+                              </CtypeUseBtn>
                             )}
                             {item.contentType && (
-                              <button
+                              <CtypeClearBtn
                                 onClick={() => updateFormDataRow(i, { contentType: '' })}
                                 title="Clear custom content type"
-                                style={{
-                                  padding: '2px 8px',
-                                  fontSize: '11px',
-                                  whiteSpace: 'nowrap',
-                                  cursor: 'pointer',
-                                  backgroundColor: 'transparent',
-                                  border: '1px solid var(--border)',
-                                  borderRadius: '3px',
-                                  color: 'var(--muted)',
-                                }}
                               >
                                 Clear
-                              </button>
+                              </CtypeClearBtn>
                             )}
-                          </div>
+                          </CtypeRow>
                         )}
 
-                        {/* Content-Type field for file form fields */}
                         {rowType === 'file' && (
-                          <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px', paddingLeft: '24px' }}>
-                            <input
+                          <CtypeFileRow>
+                            <FormInput
                               type="text"
-                              className="kv-input"
                               placeholder="Content-Type (e.g., application/pdf, image/png)"
                               value={item.contentType || ''}
                               onChange={(e) => updateFormDataRow(i, { contentType: e.target.value })}
                               title="MIME type for the uploaded file"
                               style={{ flex: 1 }}
                             />
-                          </div>
+                          </CtypeFileRow>
                         )}
-                      </div>
+                      </FormRow>
                     );
                   })}
-                  <button className="add-row-btn" onClick={() => addKvRow('formData')}>
+                  <FormAddBtn onClick={() => addKvRow('formData')}>
                     + Add Field
-                  </button>
-                </div>
-              </div>
-            </div>
+                  </FormAddBtn>
+                </FormWrap>
+              </ScrollContainer>
+            </BodyEditorWrap>
           )}
 
           {request.bodyType === 'urlencoded' && (
-            <div className="scroll-area" style={{ flex: 1 }}>
+            <ScrollContainer style={{ flex: 1 }}>
               <KeyValueTable
                 items={request.urlencoded || []}
                 addLabel="+ Add Parameter"
@@ -569,50 +1200,49 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                 }}
                 environment={environment}
               />
-            </div>
+            </ScrollContainer>
           )}
 
           {request.bodyType === 'graphql' && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-              <div style={{ padding: '6px 10px', fontSize: 10, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>QUERY</div>
-              <textarea
-                className="code-editor"
+            <BodyEditorWrap>
+              <GqlLabel>QUERY</GqlLabel>
+              <CodeTextarea
                 value={request.gqlQuery}
                 placeholder="{ users { id name } }"
-                style={{ flex: 1, minHeight: 0 }}
+                style={{ minHeight: 0 }}
                 onChange={(e) => onUpdate({ gqlQuery: e.target.value })}
               />
-              <div style={{ padding: '6px 10px', fontSize: 10, color: 'var(--muted)', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>VARIABLES (JSON)</div>
-              <textarea
-                className="code-editor"
+              <GqlLabel $hasBorderTop>VARIABLES (JSON)</GqlLabel>
+              <CodeTextarea
                 value={request.gqlVars}
                 placeholder='{"id": 1}'
                 style={{ height: 100, flexShrink: 0 }}
                 onChange={(e) => onUpdate({ gqlVars: e.target.value })}
               />
-            </div>
+            </BodyEditorWrap>
           )}
-        </div>
+        </BodyEditorWrap>
       )}
 
       {/* Script Tab */}
       {activeTab === 'script' && (
-        <div className="tab-content active" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 8 }}>
+        <TabPanel style={{ padding: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>Post-response Script (optional)</div>
+            <ScriptTitle>Post-response Script (optional)</ScriptTitle>
             <div>
-              <button
-                className="add-row-btn"
+              <FormAddBtn
                 onClick={() => onUpdate({ script: getScriptTemplate() })}
               >
                 Insert Example
-              </button>
+              </FormAddBtn>
             </div>
           </div>
 
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-            Write JavaScript that runs after a response arrives. Use <span style={{ fontFamily: 'monospace' }}>set(key, value)</span> to store environment variables, and <span style={{ fontFamily: 'monospace' }}>log()</span> to add script logs.
-          </div>
+          <ScriptDesc>
+            Write JavaScript that runs after a response arrives. Use{' '}
+            <Mono>set(key, value)</Mono> to store environment variables, and{' '}
+            <Mono>log()</Mono> to add script logs.
+          </ScriptDesc>
 
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <CodeEditor
@@ -623,28 +1253,29 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               placeholder={'// Example: vars[\'token\'] = response.body.access_token;'}
             />
           </div>
-        </div>
+        </TabPanel>
       )}
 
       {/* Auth Tab */}
       {activeTab === 'auth' && (
-        <div className="tab-content active scroll-area">
-          <AuthPanel
-            authType={request.authType}
-            authData={request.authData}
-            environment={environment}
-            onAuthTypeChange={(authType) => onUpdate({ authType })}
-            onAuthDataChange={(authData) => onUpdate({ authData: { ...request.authData, ...authData } })}
-          />
-        </div>
+        <TabPanel>
+          <ScrollContainer>
+            <AuthPanel
+              authType={request.authType}
+              authData={request.authData}
+              environment={environment}
+              onAuthTypeChange={(authType) => onUpdate({ authType })}
+              onAuthDataChange={(authData) => onUpdate({ authData: { ...request.authData, ...authData } })}
+            />
+          </ScrollContainer>
+        </TabPanel>
       )}
-
-      {/* Script tab removed */}
-    </div>
+    </PaneWrapper>
   );
 };
 
 /* ─── Auth Panel ─────────────────────────────────── */
+
 interface AuthPanelProps {
   authType: AuthType;
   authData: RequestState['authData'];
@@ -653,91 +1284,80 @@ interface AuthPanelProps {
   onAuthDataChange: (data: Partial<RequestState['authData']>) => void;
 }
 
-
 const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, onAuthTypeChange, onAuthDataChange }) => {
   const [showPassword, setShowPassword] = useState(false);
   return (
-  <div style={{ padding: 12 }}>
-    <label className="field-label">Auth Type</label>
-    <AuthTypeDropdown authType={authType} onChange={onAuthTypeChange} />
+    <AuthPanelWrapper>
+      <FieldLabel>Auth Type</FieldLabel>
+      <AuthTypeDropdown authType={authType} onChange={onAuthTypeChange} />
 
-    {authType === 'bearer' && (
-      <div className="auth-fields">
-        <label className="field-label" style={{ marginTop: 8 }}>Token</label>
-        <div style={{ position: 'relative' }}>
-          <VariableTextInput
-            value={authData.token || ''}
-            placeholder="your_token_here or {{variable_name}}"
-            onChange={(v) => onAuthDataChange({ token: v })}
-            variables={environment?.variables}
-            className="auth-input"
-          />
-        </div>
-      </div>
-    )}
+      {authType === 'bearer' && (
+        <AuthFieldsContainer>
+          <FieldLabel style={{ marginTop: 8 }}>Token</FieldLabel>
+          <RelativeWrap>
+            <AuthInput
+              value={authData.token || ''}
+              placeholder="your_token_here or {{variable_name}}"
+              onChange={(v) => onAuthDataChange({ token: v })}
+              variables={environment?.variables}
+            />
+          </RelativeWrap>
+        </AuthFieldsContainer>
+      )}
 
-    {authType === 'basic' && (
-      <div className="auth-fields">
-        <label className="field-label" style={{ marginTop: 8 }}>Username</label>
-        <div style={{ position: 'relative' }}>
-          <VariableTextInput
-            value={authData.username || ''}
-            placeholder="username or {{variable_name}}"
-            onChange={(v) => onAuthDataChange({ username: v })}
-            variables={environment?.variables}
-            className="auth-input"
-          />
-        </div>
-        <label className="field-label" style={{ marginTop: 8 }}>Password</label>
-        <div style={{ position: 'relative' }}>
-          <VariableTextInput
-            value={authData.password || ''}
-            placeholder="password or {{variable_name}}"
-            onChange={(v) => onAuthDataChange({ password: v })}
-            variables={environment?.variables}
-            className="auth-input"
-            type={showPassword ? 'text' : 'password'}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((v) => !v)}
-            title={showPassword ? 'Hide password' : 'Show password'}
-            style={{
-              position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--muted)', padding: 2, lineHeight: 1,
-            }}
-          >
-            <Icon icon={showPassword ? faEyeSlash : faEye} size={12} />
-          </button>
-        </div>
-      </div>
-    )}
+      {authType === 'basic' && (
+        <AuthFieldsContainer>
+          <FieldLabel style={{ marginTop: 8 }}>Username</FieldLabel>
+          <RelativeWrap>
+            <AuthInput
+              value={authData.username || ''}
+              placeholder="username or {{variable_name}}"
+              onChange={(v) => onAuthDataChange({ username: v })}
+              variables={environment?.variables}
+            />
+          </RelativeWrap>
+          <FieldLabel style={{ marginTop: 8 }}>Password</FieldLabel>
+          <RelativeWrap>
+            <AuthInput
+              value={authData.password || ''}
+              placeholder="password or {{variable_name}}"
+              onChange={(v) => onAuthDataChange({ password: v })}
+              variables={environment?.variables}
+              type={showPassword ? 'text' : 'password'}
+            />
+            <PasswordToggleBtn
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              title={showPassword ? 'Hide password' : 'Show password'}
+            >
+              <Icon icon={showPassword ? faEyeSlash : faEye} size={12} />
+            </PasswordToggleBtn>
+          </RelativeWrap>
+        </AuthFieldsContainer>
+      )}
 
-    {authType === 'apikey' && (
-      <div className="auth-fields">
-        <label className="field-label">Key Name</label>
-        <VariableTextInput
-          value={authData.keyName || ''}
-          placeholder="X-API-Key or {{variable_name}}"
-          onChange={(v) => onAuthDataChange({ keyName: v })}
-          variables={environment?.variables}
-          className="auth-input"
-        />
-        <label className="field-label" style={{ marginTop: 8 }}>Key Value</label>
-        <div style={{ position: 'relative' }}>
-          <VariableTextInput
-            value={authData.keyValue || ''}
-            placeholder="api_key_value or {{variable_name}}"
-            onChange={(v) => onAuthDataChange({ keyValue: v })}
+      {authType === 'apikey' && (
+        <AuthFieldsContainer>
+          <FieldLabel>Key Name</FieldLabel>
+          <AuthInput
+            value={authData.keyName || ''}
+            placeholder="X-API-Key or {{variable_name}}"
+            onChange={(v) => onAuthDataChange({ keyName: v })}
             variables={environment?.variables}
-            className="auth-input"
           />
-        </div>
-        <label className="field-label" style={{ marginTop: 8 }}>Add To</label>
-        <AddToDropdown value={authData.addTo || 'header'} onChange={(v) => onAuthDataChange({ addTo: v })} />
-      </div>
-)}
-  </div>
+          <FieldLabel style={{ marginTop: 8 }}>Key Value</FieldLabel>
+          <RelativeWrap>
+            <AuthInput
+              value={authData.keyValue || ''}
+              placeholder="api_key_value or {{variable_name}}"
+              onChange={(v) => onAuthDataChange({ keyValue: v })}
+              variables={environment?.variables}
+            />
+          </RelativeWrap>
+          <FieldLabel style={{ marginTop: 8 }}>Add To</FieldLabel>
+          <AddToDropdown value={authData.addTo || 'header'} onChange={(v) => onAuthDataChange({ addTo: v })} />
+        </AuthFieldsContainer>
+      )}
+    </AuthPanelWrapper>
   );
 };

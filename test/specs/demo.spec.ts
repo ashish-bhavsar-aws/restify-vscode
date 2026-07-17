@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import * as path from 'path';
+import { execSync } from 'child_process';
 import {
   launchVSCode,
   closeVSCode,
@@ -13,10 +13,6 @@ import {
   selectQuickPick,
   typeInQuickInput,
   confirmQuickInput,
-  clickButton,
-  clickClass,
-  hasElement,
-  waitForFrameText,
   dismissNotification,
   dumpPageState,
   dumpSidebarState,
@@ -25,6 +21,7 @@ import {
   fillVariableInput,
   getVariableInputValue,
   sendRequestViaEnter,
+  clickWithCursor,
   injectCursorOverlay,
   resetLog,
   log,
@@ -64,7 +61,21 @@ test('01 - Extension opens with main panel', async () => {
   expect(title).toBeTruthy();
   expect(title).toContain('Extension Development Host');
 
-  await screenshot(window, '01-main-panel-empty');
+  // Close the Welcome tab if present
+  const welcomeTab = window.locator('.tab').filter({ hasText: /Welcome/i });
+  if (await welcomeTab.count() > 0) {
+    const closeBtn = welcomeTab.first().locator('.tab-close .action-label, .codicon-close');
+    if (await closeBtn.count() > 0) {
+      await closeBtn.first().click({ timeout: 3_000 }).catch(() => {});
+      log('Welcome tab closed');
+    } else {
+      await welcomeTab.first().click({ button: 'middle' }).catch(() => {});
+      log('Welcome tab middle-clicked to close');
+    }
+    await window.waitForTimeout(500);
+  }
+
+  // await screenshot(window, '01-main-panel-empty');
   log('--- TEST 01: done ---');
 });
 
@@ -111,7 +122,7 @@ test('03 - Import Swagger Petstore collection', async () => {
     const count = await sidebar.locator(sel).count().catch(() => 0);
     log(`  Selector "${sel}": ${count} matches`);
     if (count > 0) {
-      await sidebar.locator(sel).first().click();
+      await clickWithCursor(sidebar.locator(sel).first());
       importClicked = true;
       log(`  Clicked import via: ${sel}`);
       break;
@@ -146,8 +157,20 @@ test('03 - Import Swagger Petstore collection', async () => {
     await window.waitForTimeout(1000);
     await screenshot(window, '03e-import-confirm-submitted');
 
-    log('Waiting 5s for import to complete (network request)...');
-    await window.waitForTimeout(5000);
+    // Wait for the success notification instead of a blind timeout
+    log('Waiting for import success notification...');
+    try {
+      await window.waitForFunction(() => {
+        const toasts = document.querySelectorAll('.notifications-toasts .notification-toast, .notification-toast');
+        for (const toast of toasts) {
+          if (toast.textContent?.includes('Imported')) return true;
+        }
+        return false;
+      }, { timeout: 30_000 });
+      log('  Import success notification appeared');
+    } catch {
+      logError('Timed out waiting for import success notification');
+    }
 
     // Step 6: capture after import completes
     await dismissNotification(window);
@@ -171,55 +194,70 @@ test('04 - Verify imported collection appears in sidebar', async () => {
     logCheck('Swagger Petstore in collections frame', petstoreCount);
 
     if (petstoreCount > 0) {
-      // Click "Expand all" to expand everything
-      const expandAllBtn = collectionsFrame.locator('button[title*="Expand"]');
-      if (await expandAllBtn.count() > 0) {
-        await expandAllBtn.first().click();
-        log('Clicked Expand all');
-        await collectionsFrame.waitForTimeout(1500);
+      // Helper: count VISIBLE elements (not just in DOM behind display:none)
+      const countVisible = async (sel: string) => {
+        return collectionsFrame!.locator(sel).evaluateAll(els => els.filter(e => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        }).length).catch(() => 0);
+      };
+
+      // Check if collection is already expanded (visible group-headers or requests)
+      let visibleGroups = await countVisible('[data-testid="group-header"]');
+      let visibleRequests = await countVisible('[data-testid="collection-request"]');
+      log(`Pre-expand state: visibleGroups=${visibleGroups} visibleRequests=${visibleRequests}`);
+
+      if (visibleGroups === 0 && visibleRequests === 0) {
+        // Collection collapsed — click "Expand all" then collection header
+        const expandAllBtn = collectionsFrame!.locator('button[title*="Expand"]');
+        if (await expandAllBtn.count() > 0) {
+          await clickWithCursor(expandAllBtn.first());
+          log('Clicked Expand all');
+          await collectionsFrame!.waitForTimeout(1500);
+        }
+
+        const collectionHeader = collectionsFrame!.locator('[data-testid="collection-header"]').first();
+        if (await collectionHeader.count() > 0) {
+          await clickWithCursor(collectionHeader);
+          log('Clicked collection header');
+          await collectionsFrame!.waitForTimeout(1500);
+        }
+      } else {
+        log('Collection already expanded — skipping click');
       }
 
-      // Click the collection header to expand it
-      const collectionHeader = collectionsFrame.locator('.collection-header, [class*="collection-group"]').first();
-      if (await collectionHeader.count() > 0) {
-        await collectionHeader.click();
-        log('Clicked collection header');
-        await collectionsFrame.waitForTimeout(1500);
-      }
+      // Re-check visibility after expansion
+      visibleGroups = await countVisible('[data-testid="group-header"]');
+      visibleRequests = await countVisible('[data-testid="collection-request"]');
+      logCheck('group-header elements', visibleGroups);
+      logCheck('collection-request elements', visibleRequests);
 
-      // Check for expanded content
-      const openRequests = await collectionsFrame.locator('.collection-requests.open').count().catch(() => 0);
-      logCheck('collection-requests.open elements', openRequests);
-
-      const groupTrees = await collectionsFrame.locator('.group-tree').count().catch(() => 0);
-      logCheck('group-tree elements', groupTrees);
-
-      const groupHeaders = await collectionsFrame.locator('.group-header').count().catch(() => 0);
-      logCheck('group-header elements', groupHeaders);
-
-      const subItems = await collectionsFrame.locator('.sub-item').count().catch(() => 0);
-      logCheck('sub-item elements (requests)', subItems);
-
-      // List all group names
-      for (let i = 0; i < Math.min(groupHeaders, 10); i++) {
-        const text = await collectionsFrame.locator('.group-header').nth(i).textContent().catch(() => '');
+      for (let i = 0; i < Math.min(visibleGroups, 10); i++) {
+        const text = await collectionsFrame!.locator('[data-testid="group-header"]').filter({ has: collectionsFrame!.locator(':visible') }).nth(i).textContent().catch(() => '');
         log(`  group-header[${i}]: "${(text || '').trim().slice(0, 60)}"`);
       }
 
-      // List all request items
-      for (let i = 0; i < Math.min(subItems, 10); i++) {
-        const text = await collectionsFrame.locator('.sub-item').nth(i).textContent().catch(() => '');
-        log(`  sub-item[${i}]: "${(text || '').trim().slice(0, 60)}"`);
+      for (let i = 0; i < Math.min(visibleRequests, 10); i++) {
+        const text = await collectionsFrame!.locator('[data-testid="collection-request"]').filter({ has: collectionsFrame!.locator(':visible') }).nth(i).textContent().catch(() => '');
+        log(`  collection-request[${i}]: "${(text || '').trim().slice(0, 60)}"`);
       }
 
-      // If groups exist, expand them too
-      if (groupHeaders > 0) {
-        for (let i = 0; i < Math.min(groupHeaders, 5); i++) {
-          await collectionsFrame.locator('.group-header').nth(i).click().catch(() => {});
-          await collectionsFrame.waitForTimeout(500);
+      // Expand collapsed groups — only click VISIBLE headers whose caret says collapsed
+      if (visibleGroups > 0 && visibleRequests === 0) {
+        const visibleHeaders = collectionsFrame!.locator('[data-testid="group-header"]').filter({ has: collectionsFrame!.locator(':visible') });
+        const hdrCount = await visibleHeaders.count().catch(() => 0);
+        for (let i = 0; i < Math.min(hdrCount, 5); i++) {
+          const header = visibleHeaders.nth(i);
+          const caretTransform = await header.locator('span').first().evaluate(el => getComputedStyle(el).transform).catch(() => '');
+          const isExpanded = caretTransform.includes('matrix');
+          if (!isExpanded) {
+            await clickWithCursor(header);
+            log(`Expanded group-header[${i}]`);
+          }
+          await collectionsFrame!.waitForTimeout(500);
         }
-        const subItemsAfter = await collectionsFrame.locator('.sub-item').count().catch(() => 0);
-        logCheck('sub-items after group expand', subItemsAfter);
+        const subItemsAfter = await countVisible('[data-testid="collection-request"]');
+        logCheck('collection-requests after group expand', subItemsAfter);
       }
     }
   }
@@ -239,29 +277,75 @@ test('05 - Load a request from the collection', async () => {
   const collectionsFrame = await findCollectionsFrame(window);
   expect(collectionsFrame).not.toBeNull();
 
-  // Find request items using .sub-item class
-  const subItems = collectionsFrame!.locator('.sub-item');
-  const itemCount = await subItems.count().catch(() => 0);
-  logCheck('Request items (.sub-item)', itemCount);
+  // Helper: count VISIBLE elements (not just in DOM behind display:none)
+  const countVisible = async (sel: string) => {
+    return collectionsFrame!.locator(sel).evaluateAll(els => els.filter(e => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }).length).catch(() => 0);
+  };
 
-  for (let i = 0; i < Math.min(itemCount, 5); i++) {
-    const text = await subItems.nth(i).textContent().catch(() => '');
-    log(`  sub-item[${i}]: "${(text || '').trim().slice(0, 60)}"`);
+  // Check current expansion state — visible items only
+  let visibleGroups = await countVisible('[data-testid="group-header"]');
+  let visibleRequests = await countVisible('[data-testid="collection-request"]');
+  log(`Pre-expand state: visibleGroups=${visibleGroups} visibleRequests=${visibleRequests}`);
+
+  if (visibleGroups === 0 && visibleRequests === 0) {
+    // Nothing visible — click Expand All
+    const expandAllBtn = collectionsFrame!.locator('button[title*="Expand"]');
+    if (await expandAllBtn.count() > 0) {
+      await clickWithCursor(expandAllBtn.first());
+      log('Clicked Expand all');
+      await collectionsFrame!.waitForTimeout(1000);
+    }
+    // Re-check after Expand All
+    visibleGroups = await countVisible('[data-testid="group-header"]');
+    visibleRequests = await countVisible('[data-testid="collection-request"]');
+    log(`After Expand All: visibleGroups=${visibleGroups} visibleRequests=${visibleRequests}`);
+  } else {
+    log(`Collection already expanded (${visibleGroups} groups, ${visibleRequests} requests visible)`);
   }
 
-  if (itemCount > 0) {
+  // Expand collapsed groups so requests become visible — only VISIBLE headers
+  if (visibleGroups > 0 && visibleRequests === 0) {
+    const visibleHeaders = collectionsFrame!.locator('[data-testid="group-header"]').filter({ has: collectionsFrame!.locator(':visible') });
+    const hdrCount = await visibleHeaders.count().catch(() => 0);
+    for (let i = 0; i < Math.min(hdrCount, 10); i++) {
+      const header = visibleHeaders.nth(i);
+      const caretTransform = await header.locator('span').first().evaluate(el => getComputedStyle(el).transform).catch(() => '');
+      const isExpanded = caretTransform.includes('matrix');
+      if (!isExpanded) {
+        await clickWithCursor(header);
+        log(`Expanded group-header[${i}]`);
+      }
+      await collectionsFrame!.waitForTimeout(300);
+    }
+    visibleRequests = await countVisible('[data-testid="collection-request"]');
+  }
+
+  // Find VISIBLE request items
+  const visibleReqLocator = collectionsFrame!.locator('[data-testid="collection-request"]').filter({ has: collectionsFrame!.locator(':visible') });
+  const finalCount = await visibleReqLocator.count().catch(() => 0);
+  logCheck('Request items (visible)', finalCount);
+
+  for (let i = 0; i < Math.min(finalCount, 5); i++) {
+    const text = await visibleReqLocator.nth(i).textContent().catch(() => '');
+    log(`  collection-request[${i}]: "${(text || '').trim().slice(0, 60)}"`);
+  }
+
+  if (finalCount > 0) {
     // Click the first GET request (more likely to work without auth)
     let targetIdx = 0;
-    for (let i = 0; i < itemCount; i++) {
-      const text = await subItems.nth(i).textContent().catch(() => '');
+    for (let i = 0; i < finalCount; i++) {
+      const text = await visibleReqLocator.nth(i).textContent().catch(() => '');
       if ((text || '').includes('GET')) {
         targetIdx = i;
         break;
       }
     }
-    const reqText = await subItems.nth(targetIdx).textContent().catch(() => '');
+    const reqText = await visibleReqLocator.nth(targetIdx).textContent().catch(() => '');
     log(`Clicking sub-item[${targetIdx}]: "${(reqText || '').trim().slice(0, 60)}"`);
-    await subItems.nth(targetIdx).click();
+    await clickWithCursor(visibleReqLocator.nth(targetIdx));
     log('Request item clicked — a NEW panel should open');
     await window.waitForTimeout(3000);
   } else {
@@ -303,6 +387,73 @@ test('05 - Load a request from the collection', async () => {
   log('--- TEST 05: done ---');
 });
 
+test('05b - Create BASE_URL environment variable', async () => {
+  log('--- TEST 05b: Create BASE_URL environment variable ---');
+  const { window } = app;
+
+  expect(mainFrame).not.toBeNull();
+
+  // Open the environment manager modal
+  await clickInFrame(mainFrame!, '[data-testid="manage-env-btn"]');
+
+  // Wait for modal to appear
+  const modalAppeared = await waitForElement(mainFrame!, '[data-testid="env-manager-modal"]', 5_000);
+  logCheck('Env manager modal appeared', modalAppeared);
+  expect(modalAppeared).toBe(true);
+
+  // Click "+ New Environment"
+  await clickInFrame(mainFrame!, '[data-testid="env-new-btn"]');
+  await window.waitForTimeout(500);
+
+  // Fill environment name
+  const nameInput = mainFrame!.locator('[data-testid="env-name-input"]');
+  await nameInput.first().waitFor({ state: 'visible', timeout: 3_000 });
+  await nameInput.first().fill('Development');
+  log('  Environment name: Development');
+
+  // Fill variable key and value
+  const keyInput = mainFrame!.locator('[data-testid="env-var-key"]').first();
+  const valueInput = mainFrame!.locator('[data-testid="env-var-value"]').first();
+  await keyInput.waitFor({ state: 'visible', timeout: 3_000 });
+  await keyInput.fill('BASE_URL');
+  await valueInput.fill('https://petstore.swagger.io/v2');
+  log('  Variable: BASE_URL=https://petstore.swagger.io/v2');
+
+  // Save
+  await clickInFrame(mainFrame!, '[data-testid="env-save-btn"]');
+  await window.waitForTimeout(1000);
+
+  // Close the modal
+  const overlay = mainFrame!.locator('[data-testid="env-manager-overlay"]');
+  if (await overlay.count() > 0) {
+    await clickInFrame(mainFrame!, '[data-testid="env-manager-overlay"]');
+    await window.waitForTimeout(300);
+  }
+
+  // Now activate the environment via the TopBar EnvDropdown.
+  // Click the env trigger to open the dropdown.
+  await clickInFrame(mainFrame!, '[data-testid="env-trigger-label"]');
+  await window.waitForTimeout(500);
+
+  // Find and click the "Development" option in the dropdown
+  const devOption = mainFrame!.locator('li').filter({ hasText: 'Development' });
+  const devCount = await devOption.count();
+  logCheck('Development option in dropdown', devCount);
+  if (devCount > 0) {
+    await clickWithCursor(devOption.first(), { force: true });
+    await window.waitForTimeout(500);
+    log('  Selected "Development" from dropdown');
+  }
+
+  // Verify env trigger label shows "Development"
+  const envLabel = await mainFrame!.locator('[data-testid="env-trigger-label"]').textContent().catch(() => '');
+  logCheck('Active environment label', (envLabel || '').trim());
+  expect((envLabel || '').trim()).toBe('Development');
+
+  await screenshot(window, '05b-env-variable-created');
+  log('--- TEST 05b: done ---');
+});
+
 test('06 - Execute request and view response', async () => {
   log('--- TEST 06: Execute request and view response ---');
   const { window } = app;
@@ -310,37 +461,30 @@ test('06 - Execute request and view response', async () => {
   expect(mainFrame).not.toBeNull();
 
   // Check current method
-  const methodLabel = await mainFrame!.locator('.method-trigger-label').first().textContent().catch(() => '');
+  const methodLabel = await mainFrame!.locator('[data-testid="method-trigger-label"]').first().textContent().catch(() => '');
   const currentMethod = (methodLabel || '').trim();
   log(`Current method: "${currentMethod}"`);
 
   // Ensure method is GET
   if (currentMethod !== 'GET') {
     log('Switching to GET...');
-    await clickInFrame(mainFrame!, '.method-trigger');
+    await clickInFrame(mainFrame!, '[data-testid="method-trigger"]');
     await mainFrame!.waitForTimeout(300);
     const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
     if (await getOption.count() > 0) {
-      await getOption.first().click({ force: true });
+      await clickWithCursor(getOption.first(), { force: true });
       log('Switched to GET');
     }
     await mainFrame!.waitForTimeout(300);
   }
 
-  // Check if URL was already loaded from the sidebar click
-  let urlValue = await getVariableInputValue(mainFrame!, '.url-input');
+  // Use env var {{BASE_URL}} in the URL bar to demonstrate env variable usage
+  log('Setting URL to {{BASE_URL}}/store/inventory...');
+  await fillVariableInput(mainFrame!, '.url-input', '{{BASE_URL}}/store/inventory');
+  await mainFrame!.waitForTimeout(300);
+  const urlValue = await getVariableInputValue(mainFrame!, '.url-input');
   log(`URL bar value: "${urlValue.slice(0, 80)}"`);
-
-  // If URL is empty or still the placeholder, fill it manually
-  if (!urlValue || urlValue.length < 5 || urlValue.startsWith('https://api.example.com')) {
-    log('URL bar empty/placeholder — manually filling...');
-    await fillVariableInput(mainFrame!, '.url-input', 'https://petstore.swagger.io/v2/store/inventory');
-    await mainFrame!.waitForTimeout(300);
-    urlValue = await getVariableInputValue(mainFrame!, '.url-input');
-    log(`URL after fill: "${urlValue.slice(0, 80)}"`);
-  }
-
-  expect(urlValue).toContain('petstore');
+  expect(urlValue).toContain('BASE_URL');
 
   // Send via Enter key
   await sendRequestViaEnter(mainFrame!);
@@ -350,7 +494,7 @@ test('06 - Execute request and view response', async () => {
   log('Waiting for response status bar...');
   try {
     await mainFrame!.waitForFunction(() => {
-      const el = document.querySelector('.response-status-bar');
+      const el = document.querySelector('[data-testid="response-status-bar"]');
       return el !== null;
     }, { timeout: 20_000 });
     log('  Response status bar appeared');
@@ -358,7 +502,7 @@ test('06 - Execute request and view response', async () => {
     logError('Timed out waiting for response status bar', err);
     try {
       await mainFrame!.waitForFunction(() => {
-        const el = document.querySelector('.response-pane');
+        const el = document.querySelector('#res-pane');
         if (!el || !el.textContent) return false;
         return el.textContent.includes('200') || el.textContent.includes('Error') ||
                el.textContent.includes('error') || /\d{3}/.test(el.textContent);
@@ -372,9 +516,9 @@ test('06 - Execute request and view response', async () => {
   await window.waitForTimeout(1000);
 
   // Log response details
-  const statusCode = await mainFrame!.locator('.status-code').first().textContent().catch(() => '');
+  const statusCode = await mainFrame!.locator('[data-testid="status-code"]').first().textContent().catch(() => '');
   logCheck('Status code', (statusCode || '').trim());
-  const responseText = await mainFrame!.locator('.response-pane').textContent().catch(() => '');
+  const responseText = await mainFrame!.locator('#res-pane').textContent().catch(() => '');
   log(`Response pane (first 500 chars): "${(responseText || '').slice(0, 500).replace(/\n/g, ' ').trim()}"`);
 
   await screenshot(window, '06-response-received');
@@ -388,10 +532,10 @@ test('07 - View response logs tab', async () => {
   expect(mainFrame).not.toBeNull();
 
   // Response tabs only appear after a response is received
-  const hasResTabs = await waitForElement(mainFrame!, '#res-tabs .tab', 10_000);
+  const hasResTabs = await waitForElement(mainFrame!, '#res-tabs [role="tab"]', 10_000);
   logCheck('Response tabs visible', hasResTabs);
 
-  const resTabs = mainFrame!.locator('#res-tabs .tab');
+  const resTabs = mainFrame!.locator('#res-tabs [role="tab"]');
   const tabCount = await resTabs.count();
   logCheck('Response tab count', tabCount);
 
@@ -401,18 +545,18 @@ test('07 - View response logs tab', async () => {
   }
 
   // Click Logs tab
-  const logsTab = mainFrame!.locator('#res-tabs .tab').filter({ hasText: /Logs/i });
+  const logsTab = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Logs/i });
   const logsTabCount = await logsTab.count();
   logCheck('Logs tab found', logsTabCount);
 
   if (logsTabCount > 0) {
-    await logsTab.first().click();
+    await clickWithCursor(logsTab.first());
     log('Logs tab clicked');
   }
   await window.waitForTimeout(500);
 
   // Verify logs content
-  const logSectionCount = await mainFrame!.locator('.log-section').count().catch(() => 0);
+  const logSectionCount = await mainFrame!.locator('[data-testid="log-section"]').count().catch(() => 0);
   logCheck('Log sections visible', logSectionCount);
 
   await screenshot(window, '07-response-logs');
@@ -427,18 +571,18 @@ test('08 - View request logs with details', async () => {
 
   // We should still be on the Logs tab from test 07
   // Check for log sections with actual request/response data
-  const logSections = mainFrame!.locator('.log-section');
+  const logSections = mainFrame!.locator('[data-testid="log-section"]');
   const sectionCount = await logSections.count();
   logCheck('Log sections count', sectionCount);
 
   // List section titles
   for (let i = 0; i < Math.min(sectionCount, 10); i++) {
-    const title = await logSections.nth(i).locator('.log-title').textContent().catch(() => '');
+    const title = await logSections.nth(i).locator('[data-testid="log-title"]').textContent().catch(() => '');
     log(`  log-section[${i}]: "${(title || '').trim().slice(0, 60)}"`);
   }
 
   // Check for response status in logs
-  const logsContent = await mainFrame!.locator('.response-pane').textContent().catch(() => '');
+  const logsContent = await mainFrame!.locator('#res-pane').textContent().catch(() => '');
   log(`Logs content (first 600 chars): "${(logsContent || '').slice(0, 600).replace(/\n/g, ' ').trim()}"`);
 
   const hasResponseData = /200|201|204|OK|Response|Request|GET|petstore/i.test(logsContent || '');
@@ -462,13 +606,13 @@ test('09 - History shows executed requests', async () => {
   const allFrames = window.frames().filter(f => f.url().includes('vscode-webview://'));
   log(`Total webview frames: ${allFrames.length}`);
 
-  let historyFrameFound = false;
+  let _historyFrameFound = false;
   for (const frame of allFrames) {
     const hasHistory = await frame.locator('text=History').count().catch(() => 0);
     const hasItem = await frame.locator('.item').count().catch(() => 0);
     log(`  Frame ${frame.url().slice(0, 50)}: history=${hasHistory} items=${hasItem}`);
     if (hasItem > 0) {
-      historyFrameFound = true;
+      _historyFrameFound = true;
     }
   }
 
@@ -494,7 +638,7 @@ test('10 - Show code generation modal', async () => {
   expect(mainFrame).not.toBeNull();
 
   // Check if codegen button is enabled (it should be after sending a request in test 06)
-  const codeGenBtn = mainFrame!.locator('.codegen-btn');
+  const codeGenBtn = mainFrame!.locator('[data-testid="codegen-btn"]');
   const codeGenCount = await codeGenBtn.count();
   logCheck('Codegen button found', codeGenCount);
 
@@ -508,25 +652,24 @@ test('10 - Show code generation modal', async () => {
   }
 
   // Use clickInFrame which tries focus+Space then force:true
-  await clickInFrame(mainFrame!, '.codegen-btn');
+  await clickInFrame(mainFrame!, '[data-testid="codegen-btn"]');
 
   // Wait for modal to appear
-  const modalAppeared = await waitForElement(mainFrame!, '.codegen-modal', 5_000);
+  const modalAppeared = await waitForElement(mainFrame!, '[data-testid="codegen-modal"]', 5_000);
   logCheck('Codegen modal appeared', modalAppeared);
 
   if (!modalAppeared) {
-    // Fallback: try clicking via evaluate to dispatch a real React click
     log('  Trying fallback: evaluate click dispatch...');
     try {
       await mainFrame!.evaluate(() => {
-        const btn = document.querySelector('.codegen-btn') as HTMLButtonElement;
+        const btn = document.querySelector('[data-testid="codegen-btn"]') as HTMLButtonElement;
         if (btn) {
           btn.disabled = false;
           btn.click();
         }
       });
       await mainFrame!.waitForTimeout(1000);
-      const retryAppeared = await mainFrame!.locator('.codegen-modal').count();
+      const retryAppeared = await mainFrame!.locator('[data-testid="codegen-modal"]').count();
       logCheck('Codegen modal after evaluate fallback', retryAppeared);
     } catch (err) {
       logError('Evaluate fallback failed', err);
@@ -536,7 +679,7 @@ test('10 - Show code generation modal', async () => {
   await window.waitForTimeout(800);
 
   // Check modal content
-  const modalText = await mainFrame!.locator('.codegen-modal').textContent().catch(() => '');
+  const modalText = await mainFrame!.locator('[data-testid="codegen-modal"]').textContent().catch(() => '');
   log(`Modal text (first 500 chars): "${(modalText || '').slice(0, 500).replace(/\n/g, ' ').trim()}"`);
 
   const hasCodeContent = (modalText || '').includes('cURL') ||
@@ -546,18 +689,16 @@ test('10 - Show code generation modal', async () => {
   logCheck('Modal has code generation content', hasCodeContent);
 
   // Check language options
-  const langButtons = mainFrame!.locator('.codegen-lang');
+  const langButtons = mainFrame!.locator('[data-testid="codegen-modal"] button');
   const langCount = await langButtons.count();
   logCheck('Language buttons in codegen modal', langCount);
 
   await screenshot(window, '10-code-generation');
 
   // Close modal
-  const closeBtn = mainFrame!.locator('.codegen-modal .btn-ghost').first();
-  const closeCount = await closeBtn.count().catch(() => 0);
-  logCheck('Close button found', closeCount);
-  if (closeCount > 0) {
-    await clickInFrame(mainFrame!, '.codegen-modal .btn-ghost');
+  const closeBtn = mainFrame!.locator('[data-testid="codegen-overlay"]');
+  if (await closeBtn.count() > 0) {
+    await clickWithCursor(closeBtn, { position: { x: 10, y: 10 }, force: true });
     await window.waitForTimeout(400);
   }
 
@@ -571,22 +712,21 @@ test('11 - Show environment manager', async () => {
   expect(mainFrame).not.toBeNull();
 
   // Use clickInFrame for webview buttons (avoids iframe pointer-events issue)
-  await clickInFrame(mainFrame!, '.manage-env-btn');
+  await clickInFrame(mainFrame!, '[data-testid="manage-env-btn"]');
 
   // Wait for modal to appear
-  const modalAppeared = await waitForElement(mainFrame!, '.env-manager-modal', 5_000);
+  const modalAppeared = await waitForElement(mainFrame!, '[data-testid="env-manager-modal"]', 5_000);
   logCheck('Env manager modal appeared', modalAppeared);
 
   if (!modalAppeared) {
-    // Fallback: evaluate click
     log('  Trying fallback: evaluate click...');
     try {
       await mainFrame!.evaluate(() => {
-        const btn = document.querySelector('.manage-env-btn') as HTMLButtonElement;
+        const btn = document.querySelector('[data-testid="manage-env-btn"]') as HTMLButtonElement;
         if (btn) btn.click();
       });
       await mainFrame!.waitForTimeout(1000);
-      const retryCount = await mainFrame!.locator('.env-manager-modal').count();
+      const retryCount = await mainFrame!.locator('[data-testid="env-manager-modal"]').count();
       logCheck('Env modal after evaluate', retryCount);
     } catch (err) {
       logError('Evaluate fallback failed', err);
@@ -595,77 +735,44 @@ test('11 - Show environment manager', async () => {
 
   await window.waitForTimeout(800);
 
-  const envModalText = await mainFrame!.locator('.env-manager-modal').textContent().catch(() => '');
+  const envModalText = await mainFrame!.locator('[data-testid="env-manager-modal"]').textContent().catch(() => '');
   log(`Env modal text (first 400 chars): "${(envModalText || '').slice(0, 400).replace(/\n/g, ' ').trim()}"`);
 
   const hasEnvContent = (envModalText || '').includes('Environment') ||
                         (envModalText || '').includes('Manage');
   logCheck('Env modal has expected content', hasEnvContent);
 
-  // Click "+ New Environment" button
-  const newEnvBtn = mainFrame!.locator('.env-new-btn');
-  const newEnvCount = await newEnvBtn.count().catch(() => 0);
-  logCheck('+ New Environment button found', newEnvCount);
-
-  if (newEnvCount > 0) {
-    await clickInFrame(mainFrame!, '.env-new-btn');
-    await window.waitForTimeout(500);
-
-    // Fill environment name
-    const nameInput = mainFrame!.locator('.env-manager-modal .modal-input').first();
-    const nameCount = await nameInput.count().catch(() => 0);
-    logCheck('Environment name input found', nameCount);
-    if (nameCount > 0) {
-      await nameInput.fill('Development');
-      log('  Filled env name: Development');
-    }
-
-    // Fill variable key and value
-    const varInputs = mainFrame!.locator('.env-var-input');
-    const varCount = await varInputs.count();
-    logCheck('Variable inputs found', varCount);
-    if (varCount >= 2) {
-      await varInputs.nth(0).fill('baseUrl');
-      await varInputs.nth(1).fill('https://petstore.swagger.io/v2');
-      log('  Filled env variable: baseUrl=https://petstore.swagger.io/v2');
-    }
-  }
+  // Verify existing environment is listed (created in test 05b)
+  const hasDevEnv = (envModalText || '').includes('Development');
+  logCheck('Development environment listed', hasDevEnv);
 
   await screenshot(window, '11-environment-manager');
 
-  // Close modal — when in "New Environment" form, overlay click goes back to list, not close.
-  // Need to click overlay twice: once to dismiss form, once to close modal.
-  const overlay = mainFrame!.locator('.modal-overlay.open').first();
-  if (await overlay.count() > 0) {
-    await overlay.click({ position: { x: 10, y: 10 }, force: true });
+  // Close modal — try multiple strategies
+  // Strategy 1: click the close button if we're still in editing mode
+  const closeBtn11 = mainFrame!.locator('[data-testid="env-modal-close"]');
+  if (await closeBtn11.count() > 0) {
+    await clickInFrame(mainFrame!, '[data-testid="env-modal-close"]');
     await window.waitForTimeout(300);
-    // Check if still open (went back to list view)
-    const stillOpen = await mainFrame!.locator('.modal-overlay.open').count();
-    if (stillOpen > 0) {
-      log('  Modal still open (list view), clicking overlay again to close...');
-      await overlay.click({ position: { x: 10, y: 10 }, force: true });
-      await window.waitForTimeout(300);
-    }
-  } else {
-    // Fallback: close button
-    const closeBtn = mainFrame!.locator('.env-manager-modal .modal-close-btn').first();
-    if (await closeBtn.count() > 0) {
-      await clickInFrame(mainFrame!, '.env-manager-modal .modal-close-btn');
-      await window.waitForTimeout(300);
-      // If still in editing view, click again
-      const stillOpen = await mainFrame!.locator('.env-manager-modal').count();
-      if (stillOpen > 0) {
-        const closeBtn2 = mainFrame!.locator('.env-manager-modal .modal-close-btn').first();
-        if (await closeBtn2.count() > 0) {
-          await clickInFrame(mainFrame!, '.env-manager-modal .modal-close-btn');
-          await window.waitForTimeout(300);
-        }
-      }
-    }
+  }
+
+  // Strategy 2: click overlay to close (evaluate-based for webview)
+  const overlay11 = mainFrame!.locator('[data-testid="env-manager-overlay"]');
+  if (await overlay11.count() > 0) {
+    await clickInFrame(mainFrame!, '[data-testid="env-manager-overlay"]');
+    await window.waitForTimeout(300);
+  }
+
+  // Strategy 3: press Escape as last resort
+  const envModalStillOpen = await mainFrame!.locator('[data-testid="env-manager-modal"]').isVisible().catch(() => false);
+  if (envModalStillOpen) {
+    log('  Env modal still open, pressing Escape...');
+    await mainFrame!.locator('body').press('Escape');
+    await window.waitForTimeout(500);
   }
 
   // Verify modal is closed
-  const modalGone = (await mainFrame!.locator('.env-manager-modal').count()) === 0;
+  const modalGone = !(await mainFrame!.locator('[data-testid="env-manager-modal"]').isVisible().catch(() => false));
   logCheck('Env modal closed', modalGone);
 
   log('--- TEST 11: done ---');
@@ -677,23 +784,30 @@ test('12 - Show settings modal (proxy and mTLS)', async () => {
 
   expect(mainFrame).not.toBeNull();
 
+  // Ensure no other modal is blocking (e.g., env manager from test 11)
+  const envModalBlocking = await mainFrame!.locator('[data-testid="env-manager-modal"]').isVisible().catch(() => false);
+  if (envModalBlocking) {
+    log('  Env modal still open, closing it first...');
+    await mainFrame!.locator('body').press('Escape');
+    await window.waitForTimeout(500);
+  }
+
   // Use clickInFrame for webview buttons
-  await clickInFrame(mainFrame!, '.gear-btn');
+  await clickInFrame(mainFrame!, '[data-testid="gear-btn"]');
 
   // Wait for modal to appear — must be visible before screenshot
-  const modalAppeared = await waitForElement(mainFrame!, '.settings-modal', 5_000);
+  const modalAppeared = await waitForElement(mainFrame!, '[data-testid="settings-modal"]', 5_000);
   logCheck('Settings modal appeared', modalAppeared);
 
   if (!modalAppeared) {
-    // Fallback: evaluate click
     log('  Trying fallback: evaluate click...');
     try {
       await mainFrame!.evaluate(() => {
-        const btn = document.querySelector('.gear-btn') as HTMLButtonElement;
+        const btn = document.querySelector('[data-testid="gear-btn"]') as HTMLButtonElement;
         if (btn) btn.click();
       });
       await mainFrame!.waitForTimeout(1000);
-      const retryAppeared = await waitForElement(mainFrame!, '.settings-modal', 3_000);
+      const retryAppeared = await waitForElement(mainFrame!, '[data-testid="settings-modal"]', 3_000);
       logCheck('Settings modal after evaluate', retryAppeared);
     } catch (err) {
       logError('Evaluate fallback failed', err);
@@ -701,13 +815,13 @@ test('12 - Show settings modal (proxy and mTLS)', async () => {
   }
 
   // Re-check visibility before proceeding
-  const isModalVisible = await mainFrame!.locator('.settings-modal').isVisible().catch(() => false);
+  const isModalVisible = await mainFrame!.locator('[data-testid="settings-modal"]').isVisible().catch(() => false);
   logCheck('Settings modal is visible', isModalVisible);
   expect(isModalVisible).toBe(true);
 
   await window.waitForTimeout(500);
 
-  const modalText = await mainFrame!.locator('.settings-modal').textContent().catch(() => '');
+  const modalText = await mainFrame!.locator('[data-testid="settings-modal"]').textContent().catch(() => '');
   log(`Settings modal text (first 500 chars): "${(modalText || '').slice(0, 500).replace(/\n/g, ' ').trim()}"`);
 
   const hasSettings = (modalText || '').includes('Settings');
@@ -718,8 +832,8 @@ test('12 - Show settings modal (proxy and mTLS)', async () => {
   logCheck('Settings contains "Certificate"', hasCert);
 
   // Check for proxy inputs
-  const proxyHostInput = await mainFrame!.locator('.settings-modal input[placeholder*="proxy"]').count();
-  const proxyPortInput = await mainFrame!.locator('.settings-modal input[type="number"]').count();
+  const proxyHostInput = await mainFrame!.locator('[data-testid="settings-modal"] input[placeholder*="proxy"]').count();
+  const proxyPortInput = await mainFrame!.locator('[data-testid="settings-modal"] input[type="number"]').count();
   logCheck('Proxy host input found', proxyHostInput);
   logCheck('Proxy port input found', proxyPortInput);
 
@@ -730,11 +844,11 @@ test('12 - Show settings modal (proxy and mTLS)', async () => {
   await screenshot(window, '12-settings-proxy-mtls');
 
   // Close modal
-  const cancelBtn = mainFrame!.locator('.settings-modal .btn-ghost').first();
+  const cancelBtn = mainFrame!.locator('[data-testid="settings-overlay"]').first();
   const cancelCount = await cancelBtn.count().catch(() => 0);
   logCheck('Cancel button found', cancelCount);
   if (cancelCount > 0) {
-    await clickInFrame(mainFrame!, '.settings-modal .btn-ghost');
+    await clickInFrame(mainFrame!, '[data-testid="settings-overlay"]');
     await window.waitForTimeout(400);
   }
 
@@ -745,7 +859,7 @@ test('13 - Export collection', async () => {
   log('--- TEST 13: Export collection ---');
   const { window } = app;
 
-  const exportPath = '/Users/ashishbhasvar/Workspace/restify-vscode/export-test.json';
+  const _exportPath = '/Users/ashishbhasvar/Workspace/restify-vscode/export-test.json';
 
   const collectionsFrame = await findCollectionsFrame(window);
   logCheck('Collections frame found', collectionsFrame !== null);
@@ -763,7 +877,7 @@ test('13 - Export collection', async () => {
 
     if (exportCount > 0) {
       const btn = useAll ? exportAllBtn.first() : exportBtn.first();
-      await btn.click({ force: true });
+      await clickWithCursor(btn, { force: true });
       log('Export button clicked');
 
       await window.waitForTimeout(1000);
@@ -784,7 +898,6 @@ test('13 - Export collection', async () => {
         await window.waitForTimeout(1000);
       }
 
-      const { execSync } = require('child_process');
       try {
         const result = execSync('ls -la /Users/ashishbhasvar/Workspace/restify-vscode/export-test.json 2>/dev/null || echo NOT_FOUND');
         log(`Export file check: ${result.toString().trim()}`);
@@ -847,7 +960,7 @@ test('14 - Show bottom panel (Activity)', async () => {
     const count = await panelPart.locator(sel).count().catch(() => 0);
     log(`  Selector "${sel}": ${count} matches`);
     if (count > 0) {
-      await panelPart.locator(sel).first().click({ force: true });
+      await clickWithCursor(panelPart.locator(sel).first(), { force: true });
       log(`  Clicked Restify tab via: ${sel}`);
       clicked = true;
       await window.waitForTimeout(1500);
@@ -860,7 +973,7 @@ test('14 - Show bottom panel (Activity)', async () => {
     log('  No tab found by selector, trying text-based search...');
     const restifyEl = panelPart.locator('text=Restify').first();
     if (await restifyEl.count() > 0) {
-      await restifyEl.click({ force: true });
+      await clickWithCursor(restifyEl, { force: true });
       log('  Clicked "Restify" text element');
       clicked = true;
       await window.waitForTimeout(1500);
@@ -876,7 +989,7 @@ test('14 - Show bottom panel (Activity)', async () => {
     await window.waitForTimeout(800);
     const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Restify/i }).first();
     if (await cmdItem.count() > 0) {
-      await cmdItem.click({ force: true });
+      await clickWithCursor(cmdItem, { force: true });
       log('  Clicked Restify command');
       await window.waitForTimeout(1500);
     } else {
@@ -910,7 +1023,7 @@ test('15 - Request pane tabs overview', async () => {
 
   expect(mainFrame).not.toBeNull();
 
-  const reqTabs = mainFrame!.locator('#req-tabs .tab');
+  const reqTabs = mainFrame!.locator('#req-tabs [role="tab"]');
   const tabCount = await reqTabs.count();
   logCheck('Request tab count', tabCount);
 
@@ -920,9 +1033,9 @@ test('15 - Request pane tabs overview', async () => {
   }
 
   // 1) Headers tab — add a Content-Type header so the table is populated
-  const headersTab = mainFrame!.locator('#req-tabs .tab').filter({ hasText: /Headers/i });
+  const headersTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Headers/i });
   if (await headersTab.count() > 0) {
-    await headersTab.first().click({ force: true });
+    await clickWithCursor(headersTab.first(), { force: true });
     log('Clicked Headers tab');
     await window.waitForTimeout(500);
 
@@ -932,7 +1045,7 @@ test('15 - Request pane tabs overview', async () => {
     log(`  Add row button count in active tab: ${addBtnCount}`);
 
     if (addBtnCount > 0) {
-      await addHeaderBtn.first().click({ force: true });
+      await clickWithCursor(addHeaderBtn.first(), { force: true });
       log('Clicked "+ Add Header" button');
       await window.waitForTimeout(500);
     } else {
@@ -941,7 +1054,7 @@ test('15 - Request pane tabs overview', async () => {
       const anyCount = await anyAddBtn.count();
       log(`  Any add-row-btn count: ${anyCount}`);
       if (anyCount > 0) {
-        await anyAddBtn.first().click({ force: true });
+        await clickWithCursor(anyAddBtn.first(), { force: true });
         log('Clicked first add-row-btn');
         await window.waitForTimeout(500);
       }
@@ -962,26 +1075,26 @@ test('15 - Request pane tabs overview', async () => {
   }
 
   // 2) Body tab — switch to POST first, then select JSON body type
-  const bodyTab = mainFrame!.locator('#req-tabs .tab').filter({ hasText: /Body/i });
+  const bodyTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Body/i });
   if (await bodyTab.count() > 0) {
     // First switch method to POST so Body tab is meaningful
-    await clickInFrame(mainFrame!, '.method-trigger');
+    await clickInFrame(mainFrame!, '[data-testid="method-trigger"]');
     await mainFrame!.waitForTimeout(300);
     const postOption = mainFrame!.locator('.method-option').filter({ hasText: 'POST' });
     if (await postOption.count() > 0) {
-      await postOption.first().click({ force: true });
+      await clickWithCursor(postOption.first(), { force: true });
       log('Switched to POST');
       await window.waitForTimeout(300);
     }
 
-    await bodyTab.first().click({ force: true });
+    await clickWithCursor(bodyTab.first(), { force: true });
     log('Clicked Body tab');
     await window.waitForTimeout(300);
 
     // Select JSON body type
-    const jsonBtn = mainFrame!.locator('.body-type-btn').filter({ hasText: /JSON/i });
+    const jsonBtn = mainFrame!.locator('[data-testid="body-type-json"]').filter({ hasText: /JSON/i });
     if (await jsonBtn.count() > 0) {
-      await jsonBtn.first().click({ force: true });
+      await clickWithCursor(jsonBtn.first(), { force: true });
       log('Selected JSON body type');
       await window.waitForTimeout(300);
     }
@@ -989,7 +1102,7 @@ test('15 - Request pane tabs overview', async () => {
     // Enter some JSON body
     const bodyEditor = mainFrame!.locator('.cm-content, .CodeMirror, textarea').first();
     if (await bodyEditor.count() > 0) {
-      await bodyEditor.click({ force: true });
+      await clickWithCursor(bodyEditor, { force: true });
       await bodyEditor.fill('{"name": "Restify", "type": "API Client"}');
       log('Filled JSON body');
       await window.waitForTimeout(200);
@@ -999,16 +1112,16 @@ test('15 - Request pane tabs overview', async () => {
   }
 
   // 3) Script tab — click Insert Example to populate
-  const scriptTab = mainFrame!.locator('#req-tabs .tab').filter({ hasText: /Script/i });
+  const scriptTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Script/i });
   if (await scriptTab.count() > 0) {
-    await scriptTab.first().click({ force: true });
+    await clickWithCursor(scriptTab.first(), { force: true });
     log('Clicked Script tab');
     await window.waitForTimeout(300);
 
     // Click "Insert Example" button to populate script
     const insertExampleBtn = mainFrame!.locator('button').filter({ hasText: /Insert Example/i }).first();
     if (await insertExampleBtn.count() > 0) {
-      await insertExampleBtn.click({ force: true });
+      await clickWithCursor(insertExampleBtn, { force: true });
       log('Inserted example script');
       await window.waitForTimeout(300);
     }
@@ -1017,22 +1130,22 @@ test('15 - Request pane tabs overview', async () => {
   }
 
   // 4) Auth tab — select Bearer Token and fill a token value
-  const authTab = mainFrame!.locator('#req-tabs .tab').filter({ hasText: /Auth/i });
+  const authTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Auth/i });
   if (await authTab.count() > 0) {
-    await authTab.first().click({ force: true });
+    await clickWithCursor(authTab.first(), { force: true });
     log('Clicked Auth tab');
     await window.waitForTimeout(300);
 
     // Click the auth type dropdown to select Bearer
     const authDropdown = mainFrame!.locator('.auth-type-trigger');
     if (await authDropdown.count() > 0) {
-      await authDropdown.first().click({ force: true });
+      await clickWithCursor(authDropdown.first(), { force: true });
       log('Opened auth type dropdown');
       await window.waitForTimeout(300);
 
       const bearerOption = mainFrame!.locator('.auth-type-option').filter({ hasText: /Bearer/i });
       if (await bearerOption.count() > 0) {
-        await bearerOption.first().click({ force: true });
+        await clickWithCursor(bearerOption.first(), { force: true });
         log('Selected Bearer Token');
         await window.waitForTimeout(300);
       }
@@ -1041,7 +1154,7 @@ test('15 - Request pane tabs overview', async () => {
     // Fill the token field using fillVariableInput
     const tokenInput = mainFrame!.locator('.auth-input').first();
     if (await tokenInput.count() > 0) {
-      await tokenInput.click({ force: true });
+      await clickWithCursor(tokenInput, { force: true });
       await window.waitForTimeout(100);
       // Type directly since it's a VariableTextInput display div
       await window.keyboard.type('eyJhbGciOiJIUzI1NiIs...', { delay: 10 });
@@ -1053,9 +1166,9 @@ test('15 - Request pane tabs overview', async () => {
   }
 
   // Go back to Params tab for subsequent tests
-  const paramsTab = mainFrame!.locator('#req-tabs .tab').filter({ hasText: /Params/i });
+  const paramsTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Params/i });
   if (await paramsTab.count() > 0) {
-    await paramsTab.first().click({ force: true });
+    await clickWithCursor(paramsTab.first(), { force: true });
     log('Clicked Params tab');
   }
 
@@ -1069,7 +1182,7 @@ test('16 - Execute POST request with JSON body', async () => {
   expect(mainFrame).not.toBeNull();
 
   // Switch method to POST using clickInFrame
-  await clickInFrame(mainFrame!, '.method-trigger');
+  await clickInFrame(mainFrame!, '[data-testid="method-trigger"]');
   await mainFrame!.waitForTimeout(300);
 
   const postOption = mainFrame!.locator('.method-option').filter({ hasText: 'POST' });
@@ -1077,13 +1190,13 @@ test('16 - Execute POST request with JSON body', async () => {
   logCheck('POST option in dropdown', postCount);
 
   if (postCount > 0) {
-    await postOption.first().click({ force: true });
+    await clickWithCursor(postOption.first(), { force: true });
     log('POST selected');
   }
   await window.waitForTimeout(300);
 
   // Verify method changed
-  const methodLabel = await mainFrame!.locator('.method-trigger-label').first().textContent().catch(() => '');
+  const methodLabel = await mainFrame!.locator('[data-testid="method-trigger-label"]').first().textContent().catch(() => '');
   logCheck('Current method after selection', (methodLabel || '').trim());
 
   // Set URL to a POST endpoint using VariableTextInput helper
@@ -1091,16 +1204,16 @@ test('16 - Execute POST request with JSON body', async () => {
   log('URL set to POST endpoint');
 
   // Switch to Body tab and add JSON
-  const bodyTab = mainFrame!.locator('#req-tabs .tab').filter({ hasText: /Body/i });
-  if (await bodyTab.count() > 0) {
-    await bodyTab.first().click({ force: true });
+  const bodyTab16 = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Body/i });
+  if (await bodyTab16.count() > 0) {
+    await clickWithCursor(bodyTab16.first(), { force: true });
     log('Body tab clicked');
     await window.waitForTimeout(300);
 
     // Select JSON body type
-    const jsonBtn = mainFrame!.locator('.body-type-btn').filter({ hasText: /JSON/i });
+    const jsonBtn = mainFrame!.locator('[data-testid="body-type-json"]').filter({ hasText: /JSON/i });
     if (await jsonBtn.count() > 0) {
-      await jsonBtn.first().click({ force: true });
+      await clickWithCursor(jsonBtn.first(), { force: true });
       log('JSON body type selected');
       await window.waitForTimeout(300);
     }
@@ -1108,7 +1221,7 @@ test('16 - Execute POST request with JSON body', async () => {
     // Type JSON body in the editor (CodeMirror or textarea)
     const bodyEditor = mainFrame!.locator('.cm-content, .CodeMirror, textarea').first();
     if (await bodyEditor.count() > 0) {
-      await bodyEditor.click({ force: true });
+      await clickWithCursor(bodyEditor, { force: true });
       await bodyEditor.fill('{"id": 1, "name": "test", "status": "available"}');
       log('JSON body entered');
     }
@@ -1125,9 +1238,9 @@ test('17 - Full view: main panel with response', async () => {
   expect(mainFrame).not.toBeNull();
 
   // Click Body tab in response pane to show response body
-  const bodyTab = mainFrame!.locator('#res-tabs .tab').filter({ hasText: /Body/i });
+  const bodyTab = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Body/i });
   if (await bodyTab.count() > 0) {
-    await bodyTab.first().click({ force: true });
+    await clickWithCursor(bodyTab.first(), { force: true });
     log('Clicked Body tab in response pane');
   }
   await window.waitForTimeout(300);
@@ -1137,11 +1250,11 @@ test('17 - Full view: main panel with response', async () => {
   await dumpSidebarState(window);
 
   // Verify key elements are present
-  const hasUrlBar = await mainFrame!.locator('.url-bar').count();
-  const hasSendBtn = await mainFrame!.locator('.send-btn').count();
-  const hasCodeGenBtn = await mainFrame!.locator('.codegen-btn').count();
-  const hasSettingsBtn = await mainFrame!.locator('.gear-btn').count();
-  const hasEnvBtn = await mainFrame!.locator('.manage-env-btn').count();
+  const hasUrlBar = await mainFrame!.locator('.url-input').count();
+  const hasSendBtn = await mainFrame!.locator('[data-testid="send-btn"]').count();
+  const hasCodeGenBtn = await mainFrame!.locator('[data-testid="codegen-btn"]').count();
+  const hasSettingsBtn = await mainFrame!.locator('[data-testid="gear-btn"]').count();
+  const hasEnvBtn = await mainFrame!.locator('[data-testid="manage-env-btn"]').count();
   logCheck('URL bar present', hasUrlBar > 0);
   logCheck('Send button present', hasSendBtn > 0);
   logCheck('CodeGen button present', hasCodeGenBtn > 0);
@@ -1149,12 +1262,184 @@ test('17 - Full view: main panel with response', async () => {
   logCheck('Env manager button present', hasEnvBtn > 0);
 
   // Check response pane for content
-  const resPane = await mainFrame!.locator('.response-pane').textContent().catch(() => '');
+  const resPane = await mainFrame!.locator('#res-pane').textContent().catch(() => '');
   const hasResponse = (resPane || '').length > 100;
   logCheck('Response pane has content', hasResponse);
 
   await screenshot(window, '17-final-overview');
   log('--- TEST 17: done ---');
+});
+
+test('18 - Execute GET request for PDF and verify PDF content', async () => {
+  log('--- TEST 18: PDF response content ---');
+  const { window } = app;
+
+  expect(mainFrame).not.toBeNull();
+
+  // Focus on Headers tab before sending the request
+  const headersTab18 = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Headers/i });
+  if (await headersTab18.count() > 0) {
+    await clickWithCursor(headersTab18.first(), { force: true });
+    log('Clicked Headers tab before sending request');
+    await window.waitForTimeout(500);
+  }
+
+  // Ensure method is GET
+  const methodLabel = await mainFrame!.locator('[data-testid="method-trigger-label"]').first().textContent().catch(() => '');
+  const currentMethod = (methodLabel || '').trim();
+  if (currentMethod !== 'GET') {
+    await clickInFrame(mainFrame!, '[data-testid="method-trigger"]');
+    await mainFrame!.waitForTimeout(300);
+    const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
+    if (await getOption.count() > 0) {
+      await clickWithCursor(getOption.first(), { force: true });
+    }
+    await mainFrame!.waitForTimeout(300);
+  }
+
+  // Set URL to the PDF sample
+  await fillVariableInput(mainFrame!, '.url-input', 'https://www.princexml.com/samples/invoice-colorful/invoicesample.pdf');
+  log('URL set to PDF endpoint');
+  await mainFrame!.waitForTimeout(300);
+
+  // Send the request
+  await sendRequestViaEnter(mainFrame!);
+  log('Request sent');
+
+  // Wait for response
+  log('Waiting for response status bar...');
+  try {
+    await mainFrame!.waitForFunction(() => {
+      const el = document.querySelector('[data-testid="response-status-bar"]');
+      return el !== null;
+    }, { timeout: 30_000 });
+    log('  Response status bar appeared');
+  } catch {
+    logError('Timed out waiting for response status bar');
+  }
+  await window.waitForTimeout(2000);
+
+  // Click Body tab in response pane
+  const bodyTab18 = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Body/i });
+  if (await bodyTab18.count() > 0) {
+    await clickWithCursor(bodyTab18.first(), { force: true });
+    log('Clicked Body tab in response pane');
+    await window.waitForTimeout(300);
+  }
+
+  // Check for PDF-specific elements in the response pane
+  const resPane = mainFrame!.locator('#res-pane');
+  const resText = await resPane.textContent().catch(() => '');
+  log(`Response pane (first 300 chars): "${(resText || '').slice(0, 300).replace(/\n/g, ' ').trim()}"`);
+
+  // Verify PDF content is displayed — look for react-pdf canvas/iframe or PDF viewer indicators
+  const hasPdfCanvas = await mainFrame!.locator('.react-pdf__Page canvas, .react-pdf__Page svg').count().catch(() => 0);
+  const hasPdfDocument = await mainFrame!.locator('[class*="pdf"], [data-testid*="pdf"]').count().catch(() => 0);
+  const hasPdfText = /pdf|PDF|page|Page \d/i.test(resText || '');
+  logCheck('PDF canvas/svg rendered', hasPdfCanvas);
+  logCheck('PDF viewer container', hasPdfDocument);
+  logCheck('PDF-related text in response', hasPdfText);
+
+  // Check for download button (file responses have a download action)
+  const hasDownloadBtn = await mainFrame!.locator('button:has-text("Download"), button[title*="download"], button[title*="Download"]').count().catch(() => 0);
+  logCheck('Download button present', hasDownloadBtn);
+
+  // Check meta chips for file info
+  const hasFileType = /pdf|PDF|application\/pdf/i.test(resText || '');
+  logCheck('File type info (PDF)', hasFileType);
+
+  // Verify the response pane is not empty
+  const hasResponse = (resText || '').length > 50;
+  logCheck('Response pane has content', hasResponse);
+
+  await screenshot(window, '18-pdf-response');
+  log('--- TEST 18: done ---');
+});
+
+test('19 - Download file returns status 200', async () => {
+  log('--- TEST 19: Download file (status 200) ---');
+  const { window } = app;
+
+  expect(mainFrame).not.toBeNull();
+
+  // Focus on Headers tab before sending the request
+  const headersTab19 = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Headers/i });
+  if (await headersTab19.count() > 0) {
+    await clickWithCursor(headersTab19.first(), { force: true });
+    log('Clicked Headers tab before sending request');
+    await window.waitForTimeout(500);
+  }
+
+  // Ensure we are on GET method
+  const methodTrigger = mainFrame!.locator('.method-trigger, [data-testid="method-trigger"]');
+  if (await methodTrigger.count() > 0) {
+    const currentMethod = await methodTrigger.first().textContent().catch(() => '');
+    if (!(currentMethod || '').includes('GET')) {
+      await clickWithCursor(methodTrigger.first(), { force: true });
+      await mainFrame!.waitForTimeout(300);
+      const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
+      if (await getOption.count() > 0) {
+        await clickWithCursor(getOption.first(), { force: true });
+      }
+      await mainFrame!.waitForTimeout(300);
+    }
+  }
+
+  // Set URL to the file download endpoint
+  const downloadUrl = 'https://drive.usercontent.google.com/download?id=1zO8ekHWx9U7mrbx_0Hoxxu6od7uxJqWw&export=download&authuser=0';
+  await fillVariableInput(mainFrame!, '.url-input', downloadUrl);
+  log(`URL set to: ${downloadUrl.slice(0, 80)}...`);
+  await mainFrame!.waitForTimeout(300);
+
+  // Send the request
+  await sendRequestViaEnter(mainFrame!);
+  log('Request sent');
+
+  // Wait for response status bar
+  log('Waiting for response status bar...');
+  try {
+    await mainFrame!.waitForFunction(() => {
+      const el = document.querySelector('[data-testid="response-status-bar"]');
+      return el !== null;
+    }, { timeout: 30_000 });
+    log('  Response status bar appeared');
+  } catch {
+    logError('Timed out waiting for response status bar');
+  }
+  await window.waitForTimeout(2000);
+
+  // Click Body tab in response pane
+  const bodyTab19 = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Body/i });
+  if (await bodyTab19.count() > 0) {
+    await clickWithCursor(bodyTab19.first(), { force: true });
+    log('Clicked Body tab in response pane');
+    await window.waitForTimeout(300);
+  }
+
+  // Check response status
+  const statusBar = mainFrame!.locator('[data-testid="response-status-bar"]');
+  const statusText = await statusBar.textContent().catch(() => '');
+  log(`Response status: "${(statusText || '').trim().slice(0, 60)}"`);
+
+  // Verify status is 200
+  const has200 = /200/i.test(statusText || '');
+  logCheck('Status code is 200', has200);
+
+  // Check for download-related elements in the response pane
+  const resPane = mainFrame!.locator('#res-pane');
+  const resText = await resPane.textContent().catch(() => '');
+  log(`Response pane (first 300 chars): "${(resText || '').slice(0, 300).replace(/\n/g, ' ').trim()}"`);
+
+  // Check for file download indicators
+  const hasDownloadBtn = await mainFrame!.locator('button:has-text("Download"), button[title*="download"], button[title*="Download"]').count().catch(() => 0);
+  logCheck('Download button present', hasDownloadBtn);
+
+  // Verify response pane has content
+  const hasResponse = (resText || '').length > 10;
+  logCheck('Response pane has content', hasResponse);
+
+  await screenshot(window, '19-download-file-response');
+  log('--- TEST 19: done ---');
   log('=== ALL TESTS COMPLETE ===');
 });
 

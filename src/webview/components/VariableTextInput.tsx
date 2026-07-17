@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import styled from 'styled-components';
 import { VariableDisplay } from './VariableDisplay';
 
 interface VariableTextInputProps {
@@ -13,16 +14,66 @@ interface VariableTextInputProps {
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }
 
+const Wrapper = styled.div`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+`;
+
+const Display = styled.div`
+  flex: 1;
+  min-width: 0;
+  cursor: text;
+  padding: 7px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  color: ${({ theme }) => theme.fg};
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+
+  .placeholder {
+    color: ${({ theme }) => theme.muted};
+  }
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+    border-color: color-mix(in srgb, ${({ theme }) => theme.accent} 50%, ${({ theme }) => theme.border});
+  }
+`;
+
+const Input = styled.input`
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  color: ${({ theme }) => theme.inputFg};
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.accent};
+  outline: none;
+  line-height: 1.5;
+
+  &:focus {
+    background: ${({ theme }) => theme.inputBg};
+    color: ${({ theme }) => theme.inputFg};
+    border-color: ${({ theme }) => theme.accent};
+    box-shadow: 0 0 0 2px color-mix(in srgb, ${({ theme }) => theme.accent} 20%, transparent);
+  }
+`;
+
 export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, placeholder, onChange, className = '', type = 'text', variables, onKeyDown, onFocus, onBlur }) => {
   const [focused, setFocused] = useState(false);
-  // localValue holds the raw in-progress typed text while focused, preventing
-  // derived prop updates (e.g. displayUrl recalculation) from fighting the user's input.
   const [localValue, setLocalValue] = useState(value);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Sync localValue from props only when the input is not focused so that
-  // external state changes (e.g. loading a request from history) are reflected,
-  // but mid-edit keystrokes are never overwritten by derived values.
   useEffect(() => {
     if (!focused) {
       setLocalValue(value);
@@ -55,8 +106,6 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
     return value.length;
   };
 
-  // Compute the selection inside the highlighted display so it can be preserved
-  // when display mode swaps to the native input.
   const getDisplaySelectionRange = (el: HTMLElement | null, e?: React.MouseEvent<HTMLElement>) => {
     if (!el) return { start: 0, end: 0 };
     const sel = window.getSelection();
@@ -86,10 +135,10 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
   };
 
   return (
-    <div className={`variable-text-input-wrapper ${className}`}>
+    <Wrapper className={className}>
       {!focused ? (
-        <div
-          className="variable-text-display"
+        <Display
+          data-testid="variable-text-display"
           onMouseUp={(e) => {
             if (e.button !== 0) return;
             const el = e.currentTarget as HTMLElement;
@@ -101,9 +150,8 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
             const paste = e.clipboardData?.getData('text') ?? '';
             const el = e.currentTarget as HTMLElement;
             const { start, end } = getDisplaySelectionRange(el);
-            setLocalValue(value); // ensure local is synced
+            setLocalValue(value);
             setFocused(true);
-            // wait for input to mount and focus, then insert
             setTimeout(() => {
               const input = inputRef.current;
               if (!input) return;
@@ -118,12 +166,12 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
           title={value}
         >
           {value ? <VariableDisplay text={value} variables={variables} /> : <span className="placeholder">{placeholder}</span>}
-        </div>
+        </Display>
       ) : (
-        <input
+        <Input
           ref={inputRef}
+          data-testid="variable-text-input"
           type={type}
-          className={`variable-text-input`}
           value={localValue}
           placeholder={placeholder}
           onChange={(e) => {
@@ -135,7 +183,7 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
           onKeyDown={onKeyDown}
         />
       )}
-    </div>
+    </Wrapper>
   );
 };
 

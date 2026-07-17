@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import styled, { useTheme } from 'styled-components';
 import { EditorState, Extension, RangeSetBuilder } from '@codemirror/state';
 import { foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { html } from '@codemirror/lang-html';
@@ -21,6 +22,7 @@ import { Icon } from './FaIcon';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { defaultKeymap } from '@codemirror/commands';
 import { tags } from '@lezer/highlight';
+
 
 type PrettyLanguage = 'json' | 'xml' | 'html' | 'text';
 type JsonDisplayMode = 'formatted' | 'minified';
@@ -219,6 +221,60 @@ const responseHighlightStyle = HighlightStyle.define([
   { tag: tags.comment, class: 'cm-response-xml-comment' },
 ]);
 
+function getSyntaxColors(isDark: boolean) {
+  if (isDark) {
+    return {
+      '.cm-response-json-key':          { color: '#89b4fa', fontWeight: undefined as unknown as number },
+      '.cm-response-json-string':       { color: '#a6e3a1', fontWeight: undefined as unknown as number },
+      '.cm-response-json-number':       { color: '#fab387', fontWeight: undefined as unknown as number },
+      '.cm-response-json-boolean':      { color: '#cba6f7', fontWeight: undefined as unknown as number },
+      '.cm-response-json-null':         { color: '#f38ba8', fontWeight: undefined as unknown as number },
+      '.cm-response-xml-tag':           { color: '#89b4fa', fontWeight: undefined as unknown as number },
+      '.cm-response-xml-attr-name':     { color: '#f9e2af', fontWeight: undefined as unknown as number },
+      '.cm-response-xml-attr-value':    { color: '#a6e3a1', fontWeight: undefined as unknown as number },
+      '.cm-response-xml-comment':       { color: '#6c7086', fontStyle: 'italic' as const, fontWeight: undefined as unknown as number },
+    };
+  }
+  return {
+    '.cm-response-json-key':          { color: '#0550ae', fontWeight: 600 as const },
+    '.cm-response-json-string':       { color: '#0a6935', fontWeight: undefined as unknown as number },
+    '.cm-response-json-number':       { color: '#953800', fontWeight: undefined as unknown as number },
+    '.cm-response-json-boolean':      { color: '#8250df', fontWeight: undefined as unknown as number },
+    '.cm-response-json-null':         { color: '#cf222e', fontWeight: undefined as unknown as number },
+    '.cm-response-xml-tag':           { color: '#0550ae', fontWeight: 600 as const },
+    '.cm-response-xml-attr-name':     { color: '#953800', fontWeight: undefined as unknown as number },
+    '.cm-response-xml-attr-value':    { color: '#0a6935', fontWeight: undefined as unknown as number },
+    '.cm-response-xml-comment':       { color: '#6e7781', fontStyle: 'italic' as const, fontWeight: undefined as unknown as number },
+  };
+}
+
+const PrettyBodyViewerWrap = styled.div`
+  overflow: auto;
+  background: ${({ theme }) => theme.inputBg};
+  color: ${({ theme }) => theme.inputFg};
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.6;
+`;
+
+const ResponseViewer = styled(PrettyBodyViewerWrap)`
+  min-height: 100%;
+
+  .cm-editor {
+    min-height: 100%;
+    outline: none;
+  }
+
+  .cm-focused {
+    outline: none;
+  }
+`;
+
+const Placeholder = styled.div`
+  position: static;
+  padding: 10px 14px;
+`;
+
 export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   text,
   language,
@@ -230,6 +286,7 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const theme = useTheme();
 
   const displayText = useMemo(() => {
     if (!text) return '';
@@ -238,6 +295,12 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
     if (language === 'html') return prettyPrintHtml(text);
     return text;
   }, [jsonMode, language, text]);
+
+  const isDark = useMemo(
+    () => document.body.classList.contains('vscode-dark'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   const extensions = useMemo(() => [
     lineNumbers(),
@@ -249,7 +312,6 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
           const root = ReactDOM.createRoot(marker);
           root.render(<Icon icon={open ? faChevronDown : faChevronRight} size={13} />);
         } catch {
-          // Fallback to plain text if rendering fails
           marker.textContent = open ? '⌄' : '›';
         }
         return marker;
@@ -267,13 +329,13 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
     EditorView.lineWrapping,
     EditorView.theme({
       '&': {
-        backgroundColor: 'var(--input-bg)',
-        color: 'var(--input-fg)',
+        backgroundColor: theme.inputBg,
+        color: theme.inputFg,
         fontSize: '12px',
         height: '100%',
       },
       '.cm-scroller': {
-        fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
+        fontFamily: theme.monoFamily,
         lineHeight: '1.6',
       },
       '.cm-content': {
@@ -283,9 +345,9 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
         padding: '0 12px',
       },
       '.cm-gutters': {
-        backgroundColor: 'var(--line-number-bg)',
-        color: 'var(--line-number-fg)',
-        borderRight: '1px solid var(--border)',
+        backgroundColor: theme.lineNumberBg,
+        color: theme.lineNumberFg,
+        borderRight: `1px solid ${theme.border}`,
       },
       '.cm-foldGutter': {
         minWidth: '18px',
@@ -298,16 +360,16 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
         padding: '0 4px',
       },
       '.cm-response-fold-marker': {
-        color: 'var(--line-number-fg)',
+        color: theme.lineNumberFg,
         fontSize: '13px',
         lineHeight: '1',
         opacity: '0.8',
       },
       '.cm-foldPlaceholder': {
-        backgroundColor: 'var(--button-bg)',
-        border: '1px solid var(--border)',
+        backgroundColor: theme.accent,
+        border: `1px solid ${theme.border}`,
         borderRadius: '3px',
-        color: 'var(--button-fg)',
+        color: theme.accentFg,
         cursor: 'pointer',
         margin: '0 2px',
         padding: '0 4px',
@@ -319,19 +381,20 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
         backgroundColor: 'transparent',
       },
       '.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
-        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
       },
       '.cm-selectionBackground': {
-        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
       },
       '.cm-content ::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
       },
       '.cm-line::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent, #89b4fa) 70%, transparent)',
+        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
       },
+      ...getSyntaxColors(isDark),
     }),
-  ], [language, search]);
+  ], [language, search, theme, isDark]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -354,16 +417,16 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
 
   if (!text && placeholder) {
     return (
-      <div className={`pretty-body-viewer ${className}`} onMouseDown={onActivate}>
-        <div className="code-editor-placeholder static">{placeholder}</div>
-      </div>
+      <PrettyBodyViewerWrap className={className} onMouseDown={onActivate}>
+        <Placeholder>{placeholder}</Placeholder>
+      </PrettyBodyViewerWrap>
     );
   }
 
   return (
-    <div
+    <ResponseViewer
       ref={hostRef}
-      className={`pretty-body-viewer cm-response-viewer ${className}`}
+      className={className}
       onMouseDown={onActivate}
     />
   );

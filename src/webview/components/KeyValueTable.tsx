@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
+import styled from 'styled-components';
 import { KVItem, Environment } from '../types';
-import { Icon,faTrash } from './FaIcon';
-
+import { Icon, faTrash } from './FaIcon';
 import VariableTextInput from './VariableTextInput';
 import { getPredefinedHeaderNames, getHeaderSuggestions } from '../constants/predefinedHeaders';
 
@@ -21,6 +21,190 @@ const hasUnresolvedVariables = (
   return false;
 };
 
+const KvWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const KvRow = styled.div<{ $hasUnresolvedVars?: boolean }>`
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  min-height: 36px;
+
+  &:last-of-type {
+    border-bottom: none;
+  }
+
+  ${({ $hasUnresolvedVars, theme }) =>
+    $hasUnresolvedVars &&
+    `& ${KvInput} {
+      border-right-color: ${theme.error};
+    }`}
+`;
+
+const KvCheck = styled.div`
+  padding: 0 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+
+  input[type='checkbox'] {
+    cursor: pointer;
+    accent-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const KvInput = styled.input<{ $variant?: 'resolved-var' | 'unresolved-var' }>`
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.fg};
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  outline: none;
+  min-width: 0;
+  border-right: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  transition: background-color 0.2s, color 0.2s;
+
+  &:last-of-type {
+    border-right: none;
+  }
+
+  &:focus {
+    background: color-mix(in srgb, ${({ theme }) => theme.accent} 8%, ${({ theme }) => theme.inputBg});
+    color: ${({ theme }) => theme.fg};
+  }
+
+  &::placeholder {
+    color: ${({ theme }) => theme.muted};
+  }
+
+  ${({ $variant, theme }) =>
+    $variant === 'resolved-var' &&
+    `
+      border-right-color: ${theme.accent};
+      color: ${theme.accent};
+    `}
+
+  ${({ $variant, theme }) =>
+    $variant === 'unresolved-var' &&
+    `
+      border-right-color: ${theme.warning};
+      color: ${theme.warning};
+    `}
+`;
+
+const KvValueWrapper = styled.div`
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  position: relative;
+`;
+
+const KvDel = styled.button`
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.muted};
+  padding: 4px 8px;
+  font-size: 15px;
+  flex-shrink: 0;
+  transition: color 0.1s;
+  display: flex;
+  align-items: center;
+
+  &:hover {
+    color: ${({ theme }) => theme.error};
+  }
+`;
+
+const AddRowBtn = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.accent};
+  cursor: pointer;
+  font-size: 11px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 0.8;
+  }
+`;
+
+const AutocompleteDropdown = styled.div`
+  position: absolute;
+  z-index: 1000;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  box-shadow: 0 4px 16px ${({ theme }) => theme.shadowSm};
+  max-height: 160px;
+  overflow-y: auto;
+  min-width: 160px;
+`;
+
+const AutocompleteItem = styled.div<{ $active?: boolean }>`
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  background: ${({ $active, theme }) => ($active ? theme.hover : 'transparent')};
+`;
+
+const ValueRelativeWrapper = styled.div`
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+`;
+
+const StyledVariableTextInput = styled(VariableTextInput)<{ $hasUnresolvedVars?: boolean; $variant?: 'resolved-var' | 'unresolved-var' }>`
+  flex: 1;
+  min-width: 0;
+
+  ${({ $hasUnresolvedVars, theme }) =>
+    $hasUnresolvedVars &&
+    `
+      & > div:first-child {
+        color: ${theme.error};
+        background: color-mix(in srgb, ${theme.error} 10%, transparent);
+        border-right-color: ${theme.error};
+      }
+      & > div:first-child:focus-within {
+        background: color-mix(in srgb, ${theme.error} 15%, ${theme.inputBg});
+        color: ${theme.error};
+      }
+    `}
+
+  ${({ $variant, theme }) =>
+    $variant === 'resolved-var' &&
+    `
+      & > div:first-child {
+        border-right-color: ${theme.accent};
+        color: ${theme.accent};
+      }
+    `}
+
+  ${({ $variant, theme }) =>
+    $variant === 'unresolved-var' &&
+    `
+      & > div:first-child {
+        border-right-color: ${theme.warning};
+        color: ${theme.warning};
+      }
+    `}
+`;
+
 interface KeyValueTableProps {
   items: KVItem[];
   addLabel?: string;
@@ -31,7 +215,6 @@ interface KeyValueTableProps {
   isHeaderTable?: boolean;
 }
 
-/** Scroll the highlighted item into view inside the dropdown container. */
 function scrollItemIntoView(container: HTMLDivElement | null, activeIndex: number) {
   if (!container) return;
   const item = container.children[activeIndex] as HTMLElement | undefined;
@@ -140,7 +323,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   }, [valueActiveIndex, onUpdate]);
 
   return (
-    <div className="kv-wrap">
+    <KvWrap>
       {items.map((item, i) => {
         const hasUnresolvedVars = hasUnresolvedVariables(item.value, variables);
         const _resolvedValue = resolveVariables(item.value);
@@ -154,19 +337,24 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
           ? getHeaderSuggestions(item.key).filter((v) => v.toLowerCase().includes(valueInput.toLowerCase()))
           : [];
 
+        const valueVariant = item.value.includes('{{')
+          ? hasUnresolvedVars
+            ? 'unresolved-var' as const
+            : 'resolved-var' as const
+          : undefined;
+
         return (
-          <div key={i} className={`kv-row ${hasUnresolvedVars ? 'has-unresolved-vars' : ''}`}>
-            <div className="kv-check">
+          <KvRow key={i} $hasUnresolvedVars={hasUnresolvedVars}>
+            <KvCheck>
               <input
                 type="checkbox"
                 checked={item.enabled !== false}
                 onChange={(e) => onUpdate(i, 'enabled', e.target.checked)}
               />
-            </div>
-            <div style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex' }}>
-              <input
+            </KvCheck>
+            <ValueRelativeWrapper>
+              <KvInput
                 type="text"
-                className="kv-input"
                 placeholder="Key"
                 value={item.key}
                 onChange={(e) => {
@@ -191,35 +379,22 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                 onKeyDown={(e) => handleKeyKeyDown(e, i, keySuggestions)}
               />
               {keySuggestions.length > 0 && (
-                <div
+                <AutocompleteDropdown
                   ref={keyDropdownRef}
-                  className="autocomplete-dropdown"
                   style={{
                     position: 'absolute',
                     top: '100%',
                     left: 0,
                     right: 0,
-                    background: 'var(--input-bg)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '4px',
-                    zIndex: 1000,
                     maxHeight: '200px',
-                    overflowY: 'auto',
                     marginTop: '4px',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                   }}
                 >
                   {keySuggestions.map((name, idx) => (
-                    <div
+                    <AutocompleteItem
                       key={name}
-                      style={{
-                        padding: '8px 12px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        borderBottom: '1px solid var(--border)',
-                        color: 'var(--fg)',
-                        background: idx === keyActiveIndex ? 'var(--hover)' : 'transparent',
-                      }}
+                      $active={idx === keyActiveIndex}
                       onMouseDown={() => {
                         onUpdate(i, 'key', name);
                         setShowKeyAutocomplete(null);
@@ -230,13 +405,13 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                       onMouseLeave={() => setKeyActiveIndex(-1)}
                     >
                       {name}
-                    </div>
+                    </AutocompleteItem>
                   ))}
-                </div>
+                </AutocompleteDropdown>
               )}
-            </div>
-            <div className="kv-value-wrapper" style={{ position: 'relative' }}>
-              <VariableTextInput
+            </ValueRelativeWrapper>
+            <KvValueWrapper style={{ position: 'relative' }}>
+              <StyledVariableTextInput
                 value={item.value}
                 placeholder="Value (type {{VAR}} to use environment variables)"
                 onChange={(v) => {
@@ -255,41 +430,29 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   }
                 }}
                 onBlur={() => { setTimeout(() => { setShowValueAutocomplete(null); setValueActiveIndex(-1); }, 200); }}
-                className={`${hasUnresolvedVars ? 'has-unresolved-vars' : ''} ${item.value.includes('{{') ? (hasUnresolvedVars ? 'kv-unresolved-var' : 'kv-resolved-var') : ''}`}
+                $hasUnresolvedVars={hasUnresolvedVars}
+                $variant={valueVariant}
                 variables={variables}
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleValueKeyDown(e, i, valueSuggestions)}
               />
 
               {valueSuggestions.length > 0 && (
-                <div
+                <AutocompleteDropdown
                   ref={valueDropdownRef}
-                  className="autocomplete-dropdown"
                   style={{
                     position: 'absolute',
                     top: '100%',
                     left: 0,
                     right: 0,
-                    background: 'var(--input-bg)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '4px',
-                    zIndex: 1000,
                     maxHeight: '200px',
-                    overflowY: 'auto',
                     marginTop: '4px',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                   }}
                 >
                   {valueSuggestions.map((val, idx) => (
-                    <div
+                    <AutocompleteItem
                       key={val}
-                      style={{
-                        padding: '8px 12px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        borderBottom: '1px solid var(--border)',
-                        color: 'var(--fg)',
-                        background: idx === valueActiveIndex ? 'var(--hover)' : 'transparent',
-                      }}
+                      $active={idx === valueActiveIndex}
                       onMouseDown={() => {
                         onUpdate(i, 'value', val);
                         setShowValueAutocomplete(null);
@@ -300,21 +463,20 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                       onMouseLeave={() => setValueActiveIndex(-1)}
                     >
                       {val}
-                    </div>
+                    </AutocompleteItem>
                   ))}
-                </div>
+                </AutocompleteDropdown>
               )}
-            </div>
-            <button className="kv-del" onClick={() => onRemove(i)}>
+            </KvValueWrapper>
+            <KvDel onClick={() => onRemove(i)}>
               <Icon icon={faTrash} size={12} />
-            </button>
-          </div>
+            </KvDel>
+          </KvRow>
         );
       })}
-      <button className="add-row-btn" onClick={onAdd}>
+      <AddRowBtn onClick={onAdd}>
         {addLabel}
-      </button>
-    </div>
+      </AddRowBtn>
+    </KvWrap>
   );
 };
-

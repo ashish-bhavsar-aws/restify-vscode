@@ -1,5 +1,4 @@
 const path = require('path');
-const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = [
@@ -39,7 +38,6 @@ module.exports = [
       path: path.resolve(__dirname, 'dist/webview'),
     },
     plugins: [
-      new MiniCssExtractPlugin({ filename: 'mainPanel.css' }),
       // Copy the prebuilt pdf.worker to the webview output so the webview can load it directly
       new CopyWebpackPlugin({
         patterns: [
@@ -66,10 +64,6 @@ module.exports = [
             filename: 'pdf.worker.[hash][ext]'
           }
         },
-        {
-          test: /\.css$/,
-          use: [MiniCssExtractPlugin.loader, 'css-loader'],
-        },
       ],
     },
     resolve: { extensions: ['.tsx', '.ts', '.js'] },
@@ -85,19 +79,12 @@ module.exports = [
       filename: 'sidebar.js',
       path: path.resolve(__dirname, 'dist/webview'),
     },
-    plugins: [
-      new MiniCssExtractPlugin({ filename: 'sidebar.css' }),
-    ],
     module: {
       rules: [
         {
           test: /\.tsx?$/,
           use: 'ts-loader',
           exclude: /node_modules/,
-        },
-        {
-          test: /\.css$/,
-          use: [MiniCssExtractPlugin.loader, 'css-loader'],
         },
       ],
     },
@@ -114,19 +101,12 @@ module.exports = [
       filename: 'bottomView.js',
       path: path.resolve(__dirname, 'dist/webview'),
     },
-    plugins: [
-      new MiniCssExtractPlugin({ filename: 'bottomView.css' }),
-    ],
     module: {
       rules: [
         {
           test: /\.tsx?$/,
           use: 'ts-loader',
           exclude: /node_modules/,
-        },
-        {
-          test: /\.css$/,
-          use: [MiniCssExtractPlugin.loader, 'css-loader'],
         },
       ],
     },

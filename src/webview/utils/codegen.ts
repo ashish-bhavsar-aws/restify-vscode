@@ -136,7 +136,14 @@ function buildHeaders(req: RequestState, isMultipart: boolean): Record<string, s
 export function generateCode(lang: string, request: RequestState, environment?: Environment | null): string {
   const req = resolveRequest(request, environment);
   const method = req.method || 'GET';
-  const url = req.url || '';
+  const enabledParams = (req.queryParams || []).filter((p) => p.key && p.enabled !== false);
+  let url = req.url || '';
+  if (enabledParams.length > 0) {
+    const queryString = enabledParams
+      .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+      .join('&');
+    url += (url.includes('?') ? '&' : '?') + queryString;
+  }
   const body = req.body || '';
   const enabledFormFields = getEnabledFormFields(req);
   const isMultipart = isMultipartFormRequest(req);

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import styled, { keyframes } from 'styled-components';
 import { ResponseState, getStatusClass } from '../types';
 import { Icon } from './FaIcon';
 import { PdfViewer } from './PdfViewer';
@@ -9,8 +10,8 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
-const LARGE_RESPONSE_THRESHOLD = 500 * 1024; // 500 KB
-const FILE_PREVIEW_RENDER_THRESHOLD = 5 * 1024 * 1024; // 5 MB
+const LARGE_RESPONSE_THRESHOLD = 500 * 1024;
+const FILE_PREVIEW_RENDER_THRESHOLD = 5 * 1024 * 1024;
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -90,7 +91,6 @@ function parseCsvRows(input: string): string[][] {
   return rows;
 }
 
-// Helper: detect if response is JSON
 function isLikelyJson(body: string | undefined | null, headers?: Record<string, string | string[]>): boolean {
   if (!body) return false;
   const contentType = getHeaderValue(headers, 'content-type');
@@ -121,12 +121,1154 @@ function isLikelyHtml(body: string | undefined | null, headers?: Record<string, 
 interface ResponsePaneProps {
   response: ResponseState | null;
   loading: boolean;
-  request?: any; // Request details for logging
+  request?: any;
   onDownloadFile?: (payload: { fileName: string; mimeType: string; fileBase64: string }) => void;
   post?: (msg: any) => void;
 }
 
 type ResTab = 'body' | 'headers' | 'logs' | 'raw';
+
+/* ─── Styled Components ──────────────────────────────────── */
+
+const spin = keyframes`
+  to { transform: rotate(360deg); }
+`;
+
+const ResponsePaneWrapper = styled.div`
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+`;
+
+const ResponseEmpty = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: ${({ theme }) => theme.muted};
+  gap: 10px;
+`;
+
+const EmptyIcon = styled.div`
+  font-size: 40px;
+  opacity: 0.3;
+`;
+
+const Spinner = styled.div<{ $size?: number }>`
+  width: ${({ $size }) => $size ? `${$size}px` : '32px'};
+  height: ${({ $size }) => $size ? `${$size}px` : '32px'};
+  border: ${({ $size }) => $size ? '2px' : '3px'} solid color-mix(in srgb, ${({ theme }) => theme.accent} 20%, transparent);
+  border-top-color: ${({ theme }) => theme.accent};
+  border-radius: 50%;
+  animation: ${spin} .7s linear infinite;
+`;
+
+const HintText = styled.div`
+  font-size: 11px;
+  opacity: 0.5;
+  margin-top: 8px;
+  line-height: 1.8;
+`;
+
+const HintLine = styled.span`
+  display: block;
+`;
+
+const LoadingText = styled.div`
+  font-size: 12px;
+`;
+
+const StatusBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 14px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  flex-shrink: 0;
+`;
+
+const StatusCode = styled.span<{ $statusClass: string }>`
+  font-size: 13px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+
+  ${({ $statusClass, theme }) => {
+    if ($statusClass === 'status-2xx') return `
+      color: ${theme.success};
+      background: color-mix(in srgb, ${theme.success} 15%, transparent);
+    `;
+    if ($statusClass === 'status-3xx') return `
+      color: ${theme.warning};
+      background: color-mix(in srgb, ${theme.warning} 15%, transparent);
+    `;
+    if ($statusClass === 'status-4xx' || $statusClass === 'status-5xx') return `
+      color: ${theme.error};
+      background: color-mix(in srgb, ${theme.error} 15%, transparent);
+    `;
+    return '';
+  }}
+`;
+
+const StatusText = styled.span`
+  color: ${({ theme }) => theme.muted};
+  font-size: 12px;
+`;
+
+const MetaChip = styled.span`
+  font-size: 12px;
+  color: ${({ theme }) => theme.muted};
+  padding: 3px 10px;
+  background: ${({ theme }) => theme.surface2};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 4px;
+  white-space: nowrap;
+`;
+
+const ResponseActions = styled.div`
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+`;
+
+const CopyBtn = styled.button<{ $active?: boolean }>`
+  background: ${({ $active, theme }) => $active
+    ? `color-mix(in srgb, ${theme.accent} 15%, transparent)`
+    : theme.surface2};
+  border: 1px solid ${({ $active, theme }) => $active ? theme.accent : theme.border};
+  color: ${({ $active, theme }) => $active ? theme.accent : theme.muted};
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+  white-space: nowrap;
+
+  &:hover {
+    color: ${({ $active, theme }) => $active ? theme.accent : theme.fg};
+    background: ${({ $active, theme }) => $active
+      ? `color-mix(in srgb, ${theme.accent} 15%, transparent)`
+      : theme.hover};
+  }
+`;
+
+const TabBar = styled.div`
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  padding: 0 14px;
+  background: color-mix(in srgb, ${({ theme }) => theme.surface} 92%, transparent);
+  flex-shrink: 0;
+  gap: 2px;
+`;
+
+const TabItem = styled.div<{ $active: boolean }>`
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: ${({ $active, theme }) => $active ? theme.accent : theme.muted};
+  border-bottom: 2px solid ${({ $active, theme }) => $active ? theme.accent : 'transparent'};
+  user-select: none;
+  white-space: nowrap;
+  transition: all .15s;
+  background: ${({ $active, theme }) => $active
+    ? `color-mix(in srgb, ${theme.accent} 8%, transparent)`
+    : 'transparent'};
+
+  &:hover {
+    color: ${({ $active, theme }) => $active ? theme.accent : theme.fg};
+  }
+`;
+
+const TabBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  font-size: 9px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  margin-left: 4px;
+  font-weight: 700;
+`;
+
+const ScrollArea = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+`;
+
+const ResponseBody = styled.pre`
+  flex: 1;
+  background: ${({ theme }) => theme.inputBg};
+  color: ${({ theme }) => theme.inputFg};
+  padding: 12px 14px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 12px;
+  line-height: 1.7;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+`;
+
+const RequestLogContainer = styled.div`
+  font-size: 12px;
+  color: ${({ theme }) => theme.fg};
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const LogSection = styled.div`
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 60%, transparent);
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const LogTitle = styled.div`
+  font-size: 11px;
+  font-weight: 700;
+  color: ${({ theme }) => theme.accent};
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+/* ─── Search Bar ──────────────────────────────────────── */
+
+const SearchBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  flex-shrink: 0;
+`;
+
+const SearchInput = styled.input`
+  flex: 1;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.fg};
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+`;
+
+const SearchCount = styled.span`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  flex-shrink: 0;
+`;
+
+const SearchCloseBtn = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.muted};
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+`;
+
+/* ─── Large Response Warning ──────────────────────────── */
+
+const LargeResponseWarning = styled.div`
+  padding: 6px 12px;
+  background: color-mix(in srgb, ${({ theme }) => theme.warning} 15%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.warning} 30%, transparent);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+`;
+
+const ShowRawBtn = styled.button`
+  background: none;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  color: ${({ theme }) => theme.fg};
+  flex-shrink: 0;
+`;
+
+/* ─── Body Content Wrapper ────────────────────────────── */
+
+const BodyContentWrapper = styled.div`
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+`;
+
+const ContentPadding = styled.div`
+  padding: 8px;
+`;
+
+/* ─── Headers Table ───────────────────────────────────── */
+
+const HeadersTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+`;
+
+const HeadersRow = styled.tr`
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+`;
+
+const HeaderCell = styled.th`
+  text-align: left;
+  padding: 7px 12px;
+  color: ${({ theme }) => theme.muted};
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+`;
+
+const DataRowsTr = styled.tr`
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+`;
+
+const KeyCell = styled.td`
+  padding: 6px 12px;
+  font-family: monospace;
+  color: ${({ theme }) => theme.accent2};
+`;
+
+const ValueCell = styled.td`
+  padding: 6px 12px;
+  font-family: monospace;
+  word-break: break-all;
+`;
+
+/* ─── Tab Content ─────────────────────────────────────── */
+
+const TabContent = styled.div`
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+`;
+
+/* ─── Log Components ──────────────────────────────────── */
+
+const CollapsibleContainer = styled(LogSection)`
+  padding: 0;
+  overflow: hidden;
+`;
+
+const CollapsibleHeader = styled.div<{ $open: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  padding: 7px 10px;
+  border-bottom: ${({ $open, theme }) => $open ? `1px solid ${theme.border}` : 'none'};
+  background: color-mix(in srgb, ${({ theme }) => theme.inputBg} 40%, transparent);
+`;
+
+const ChevronIcon = styled.span<{ $open: boolean }>`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  transition: transform .15s;
+  display: inline-block;
+  transform: ${({ $open }) => $open ? 'rotate(90deg)' : 'rotate(0deg)'};
+`;
+
+const CollapsibleTitle = styled(LogTitle)`
+  margin: 0;
+  flex: 1;
+`;
+
+const CollapsibleBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  background: ${({ theme }) => theme.border};
+  border-radius: 9px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  color: ${({ theme }) => theme.muted};
+  line-height: 1;
+  font-weight: 700;
+`;
+
+const CollapsibleContent = styled.div`
+  padding: 8px 10px;
+`;
+
+/* ─── Log Entry ───────────────────────────────────────── */
+
+interface LogEntryProps {
+  label: string;
+  value: string;
+  monospace?: boolean;
+  small?: boolean;
+  highlight?: boolean;
+  indent?: boolean;
+}
+
+const LogEntryWrapper = styled.div<{ $small: boolean; $indent: boolean; $highlight: boolean }>`
+  display: flex;
+  gap: 12px;
+  padding: ${({ $small }) => $small ? '4px 0' : '8px 0'};
+  border-bottom: ${({ $small, theme }) => $small ? 'none' : `1px solid color-mix(in srgb, ${theme.border} 40%, transparent)`};
+  font-size: ${({ $small }) => $small ? 11 : 12}px;
+  margin-left: ${({ $indent }) => $indent ? '20px' : '0'};
+  color: ${({ $highlight, theme }) => $highlight ? theme.error : theme.fg};
+`;
+
+const LogLabel = styled.span`
+  min-width: 180px;
+  color: ${({ theme }) => theme.muted};
+  font-weight: 500;
+`;
+
+const LogValue = styled.span<{ $monospace: boolean; $highlight: boolean }>`
+  flex: 1;
+  font-family: ${({ $monospace, theme }) => $monospace ? theme.monoFamily : 'inherit'};
+  word-break: break-all;
+  color: ${({ $highlight, theme }) => $highlight ? theme.error : theme.inputFg};
+`;
+
+const LogEntry: React.FC<LogEntryProps> = ({
+  label, value, monospace = false, small = false, highlight = false, indent = false,
+}) => (
+  <LogEntryWrapper $small={small} $indent={indent} $highlight={highlight}>
+    <LogLabel>{label}:</LogLabel>
+    <LogValue $monospace={monospace} $highlight={highlight}>{value}</LogValue>
+  </LogEntryWrapper>
+);
+
+/* ─── Code Block (reused in logs) ─────────────────────── */
+
+const MonoBlock = styled.div`
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 11px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, ${({ theme }) => theme.inputBg} 50%, transparent);
+  white-space: pre-wrap;
+  word-break: break-all;
+`;
+
+const MonoPre = styled.pre`
+  font-size: 11px;
+  color: ${({ theme }) => theme.inputFg};
+  background: color-mix(in srgb, ${({ theme }) => theme.inputBg} 50%, transparent);
+  padding: 8px 10px;
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 150px;
+  margin: 0;
+  border: 1px solid ${({ theme }) => theme.border};
+`;
+
+/* ─── CollapsibleSection ──────────────────────────────── */
+
+interface CollapsibleSectionProps {
+  title: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  badge?: string | number;
+  accentColor?: string;
+}
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, defaultOpen = true, children, badge, accentColor }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <CollapsibleContainer data-testid="log-section">
+      <CollapsibleHeader $open={open} onClick={() => setOpen((v) => !v)}>
+        <ChevronIcon $open={open}><Icon icon={faChevronRight} size={9} /></ChevronIcon>
+        <CollapsibleTitle data-testid="log-title" style={{ color: accentColor }}>{title}</CollapsibleTitle>
+        {badge !== undefined && (
+          <CollapsibleBadge>{badge}</CollapsibleBadge>
+        )}
+      </CollapsibleHeader>
+      {open && <CollapsibleContent>{children}</CollapsibleContent>}
+    </CollapsibleContainer>
+  );
+};
+
+/* ─── Script Result Log ──────────────────────────────── */
+
+interface ScriptResultLogProps {
+  request?: any;
+}
+
+const ScriptResultLog: React.FC<ScriptResultLogProps> = ({ request }) => {
+  const [logsOpen, setLogsOpen] = useState(true);
+  const [varsOpen, setVarsOpen] = useState(true);
+
+  if (request?.scriptRunning) {
+    return (
+      <ScriptRunningBox>
+        <Spinner $size={14} />
+        Running post-response script…
+      </ScriptRunningBox>
+    );
+  }
+
+  if (!request || request.scriptLogs === undefined) return null;
+
+  const success: boolean = request.scriptSuccess !== false;
+  const logs: string[] = request.scriptLogs || [];
+  const error: string | undefined = request.scriptError;
+  const variables: Record<string, any> = request.scriptVariables || {};
+  const hasVars = Object.keys(variables).length > 0;
+
+  const subHeader = (label: string, count: number, open: boolean, toggle: () => void): React.ReactNode => (
+    <SubHeaderRow onClick={toggle}>
+      <SubHeaderChevron $open={open}>▶</SubHeaderChevron>
+      <SubHeaderLabel>{label}</SubHeaderLabel>
+      <SubHeaderCount>{count}</SubHeaderCount>
+    </SubHeaderRow>
+  );
+
+  return (
+    <ScriptSection $success={success}>
+      <ScriptHeader $success={success}>
+        <span>Post-response Script</span>
+        <ScriptBadge $success={success}>{success ? 'Executed' : 'Error'}</ScriptBadge>
+      </ScriptHeader>
+
+      {error && (
+        <ScriptErrorBlock>
+          ✗ {error}
+        </ScriptErrorBlock>
+      )}
+
+      {logs.length > 0 && (
+        <>
+          {subHeader('Logs', logs.length, logsOpen, () => setLogsOpen((v) => !v))}
+          {logsOpen && logs.map((ln, i) => (
+            <MonoBlock key={i}>{ln}</MonoBlock>
+          ))}
+        </>
+      )}
+
+      {logs.length === 0 && !error && (
+        <ScriptNoLogsBlock>
+          Script ran with no logs. Use log() to output values.
+        </ScriptNoLogsBlock>
+      )}
+
+      {hasVars && (
+        <>
+          {subHeader('Variables Extracted', Object.keys(variables).length, varsOpen, () => setVarsOpen((v) => !v))}
+          {varsOpen && Object.entries(variables).map(([k, v]) => (
+            <VarRow key={k}>
+              <VarKey>{k}</VarKey>
+              <span>{typeof v === 'string' ? v : JSON.stringify(v)}</span>
+            </VarRow>
+          ))}
+        </>
+      )}
+    </ScriptSection>
+  );
+};
+
+const ScriptRunningBox = styled.div`
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid ${({ theme }) => theme.border};
+  font-size: 12px;
+  color: ${({ theme }) => theme.muted};
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const ScriptSection = styled.div<{ $success: boolean }>`
+  margin-top: 16px;
+  border: 1px solid ${({ $success, theme }) => $success
+    ? `color-mix(in srgb, ${theme.accent} 35%, transparent)`
+    : `color-mix(in srgb, ${theme.error} 35%, transparent)`};
+  border-radius: 6px;
+  overflow: hidden;
+`;
+
+const ScriptHeader = styled.div<{ $success: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: ${({ $success, theme }) => $success
+    ? `color-mix(in srgb, ${theme.accent} 12%, transparent)`
+    : `color-mix(in srgb, ${theme.error} 12%, transparent)`};
+  font-size: 12px;
+  font-weight: 600;
+`;
+
+const ScriptBadge = styled.span<{ $success: boolean }>`
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  background: ${({ $success, theme }) => $success ? theme.accent : theme.error};
+  color: ${({ $success, theme }) => $success ? theme.accentFg : '#fff'};
+`;
+
+const ScriptErrorBlock = styled(MonoBlock)`
+  color: ${({ theme }) => theme.error};
+  border-top: 1px solid ${({ theme }) => theme.border};
+  padding: 8px 12px;
+`;
+
+const ScriptNoLogsBlock = styled(MonoBlock)`
+  color: ${({ theme }) => theme.muted};
+  border-top: 1px solid ${({ theme }) => theme.border};
+  padding: 8px 12px;
+`;
+
+const SubHeaderRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid ${({ theme }) => theme.border};
+  background: color-mix(in srgb, ${({ theme }) => theme.inputBg} 30%, transparent);
+`;
+
+const SubHeaderChevron = styled.span<{ $open: boolean }>`
+  font-size: 9px;
+  color: ${({ theme }) => theme.muted};
+  display: inline-block;
+  transform: ${({ $open }) => $open ? 'rotate(90deg)' : 'rotate(0deg)'};
+  transition: transform .15s;
+`;
+
+const SubHeaderLabel = styled.span`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  flex: 1;
+`;
+
+const SubHeaderCount = styled.span`
+  font-size: 10px;
+  background: ${({ theme }) => theme.border};
+  border-radius: 8px;
+  padding: 1px 5px;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const VarRow = styled(MonoBlock)`
+  display: flex;
+  gap: 12px;
+`;
+
+const VarKey = styled.span`
+  color: ${({ theme }) => theme.accent2};
+  min-width: 140px;
+`;
+
+/* ─── Request Log ─────────────────────────────────────── */
+
+interface RequestLogProps {
+  response: ResponseState | null;
+  request?: any;
+}
+
+const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
+  if (!response) {
+    return <NoDataText>No request data available</NoDataText>;
+  }
+
+  const hasMtls = request?.mtlsUsed || false;
+  const mtlsHostname = request?.mtlsHostname || null;
+
+  const enabledRequestHeaders = (request?.headers || []).filter((h: any) => h.enabled !== false);
+  const enabledQueryParams = (request?.queryParams || []).filter((p: any) => p.enabled !== false);
+
+  return (
+    <RequestLogContainer>
+
+      <CollapsibleSection title={<><Icon icon={faArrowUp} size={11} style={{ marginRight: 5 }} />Request</>} defaultOpen={true}>
+        <LogEntry label="Method" value={request?.method || 'N/A'} />
+        <LogEntry label="URL" value={request?.url || 'N/A'} monospace />
+        <LogEntry label="Protocol" value={request?.url?.startsWith('https') ? 'HTTPS' : 'HTTP'} />
+        <LogEntry label="SSL Verification" value={request?.rejectUnauthorized ? '✓ Enabled' : '✗ Disabled (Insecure)'} highlight={!request?.rejectUnauthorized} />
+        <LogEntry label="mTLS (Client Certificate)" value={hasMtls ? '✓ Enabled' : '✗ Not Used'} highlight={hasMtls} />
+        {hasMtls && mtlsHostname && <LogEntry label="  Certificate Hostname" value={mtlsHostname} monospace indent />}
+        <LogEntry label="Proxy" value={request?.proxyUsed ? '✓ Enabled' : '✗ Not Used'} highlight={false} />
+        {request?.proxyUsed && request?.proxyUrl ? (
+          <>
+            <LogEntry label="  Proxy URL" value={request.proxyUrl} monospace indent />
+            {request?.hasProxyAuth && <LogEntry label="  Proxy Authentication" value="✓ Configured (Basic Auth)" indent />}
+          </>
+        ) : !request?.proxyUsed && request?.proxyUrl ? (
+          <LogEntry label="  Note" value="Proxy configured but not used (hostname may be in no-proxy list)" indent highlight={true} />
+        ) : null}
+      </CollapsibleSection>
+
+      {enabledRequestHeaders.length > 0 && (
+        <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Request Headers</>} defaultOpen={false} badge={enabledRequestHeaders.length}>
+          {enabledRequestHeaders.map((h: any, idx: number) => (
+            <LogEntry key={idx} label={h.key} value={h.value} monospace small />
+          ))}
+        </CollapsibleSection>
+      )}
+
+      {enabledQueryParams.length > 0 && (
+        <CollapsibleSection title={<><Icon icon={faLink} size={11} style={{ marginRight: 5 }} />Query Parameters</>} defaultOpen={false} badge={enabledQueryParams.length}>
+          {enabledQueryParams.map((p: any, idx: number) => (
+            <LogEntry key={idx} label={p.key} value={p.value} monospace small />
+          ))}
+        </CollapsibleSection>
+      )}
+
+      {request?.body && (
+        <CollapsibleSection title={<><Icon icon={faFileCode} size={11} style={{ marginRight: 5 }} />Request Body</>} defaultOpen={false}>
+          <MonoPre>{request.body}</MonoPre>
+        </CollapsibleSection>
+      )}
+
+      {request?.networkLogs && request.networkLogs.length > 0 && (
+        <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />Network Logs</>} defaultOpen={true} badge={request.networkLogs.length}>
+          {request.networkLogs.map((ln: string, idx: number) => (
+            <LogLine key={idx}>{ln}</LogLine>
+          ))}
+        </CollapsibleSection>
+      )}
+
+      <CollapsibleSection title={<><Icon icon={faDownload} size={11} style={{ marginRight: 5 }} />Response</>} defaultOpen={true}>
+        <LogEntry label="Status Code" value={`${response.status} ${response.statusText}`} highlight={response.status >= 400} />
+        <LogEntry label="Duration" value={`${response.duration}ms`} />
+        <LogEntry label="Response Size" value={formatSize(response.size)} />
+        <LogTimestamp>{new Date().toLocaleString()}</LogTimestamp>
+      </CollapsibleSection>
+
+      <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Response Headers</>} defaultOpen={false} badge={Object.keys(response.headers).length}>
+        {Object.entries(response.headers).map(([key, val]) => (
+          <LogEntry key={key} label={key} value={String(val)} monospace small />
+        ))}
+      </CollapsibleSection>
+
+      {request?.scriptLogs && request.scriptLogs.length > 0 && (
+        <CollapsibleSection title={<><Icon icon={faCode} size={11} style={{ marginRight: 5 }} />Script Logs</>} defaultOpen={true} badge={request.scriptLogs.length}>
+          {request.scriptLogs.map((ln: string, idx: number) => (
+            <LogLine key={idx}>{ln}</LogLine>
+          ))}
+        </CollapsibleSection>
+      )}
+
+      <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />cURL Command</>} defaultOpen={false}>
+        <CurlCommandGenerator request={request} response={response} />
+      </CollapsibleSection>
+
+    </RequestLogContainer>
+  );
+};
+
+const NoDataText = styled.div`
+  color: ${({ theme }) => theme.muted};
+  font-size: 12px;
+`;
+
+const LogLine = styled.div`
+  font-family: ${({ theme }) => theme.monoFamily};
+  padding: 3px 0;
+  font-size: 11px;
+  color: ${({ theme }) => theme.inputFg};
+  word-break: break-word;
+`;
+
+const LogTimestamp = styled.div`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  padding-top: 6px;
+`;
+
+/* ─── Curl Command Generator ─────────────────────────── */
+
+interface CurlCommandGeneratorProps {
+  request?: any;
+  response: ResponseState | null;
+}
+
+const CurlCopyBtn = styled.button`
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-weight: 600;
+`;
+
+const CurlCommandGenerator: React.FC<CurlCommandGeneratorProps> = ({ request }) => {
+  if (!request) {
+    return <NoDataText>No request data available</NoDataText>;
+  }
+
+  const curlCmd = request.curlCommand || buildCurlCommand(request);
+
+  const handleCopyCurl = () => {
+    navigator.clipboard.writeText(curlCmd);
+  };
+
+  return (
+    <div>
+      <MonoPre style={{ margin: '0 0 8px 0', wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontSize: 10 }}>
+        {curlCmd}
+      </MonoPre>
+      <CurlCopyBtn onClick={handleCopyCurl}>
+        <Icon icon={faCopy} size={11} style={{ marginRight: 4 }} /> Copy cURL Command
+      </CurlCopyBtn>
+    </div>
+  );
+};
+
+function buildCurlCommand(request: any): string {
+  let curlCmd = `curl `;
+
+  if (request.rejectUnauthorized === false) {
+    curlCmd += `-k `;
+  }
+
+  curlCmd += `-X ${request.method || 'GET'} `;
+
+  if (request.proxyUsed && request.proxyUrl) {
+    curlCmd += `-x "${request.proxyUrl}" `;
+    if (request.hasProxyAuth) {
+      curlCmd += `-U "username:password" `;
+    }
+  }
+
+  const enabledHeaders = (request.headers || []).filter((h: any) => h.enabled !== false);
+  enabledHeaders.forEach((h: any) => {
+    if (h.key && h.value) {
+      curlCmd += `-H "${h.key}: ${h.value}" `;
+    }
+  });
+
+  if (request.body) {
+    const escapedBody = request.body.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+    curlCmd += `-d "${escapedBody}" `;
+  }
+
+  let fullUrl = request.url || '';
+  const enabledParams = (request.queryParams || []).filter((p: any) => p.enabled !== false);
+  if (enabledParams.length > 0) {
+    const queryString = enabledParams
+      .map((p: any) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+      .join('&');
+    fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryString;
+  }
+
+  curlCmd += `"${fullUrl}" -v`;
+  return curlCmd;
+}
+
+/* ─── Searchable Body ────────────────────────────────── */
+
+const SearchablePre = styled.pre`
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: ${({ theme }) => theme.fg};
+`;
+
+const SearchMatch = styled.mark`
+  background: color-mix(in srgb, ${({ theme }) => theme.accent} 50%, transparent);
+  color: ${({ theme }) => theme.fg};
+  border-radius: 2px;
+`;
+
+const SearchableBody: React.FC<{ text: string; search: string }> = ({ text, search }) => {
+  const parts = React.useMemo(() => {
+    if (!search) return [{ text, match: false }];
+    try {
+      return text.split(new RegExp(`(${escapeRegex(search)})`, 'gi')).map((part, i) => ({ text: part, match: i % 2 === 1 }));
+    } catch { return [{ text, match: false }]; }
+  }, [text, search]);
+  return (
+    <SearchablePre>
+      {parts.map((p, i) => p.match
+        ? <SearchMatch key={i}>{p.text}</SearchMatch>
+        : <React.Fragment key={i}>{p.text}</React.Fragment>)}
+    </SearchablePre>
+  );
+};
+
+/* ─── File Preview ───────────────────────────────────── */
+
+const FilePreviewInfo = styled.div`
+  padding: 12px;
+  font-size: 12px;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const CsvPreviewContainer = styled.div`
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+`;
+
+const CsvPreviewLabel = styled.div`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const CsvTableWrapper = styled.div`
+  overflow: auto;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 6px;
+`;
+
+const CsvTable = styled.table`
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+`;
+
+const CsvHeaderRow = styled.tr`
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: color-mix(in srgb, ${({ theme }) => theme.inputBg} 65%, transparent);
+`;
+
+const CsvHeaderCell = styled.th`
+  text-align: left;
+  padding: 7px 10px;
+  white-space: nowrap;
+`;
+
+const CsvDataRow = styled.tr`
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 35%, transparent);
+`;
+
+const CsvDataCell = styled.td`
+  padding: 6px 10px;
+  white-space: nowrap;
+`;
+
+const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (msg: any) => void }> = ({ response, search, post }) => {
+  const previewType = response.filePreviewType || 'none';
+  const fileName = response.fileName || 'response.bin';
+
+  const decodedText = React.useMemo(() => {
+    if (!response.fileBase64) return '';
+    if (previewType !== 'text' && previewType !== 'csv') return '';
+    return decodeBase64ToText(response.fileBase64);
+  }, [response.fileBase64, previewType]);
+
+  const [excelData, setExcelData] = React.useState<{ error: string; rows: string[][]; sheetName: string } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let workbook: any = null;
+    if (previewType !== 'excel' || !response.fileBase64) {
+      setExcelData(null);
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        const binary = Uint8Array.from(atob(response.fileBase64!), (c) => c.charCodeAt(0));
+        const mod = await import('exceljs');
+        const ExcelJSLib = (mod && (mod as any).default) ? (mod as any).default : mod;
+        workbook = new ExcelJSLib.Workbook();
+        await workbook.xlsx.load(binary.buffer as any);
+        const ws = workbook.worksheets[0];
+        if (!ws) {
+          if (!cancelled) setExcelData({ error: 'No worksheet found in file', rows: [], sheetName: '' });
+          return;
+        }
+        const rows: string[][] = [];
+        ws.eachRow((row: any) => {
+          const vals = (row.values as any[]).slice(1).map((v) => (v == null ? '' : String(v)));
+          rows.push(vals);
+        });
+        if (!cancelled) setExcelData({ error: '', rows, sheetName: ws.name || '' });
+      } catch {
+        if (!cancelled) setExcelData({ error: 'Unable to parse Excel file for preview', rows: [], sheetName: '' });
+      } finally {
+        try { workbook = null; } catch { /* ignore */ }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { setExcelData(null); } catch { /* ignore */ }
+      try { workbook = null; } catch { /* ignore */ }
+    };
+  }, [previewType, response.fileBase64]);
+
+  if (response.size > FILE_PREVIEW_RENDER_THRESHOLD) {
+    return (
+      <FilePreviewInfo>
+        Preview skipped for large file ({formatSize(response.size)}). Preview limit is 5 MB. Use Download to save {fileName}.
+      </FilePreviewInfo>
+    );
+  }
+
+  if (previewType === 'pdf' && response.fileBase64) {
+    return <PdfViewer fileBase64={response.fileBase64} fileName={fileName} post={post} />;
+  }
+
+  if ((previewType === 'text' || previewType === 'csv') && decodedText) {
+    if (previewType === 'csv') {
+      const rows = parseCsvRows(decodedText);
+      if (rows.length > 0) {
+        const headers = rows[0];
+        const dataRows = rows.slice(1);
+        const filteredRows = search
+          ? dataRows.filter((r) => r.join(' ').toLowerCase().includes(search.toLowerCase()))
+          : dataRows;
+        const cappedRows = filteredRows.slice(0, 300);
+        return (
+          <CsvPreviewContainer>
+            <CsvPreviewLabel>
+              CSV Preview: {filteredRows.length} rows {filteredRows.length > cappedRows.length ? `(showing first ${cappedRows.length})` : ''} {search && `(filtered)`}
+            </CsvPreviewLabel>
+            <CsvTableWrapper>
+              <CsvTable role="grid" aria-label="CSV data (read-only)">
+                <thead>
+                  <CsvHeaderRow>
+                    {headers.map((h, idx) => (
+                      <CsvHeaderCell key={`${h}-${idx}`}>
+                        {h || `Column ${idx + 1}`}
+                      </CsvHeaderCell>
+                    ))}
+                  </CsvHeaderRow>
+                </thead>
+                <tbody>
+                  {cappedRows.map((r, rIdx) => (
+                    <CsvDataRow key={rIdx}>
+                      {headers.map((_, cIdx) => (
+                        <CsvDataCell key={`${rIdx}-${cIdx}`}>
+                          {r[cIdx] || ''}
+                        </CsvDataCell>
+                      ))}
+                    </CsvDataRow>
+                  ))}
+                </tbody>
+              </CsvTable>
+            </CsvTableWrapper>
+          </CsvPreviewContainer>
+        );
+      }
+    }
+
+    if (search) return <SearchableBody text={decodedText} search={search} />;
+    return (
+      <SearchablePre role="document" aria-label="File preview (read-only)">
+        {decodedText}
+      </SearchablePre>
+    );
+  }
+
+  if (previewType === 'excel') {
+    if (!excelData) {
+      return (
+        <FilePreviewInfo>
+          Excel file is empty. Use Download to open {fileName}.
+        </FilePreviewInfo>
+      );
+    }
+
+    if (excelData.error) {
+      return (
+        <FilePreviewInfo>
+          {excelData.error}. Use Download to open {fileName} in your spreadsheet app.
+        </FilePreviewInfo>
+      );
+    }
+
+    if (!excelData.rows.length) {
+      return (
+        <FilePreviewInfo>
+          Excel file is empty. Use Download to open {fileName}.
+        </FilePreviewInfo>
+      );
+    }
+
+    const headers = excelData.rows[0] || [];
+    const dataRows = excelData.rows.slice(1);
+    const filteredRows = search
+      ? dataRows.filter((r) => r.join(' ').toLowerCase().includes(search.toLowerCase()))
+      : dataRows;
+    const cappedRows = filteredRows.slice(0, 300);
+
+    return (
+      <CsvPreviewContainer>
+        <CsvPreviewLabel>
+          Excel Preview ({excelData.sheetName}): {filteredRows.length} rows {filteredRows.length > cappedRows.length ? `(showing first ${cappedRows.length})` : ''} {search && `(filtered)`}
+        </CsvPreviewLabel>
+        <CsvTableWrapper>
+          <CsvTable role="grid" aria-label="Excel data (read-only)">
+            <thead>
+              <CsvHeaderRow>
+                {headers.map((h, idx) => (
+                  <CsvHeaderCell key={`${h}-${idx}`}>
+                    {h || `Column ${idx + 1}`}
+                  </CsvHeaderCell>
+                ))}
+              </CsvHeaderRow>
+            </thead>
+            <tbody>
+              {cappedRows.map((r, rIdx) => (
+                <CsvDataRow key={rIdx}>
+                  {headers.map((_, cIdx) => (
+                    <CsvDataCell key={`${rIdx}-${cIdx}`}>
+                      {r[cIdx] || ''}
+                    </CsvDataCell>
+                  ))}
+                </CsvDataRow>
+              ))}
+            </tbody>
+          </CsvTable>
+        </CsvTableWrapper>
+      </CsvPreviewContainer>
+    );
+  }
+
+  return (
+    <FilePreviewInfo>
+      Binary file response detected ({fileName}). Use Download to save and open it locally.
+    </FilePreviewInfo>
+  );
+};
+
+/* ─── Main Component ──────────────────────────────────── */
 
 export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, onDownloadFile, post }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
@@ -138,7 +1280,6 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
   const [downloaded, setDownloaded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Local alias for the post function (ensures a named variable in this scope)
   const send = post;
 
   useEffect(() => { if (showSearch) searchRef.current?.focus(); }, [showSearch]);
@@ -150,7 +1291,6 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     return decodeBase64ToText(response.fileBase64);
   }, [response]);
 
-  // Hide search control for PDF previews (we render PDF visually instead)
   const hideSearchButton = !!response?.isFileResponse && (response.filePreviewType === 'pdf') && !!response.fileBase64;
   useEffect(() => {
     if (hideSearchButton) {
@@ -158,6 +1298,13 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
       setBodySearch('');
     }
   }, [hideSearchButton]);
+
+  const hideBodyTab = !!response?.isFileResponse && (response.filePreviewType === 'pdf' || response.filePreviewType === 'excel') && !!response.fileBase64;
+  useEffect(() => {
+    if (hideBodyTab && activeTab === 'body') {
+      setActiveTab('headers');
+    }
+  }, [hideBodyTab]);
 
   const isLargeFilePreviewBlocked = !!response?.isFileResponse && response.size > FILE_PREVIEW_RENDER_THRESHOLD;
   const isPdfPreview = !!response?.isFileResponse && response.filePreviewType === 'pdf' && !!response.fileBase64;
@@ -221,186 +1368,186 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
   /* loading state */
   if (loading) {
     return (
-      <div className="response-pane" id="res-pane">
-        <div className="response-empty">
-          <div className="spinner" />
-          <div style={{ fontSize: 12 }}>Sending request…</div>
-        </div>
-      </div>
+      <ResponsePaneWrapper id="res-pane">
+        <ResponseEmpty>
+          <Spinner />
+          <LoadingText>Sending request…</LoadingText>
+        </ResponseEmpty>
+      </ResponsePaneWrapper>
     );
   }
 
-    /* empty state */
+  /* empty state */
   if (!response) {
     return (
-      <div className="response-pane" id="res-pane">
-        <div className="response-empty">
-          <div className="icon"><Icon icon={faPaperPlane} size={28} style={{ opacity: 0.5 }} /></div>
+      <ResponsePaneWrapper id="res-pane">
+        <ResponseEmpty>
+          <EmptyIcon><Icon icon={faPaperPlane} size={28} style={{ opacity: 0.5 }} /></EmptyIcon>
           <div>Send a request to see the response</div>
-          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 8, lineHeight: 1.8 }}>
-            <span style={{ display: 'block' }}>⏎ Enter — send request</span>
-            <span style={{ display: 'block' }}>Ctrl+S — save request</span>
-            <span style={{ display: 'block' }}>Ctrl+Enter — send request</span>
-          </div>
-        </div>
-      </div>
+          <HintText>
+            <HintLine>⏎ Enter — send request</HintLine>
+            <HintLine>Ctrl+S — save request</HintLine>
+            <HintLine>Ctrl+Enter — send request</HintLine>
+          </HintText>
+        </ResponseEmpty>
+      </ResponsePaneWrapper>
     );
   }
 
   const statusClass = getStatusClass(response.status);
 
   return (
-    <div className="response-pane" id="res-pane">
+    <ResponsePaneWrapper id="res-pane">
       {/* Status bar */}
-      <div className="response-status-bar">
-        <span className={`status-code ${statusClass}`}>
+      <StatusBar data-testid="response-status-bar">
+        <StatusCode data-testid="status-code" $statusClass={statusClass}>
           {response.status || 'ERR'}
-        </span>
-        <span className="status-text">{response.statusText}</span>
-        <span className="meta-chip">{response.duration} ms</span>
-        <span className="meta-chip">{formatSize(response.size)}</span>
+        </StatusCode>
+        <StatusText>{response.statusText}</StatusText>
+        <MetaChip>{response.duration} ms</MetaChip>
+        <MetaChip>{formatSize(response.size)}</MetaChip>
         {response.isFileResponse && response.fileDetectionSource === 'filename' && (
-          <span className="meta-chip" title="File type inferred from filename when response headers were generic">
+          <MetaChip title="File type inferred from filename when response headers were generic">
             Detected from filename
-          </span>
+          </MetaChip>
         )}
-        <div className="response-actions">
+        <ResponseActions>
           {request && (
-            <button className="copy-btn" onClick={handleCopyCurlStatus} title="Copy as cURL command">
+            <CopyBtn onClick={handleCopyCurlStatus} title="Copy as cURL command">
               <Icon icon={faTerminal} size={12} style={{ marginRight: 4 }} />
               {copiedCurl ? 'cURL ✓' : 'cURL'}
-            </button>
+            </CopyBtn>
           )}
           {response.body && !isLargeFilePreviewBlocked && (
-            <button className="copy-btn" onClick={handleCopy}>
+            <CopyBtn onClick={handleCopy}>
               <Icon icon={faCopy} size={12} style={{ marginRight: 4 }} />
               {copied ? 'Copied ✓' : 'Copy'}
-            </button>
+            </CopyBtn>
           )}
           {!isLargeFilePreviewBlocked && !hideSearchButton && (response.body || decodedFileText || response.isFileResponse) && (
-            <button className="copy-btn" title="Search in preview" onClick={() => setShowSearch(s => !s)}>
+            <CopyBtn title="Search in preview" onClick={() => setShowSearch(s => !s)}>
               <Icon icon={faMagnifyingGlass} size={12} />
-            </button>
+            </CopyBtn>
           )}
           {response.isFileResponse && response.fileBase64 && (
-            <button className={`copy-btn ${downloaded ? 'active' : ''}`} onClick={handleDownloadFile} title={response.fileName || 'Download file'}>
+            <CopyBtn $active={downloaded} onClick={handleDownloadFile} title={response.fileName || 'Download file'}>
               <Icon icon={faDownload} size={12} style={{ marginRight: 4 }} />
               {downloaded ? 'Downloaded ✓' : 'Download'}
-            </button>
+            </CopyBtn>
           )}
-        </div>
-      </div>
+        </ResponseActions>
+      </StatusBar>
 
       {/* Tab bar */}
-      <div className="tab-bar" id="res-tabs">
+      <TabBar id="res-tabs">
         {(['body', 'headers', 'logs', 'raw'] as ResTab[]).map((tab) => (
-          <div
+          <TabItem
             key={tab}
-            className={`tab ${activeTab === tab ? 'active' : ''}`}
+            $active={activeTab === tab}
             onClick={() => setActiveTab(tab)}
+            role="tab"
+            data-testid={`res-tab-${tab}`}
           >
             {tab === 'logs' ? <><Icon icon={faClipboardList} size={12} style={{ marginRight: 5 }} />Logs</> : tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'headers' && (
-              <span className="tab-badge">{headerRows.length}</span>
+              <TabBadge>{headerRows.length}</TabBadge>
             )}
             {tab === 'logs' && ((request?.networkLogs?.length || 0) > 0 || (request?.scriptLogs?.length || 0) > 0) && (
-              <span className="tab-badge" style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: '#000' }}>
+              <TabBadge style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: 'var(--accent-fg, #fff)' }}>
                 {request.scriptSuccess === false ? '✗' : ((request?.networkLogs?.length || 0) + (request?.scriptLogs?.length || 0))}
-              </span>
+              </TabBadge>
             )}
-          </div>
+          </TabItem>
         ))}
-      </div>
+      </TabBar>
 
-      {/* Body tab — pretty JSON / XML when appropriate, otherwise raw text */}
+      {/* Body tab */}
       {activeTab === 'body' && (
-        <div className="tab-content active" style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <BodyContentWrapper>
           {/* Search bar */}
           {showSearch && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
-              <input ref={searchRef} type="text" placeholder="Search in response..." value={bodySearch}
+            <SearchBar>
+              <SearchInput ref={searchRef} type="text" placeholder="Search in response..." value={bodySearch}
                 onChange={e => setBodySearch(e.target.value)}
                 onKeyDown={e => e.key === 'Escape' && (setShowSearch(false), setBodySearch(''))}
-                style={{ flex: 1, background: 'var(--input-bg)', border: '1px solid var(--accent)', color: 'var(--fg)', padding: '3px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
+              />
               {bodySearch && (
-                <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>
+                <SearchCount>
                   {(() => { try { return (searchableText.match(new RegExp(escapeRegex(bodySearch), 'gi')) || []).length; } catch { return 0; } })()} matches
-                </span>
+                </SearchCount>
               )}
-              <button onClick={() => { setShowSearch(false); setBodySearch(''); }}
-                style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}><Icon icon={faXmark} size={13} /></button>
-            </div>
+              <SearchCloseBtn onClick={() => { setShowSearch(false); setBodySearch(''); }}>
+                <Icon icon={faXmark} size={13} />
+              </SearchCloseBtn>
+            </SearchBar>
           )}
           {/* Large response warning */}
           {response.size > LARGE_RESPONSE_THRESHOLD && !showRawForLarge && (
-            <div style={{ padding: '6px 12px', background: 'color-mix(in srgb, var(--warning, #f9e2af) 15%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--warning, #f9e2af) 30%, transparent)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <LargeResponseWarning>
               <span>⚠️ Large response ({formatSize(response.size)}) — syntax highlighting may be slow.</span>
-              <button onClick={() => { setShowRawForLarge(true); setActiveTab('raw'); }}
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: 'var(--fg)', flexShrink: 0 }}>Show Raw</button>
-            </div>
+              <ShowRawBtn onClick={() => { setShowRawForLarge(true); setActiveTab('raw'); }}>Show Raw</ShowRawBtn>
+            </LargeResponseWarning>
           )}
           {/* Body content */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             {response.isFileResponse && response.fileBase64 ? (
               <FilePreview response={response} search={bodySearch} post={send} />
             ) : isLikelyJson(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="json" search={bodySearch} /></div>
+              <ContentPadding><PrettyBodyViewer text={response.body} language="json" search={bodySearch} /></ContentPadding>
             ) : isLikelyHtml(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></div>
+              <ContentPadding><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></ContentPadding>
             ) : isLikelyXml(response.body, response.headers) ? (
-              <div style={{ padding: 8 }}><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></div>
+              <ContentPadding><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></ContentPadding>
             ) : (
-              <div style={{ padding: 8 }}><PrettyBodyViewer text={searchableText} language="text" search={bodySearch} /></div>
+              <ContentPadding><PrettyBodyViewer text={searchableText} language="text" search={bodySearch} /></ContentPadding>
             )}
           </div>
-        </div>
+        </BodyContentWrapper>
       )}
 
       {/* Headers tab */}
       {activeTab === 'headers' && (
-        <div className="tab-content active" style={{ flex: 1, overflow: 'hidden' }}>
-          <div className="scroll-area" style={{ flex: 1 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <TabContent>
+          <ScrollArea>
+            <HeadersTable>
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '7px 12px', color: 'var(--muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.5px' }}>Header</th>
-                  <th style={{ textAlign: 'left', padding: '7px 12px', color: 'var(--muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.5px' }}>Value</th>
-                </tr>
+                <HeadersRow>
+                  <HeaderCell>Header</HeaderCell>
+                  <HeaderCell>Value</HeaderCell>
+                </HeadersRow>
               </thead>
               <tbody>
                 {headerRows.map(({ key, value }, idx) => (
-                  <tr key={`${key}-${idx}`} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 40%, transparent)' }}>
-                    <td style={{ padding: '6px 12px', fontFamily: 'monospace', color: 'var(--accent-2)' }}>{key}</td>
-                    <td style={{ padding: '6px 12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{value}</td>
-                  </tr>
+                  <DataRowsTr key={`${key}-${idx}`}>
+                    <KeyCell>{key}</KeyCell>
+                    <ValueCell>{value}</ValueCell>
+                  </DataRowsTr>
                 ))}
               </tbody>
-            </table>
-          </div>
-        </div>
+            </HeadersTable>
+          </ScrollArea>
+        </TabContent>
       )}
 
       {/* Logs tab */}
       {activeTab === 'logs' && (
-        <div className="tab-content active" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div className="scroll-area" style={{ flex: 1 }}>
+        <TabContent>
+          <ScrollArea>
             <div style={{ padding: '12px' }}>
               <RequestLog response={response} request={request} />
               <ScriptResultLog request={request} />
             </div>
-          </div>
-        </div>
+          </ScrollArea>
+        </TabContent>
       )}
 
       {/* Raw tab */}
       {activeTab === 'raw' && (
-        <div className="tab-content active" style={{ flex: 1, overflow: 'hidden' }}>
-          <pre className="response-body">{response.body}</pre>
-        </div>
+        <TabContent>
+          <ResponseBody>{response.body}</ResponseBody>
+        </TabContent>
       )}
-
-      {/* script-result removed */}
-    </div>
+    </ResponsePaneWrapper>
   );
 };
 
@@ -409,604 +1556,3 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-/* ─── Searchable Body ────────────────────────────── */
-const SearchableBody: React.FC<{ text: string; search: string }> = ({ text, search }) => {
-  const parts = React.useMemo(() => {
-    if (!search) return [{ text, match: false }];
-    try {
-      return text.split(new RegExp(`(${escapeRegex(search)})`, 'gi')).map((part, i) => ({ text: part, match: i % 2 === 1 }));
-    } catch { return [{ text, match: false }]; }
-  }, [text, search]);
-  return (
-    <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }}>
-      {parts.map((p, i) => p.match
-        ? <mark key={i} style={{ background: 'color-mix(in srgb, var(--accent, #89b4fa) 50%, transparent)', color: 'var(--fg)', borderRadius: 2 }}>{p.text}</mark>
-        : <React.Fragment key={i}>{p.text}</React.Fragment>)}
-    </pre>
-  );
-};
-
-const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (msg: any) => void }> = ({ response, search, post }) => {
-  const previewType = response.filePreviewType || 'none';
-  const fileName = response.fileName || 'response.bin';
-
-  const decodedText = React.useMemo(() => {
-    if (!response.fileBase64) return '';
-    if (previewType !== 'text' && previewType !== 'csv') return '';
-    return decodeBase64ToText(response.fileBase64);
-  }, [response.fileBase64, previewType]);
-
-  const [excelData, setExcelData] = React.useState<{ error: string; rows: string[][]; sheetName: string } | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    let workbook: any = null;
-    if (previewType !== 'excel' || !response.fileBase64) {
-      setExcelData(null);
-      return undefined;
-    }
-
-    (async () => {
-      try {
-        const binary = Uint8Array.from(atob(response.fileBase64!), (c) => c.charCodeAt(0));
-        // Lazy-load exceljs to avoid bundling it into the mainPanel chunk
-        const mod = await import('exceljs');
-        const ExcelJSLib = (mod && (mod as any).default) ? (mod as any).default : mod;
-        workbook = new ExcelJSLib.Workbook();
-        await workbook.xlsx.load(binary.buffer as any);
-        const ws = workbook.worksheets[0];
-        if (!ws) {
-          if (!cancelled) setExcelData({ error: 'No worksheet found in file', rows: [], sheetName: '' });
-          return;
-        }
-        const rows: string[][] = [];
-        ws.eachRow((row: any) => {
-          const vals = (row.values as any[]).slice(1).map((v) => (v == null ? '' : String(v)));
-          rows.push(vals);
-        });
-        if (!cancelled) setExcelData({ error: '', rows, sheetName: ws.name || '' });
-      } catch {
-        if (!cancelled) setExcelData({ error: 'Unable to parse Excel file for preview', rows: [], sheetName: '' });
-      } finally {
-        // Release reference to workbook so it can be GC'd
-        try { workbook = null; } catch { /* ignore */ }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      // Clear parsed data and drop references to free memory
-      try { setExcelData(null); } catch { /* ignore */ }
-      try { workbook = null; } catch { /* ignore */ }
-    };
-  }, [previewType, response.fileBase64]);
-
-  if (response.size > FILE_PREVIEW_RENDER_THRESHOLD) {
-    return (
-      <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-        Preview skipped for large file ({formatSize(response.size)}). Preview limit is 5 MB. Use Download to save {fileName}.
-      </div>
-    );
-  }
-
-  if (previewType === 'pdf' && response.fileBase64) {
-    return <PdfViewer fileBase64={response.fileBase64} fileName={fileName} post={post} />;
-  }
-
-  if ((previewType === 'text' || previewType === 'csv') && decodedText) {
-    if (previewType === 'csv') {
-      const rows = parseCsvRows(decodedText);
-      if (rows.length > 0) {
-        const headers = rows[0];
-        const dataRows = rows.slice(1);
-        const filteredRows = search
-          ? dataRows.filter((r) => r.join(' ').toLowerCase().includes(search.toLowerCase()))
-          : dataRows;
-        const cappedRows = filteredRows.slice(0, 300);
-        return (
-          <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-              CSV Preview: {filteredRows.length} rows {filteredRows.length > cappedRows.length ? `(showing first ${cappedRows.length})` : ''} {search && `(filtered)`}
-            </div>
-            <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
-              <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 }} role="grid" aria-label="CSV data (read-only)">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'color-mix(in srgb, var(--input-bg) 65%, transparent)' }}>
-                    {headers.map((h, idx) => (
-                      <th key={`${h}-${idx}`} style={{ textAlign: 'left', padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                        {h || `Column ${idx + 1}`}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {cappedRows.map((r, rIdx) => (
-                    <tr key={rIdx} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 35%, transparent)' }}>
-                      {headers.map((_, cIdx) => (
-                        <td key={`${rIdx}-${cIdx}`} style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
-                          {r[cIdx] || ''}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      }
-    }
-
-    if (search) return <SearchableBody text={decodedText} search={search} />;
-    return (
-      <pre style={{ margin: 0, padding: '12px', fontSize: 12, fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace", whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fg)' }} role="document" aria-label="File preview (read-only)">
-        {decodedText}
-      </pre>
-    );
-  }
-
-  if (previewType === 'excel') {
-    if (!excelData) {
-      return (
-        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-          Excel file is empty. Use Download to open {fileName}.
-        </div>
-      );
-    }
-
-    if (excelData.error) {
-      return (
-        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-          {excelData.error}. Use Download to open {fileName} in your spreadsheet app.
-        </div>
-      );
-    }
-
-    if (!excelData.rows.length) {
-      return (
-        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-          Excel file is empty. Use Download to open {fileName}.
-        </div>
-      );
-    }
-
-    const headers = excelData.rows[0] || [];
-    const dataRows = excelData.rows.slice(1);
-    const filteredRows = search
-      ? dataRows.filter((r) => r.join(' ').toLowerCase().includes(search.toLowerCase()))
-      : dataRows;
-    const cappedRows = filteredRows.slice(0, 300);
-
-    return (
-      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
-        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-          Excel Preview ({excelData.sheetName}): {filteredRows.length} rows {filteredRows.length > cappedRows.length ? `(showing first ${cappedRows.length})` : ''} {search && `(filtered)`}
-        </div>
-        <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
-          <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 }} role="grid" aria-label="Excel data (read-only)">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'color-mix(in srgb, var(--input-bg) 65%, transparent)' }}>
-                {headers.map((h, idx) => (
-                  <th key={`${h}-${idx}`} style={{ textAlign: 'left', padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                    {h || `Column ${idx + 1}`}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {cappedRows.map((r, rIdx) => (
-                <tr key={rIdx} style={{ borderBottom: '1px solid color-mix(in srgb, var(--border) 35%, transparent)' }}>
-                  {headers.map((_, cIdx) => (
-                    <td key={`${rIdx}-${cIdx}`} style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
-                      {r[cIdx] || ''}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: 12, fontSize: 12, color: 'var(--muted)' }}>
-      Binary file response detected ({fileName}). Use Download to save and open it locally.
-    </div>
-  );
-};
-
-
-/* ─── Collapsible Section ───────────────────────────── */
-interface CollapsibleSectionProps {
-  title: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-  badge?: string | number;
-  accentColor?: string;
-}
-
-const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, defaultOpen = true, children, badge, accentColor }) => {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="log-section" style={{ padding: 0, overflow: 'hidden' }}>
-      <div
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          cursor: 'pointer', userSelect: 'none',
-          padding: '7px 10px',
-          borderBottom: open ? '1px solid var(--border)' : 'none',
-          background: 'color-mix(in srgb, var(--input-bg) 40%, transparent)',
-        }}
-      >
-        <span style={{ fontSize: 10, color: 'var(--muted)', transition: 'transform .15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}><Icon icon={faChevronRight} size={9} /></span>
-        <span className="log-title" style={{ margin: 0, flex: 1, color: accentColor }}>{title}</span>
-        {badge !== undefined && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, background: 'var(--border)', borderRadius: 9, minWidth: 18, height: 18, padding: '0 5px', color: 'var(--muted)', lineHeight: 1, fontWeight: 700 }}>{badge}</span>
-        )}
-      </div>
-      {open && <div style={{ padding: '8px 10px' }}>{children}</div>}
-    </div>
-  );
-};
-
-interface RequestLogProps {
-  response: ResponseState | null;
-  request?: any;
-}
-
-const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
-  if (!response) {
-    return <div style={{ color: 'var(--muted)', fontSize: 12 }}>No request data available</div>;
-  }
-
-  // Detect if mTLS is being used (client certificates)
-  const hasMtls = request?.mtlsUsed || false;
-  const mtlsHostname = request?.mtlsHostname || null;
-
-  const enabledRequestHeaders = (request?.headers || []).filter((h: any) => h.enabled !== false);
-  const enabledQueryParams = (request?.queryParams || []).filter((p: any) => p.enabled !== false);
-
-  return (
-    <div className="request-log" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-
-      <CollapsibleSection title={<><Icon icon={faArrowUp} size={11} style={{ marginRight: 5 }} />Request</>} defaultOpen={true}>
-        <LogEntry label="Method" value={request?.method || 'N/A'} />
-        <LogEntry label="URL" value={request?.url || 'N/A'} monospace />
-        <LogEntry label="Protocol" value={request?.url?.startsWith('https') ? 'HTTPS' : 'HTTP'} />
-        <LogEntry label="SSL Verification" value={request?.rejectUnauthorized ? '✓ Enabled' : '✗ Disabled (Insecure)'} highlight={!request?.rejectUnauthorized} />
-        <LogEntry label="mTLS (Client Certificate)" value={hasMtls ? '✓ Enabled' : '✗ Not Used'} highlight={hasMtls} />
-        {hasMtls && mtlsHostname && <LogEntry label="  Certificate Hostname" value={mtlsHostname} monospace indent />}
-        <LogEntry label="Proxy" value={request?.proxyUsed ? '✓ Enabled' : '✗ Not Used'} highlight={false} />
-        {request?.proxyUsed && request?.proxyUrl ? (
-          <>
-            <LogEntry label="  Proxy URL" value={request.proxyUrl} monospace indent />
-            {request?.hasProxyAuth && <LogEntry label="  Proxy Authentication" value="✓ Configured (Basic Auth)" indent />}
-          </>
-        ) : !request?.proxyUsed && request?.proxyUrl ? (
-          <LogEntry label="  Note" value="Proxy configured but not used (hostname may be in no-proxy list)" indent highlight={true} />
-        ) : null}
-      </CollapsibleSection>
-
-      {enabledRequestHeaders.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Request Headers</>} defaultOpen={false} badge={enabledRequestHeaders.length}>
-          {enabledRequestHeaders.map((h: any, idx: number) => (
-            <LogEntry key={idx} label={h.key} value={h.value} monospace small />
-          ))}
-        </CollapsibleSection>
-      )}
-
-      {enabledQueryParams.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faLink} size={11} style={{ marginRight: 5 }} />Query Parameters</>} defaultOpen={false} badge={enabledQueryParams.length}>
-          {enabledQueryParams.map((p: any, idx: number) => (
-            <LogEntry key={idx} label={p.key} value={p.value} monospace small />
-          ))}
-        </CollapsibleSection>
-      )}
-
-      {request?.body && (
-        <CollapsibleSection title={<><Icon icon={faFileCode} size={11} style={{ marginRight: 5 }} />Request Body</>} defaultOpen={false}>
-          <pre style={{ fontSize: 11, color: 'var(--input-fg)', background: 'color-mix(in srgb, var(--input-bg) 50%, transparent)', padding: '8px 10px', borderRadius: '4px', overflow: 'auto', maxHeight: '150px', margin: '0', border: '1px solid var(--border)' }}>{request.body}</pre>
-        </CollapsibleSection>
-      )}
-
-      {request?.networkLogs && request.networkLogs.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />Network Logs</>} defaultOpen={true} badge={request.networkLogs.length}>
-          {request.networkLogs.map((ln: string, idx: number) => (
-            <div key={idx} style={{ fontFamily: "'Cascadia Code', 'Fira Code', monospace", padding: '3px 0', fontSize: 11, color: 'var(--input-fg)', wordBreak: 'break-word' }}>{ln}</div>
-          ))}
-        </CollapsibleSection>
-      )}
-
-      <CollapsibleSection title={<><Icon icon={faDownload} size={11} style={{ marginRight: 5 }} />Response</>} defaultOpen={true}>
-        <LogEntry label="Status Code" value={`${response.status} ${response.statusText}`} highlight={response.status >= 400} />
-        <LogEntry label="Duration" value={`${response.duration}ms`} />
-        <LogEntry label="Response Size" value={formatSize(response.size)} />
-        <div style={{ fontSize: 10, color: 'var(--muted)', paddingTop: 6 }}>{new Date().toLocaleString()}</div>
-      </CollapsibleSection>
-
-      <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Response Headers</>} defaultOpen={false} badge={Object.keys(response.headers).length}>
-        {Object.entries(response.headers).map(([key, val]) => (
-          <LogEntry key={key} label={key} value={String(val)} monospace small />
-        ))}
-      </CollapsibleSection>
-
-      {request?.scriptLogs && request.scriptLogs.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faCode} size={11} style={{ marginRight: 5 }} />Script Logs</>} defaultOpen={true} badge={request.scriptLogs.length}>
-          {request.scriptLogs.map((ln: string, idx: number) => (
-            <div key={idx} style={{ fontFamily: "'Cascadia Code', 'Fira Code', monospace", padding: '3px 0', fontSize: 11, color: 'var(--input-fg)' }}>{ln}</div>
-          ))}
-        </CollapsibleSection>
-      )}
-
-      <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />cURL Command</>} defaultOpen={false}>
-        <CurlCommandGenerator request={request} response={response} />
-      </CollapsibleSection>
-
-    </div>
-  );
-};
-
-interface CurlCommandGeneratorProps {
-  request?: any;
-  response: ResponseState | null;
-}
-
-const CurlCommandGenerator: React.FC<CurlCommandGeneratorProps> = ({ request }) => {
-  if (!request) {
-    return <div style={{ color: 'var(--muted)', fontSize: 11 }}>No request data available</div>;
-  }
-
-  // Use pre-built curl command from backend if available
-  const curlCmd = request.curlCommand || buildCurlCommand(request);
-
-  const handleCopyCurl = () => {
-    navigator.clipboard.writeText(curlCmd);
-  };
-
-  return (
-    <div>
-      <pre style={{
-        fontSize: 10,
-        color: 'var(--input-fg)',
-        background: 'color-mix(in srgb, var(--input-bg) 50%, transparent)',
-        padding: '8px 10px',
-        borderRadius: '4px',
-        overflow: 'auto',
-        maxHeight: '150px',
-        margin: '0 0 8px 0',
-        border: '1px solid var(--border)',
-        wordBreak: 'break-all',
-        whiteSpace: 'pre-wrap',
-      }}>
-        {curlCmd}
-      </pre>
-      <button
-        onClick={handleCopyCurl}
-        style={{
-          background: 'var(--accent)',
-          color: '#1e1e2e',
-          border: 'none',
-          padding: '4px 10px',
-          borderRadius: '4px',
-          fontSize: '11px',
-          cursor: 'pointer',
-          fontWeight: 600,
-        }}
-      >
-        <Icon icon={faCopy} size={11} style={{ marginRight: 4 }} /> Copy cURL Command
-      </button>
-    </div>
-  );
-};
-
-// Helper function to build curl command if not provided
-function buildCurlCommand(request: any): string {
-  let curlCmd = `curl `;
-  
-  // Add insecure flag if SSL verification is disabled
-  if (request.rejectUnauthorized === false) {
-    curlCmd += `-k `;
-  }
-  
-  curlCmd += `-X ${request.method || 'GET'} `;
-  
-  // Add proxy if used
-  if (request.proxyUsed && request.proxyUrl) {
-    curlCmd += `-x "${request.proxyUrl}" `;
-    if (request.hasProxyAuth) {
-      curlCmd += `-U "username:password" `;
-    }
-  }
-
-  // Add headers (use resolved headers if available)
-  const enabledHeaders = (request.headers || []).filter((h: any) => h.enabled !== false);
-  enabledHeaders.forEach((h: any) => {
-    if (h.key && h.value) {
-      curlCmd += `-H "${h.key}: ${h.value}" `;
-    }
-  });
-
-  // Add body if present
-  if (request.body) {
-    const escapedBody = request.body.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-    curlCmd += `-d "${escapedBody}" `;
-  }
-
-  // Add URL with query params
-  let fullUrl = request.url || '';
-  const enabledParams = (request.queryParams || []).filter((p: any) => p.enabled !== false);
-  if (enabledParams.length > 0) {
-    const queryString = enabledParams
-      .map((p: any) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
-      .join('&');
-    fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryString;
-  }
-
-  curlCmd += `"${fullUrl}" -v`;
-  return curlCmd;
-}
-
-/* ─── Script Result Log ─────────────────────────────── */
-interface ScriptResultLogProps {
-  request?: any;
-}
-
-const ScriptResultLog: React.FC<ScriptResultLogProps> = ({ request }) => {
-  const [logsOpen, setLogsOpen] = useState(true);
-  const [varsOpen, setVarsOpen] = useState(true);
-
-  // Show a running spinner while the extension host is executing the script
-  if (request?.scriptRunning) {
-    return (
-      <div style={{ marginTop: 16, padding: '10px 14px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-        Running post-response script…
-      </div>
-    );
-  }
-
-  // Only show if a script was actually run (scriptLogs is set — even if empty — after execution)
-  if (!request || request.scriptLogs === undefined) return null;
-
-  const success: boolean = request.scriptSuccess !== false;
-  const logs: string[] = request.scriptLogs || [];
-  const error: string | undefined = request.scriptError;
-  const variables: Record<string, any> = request.scriptVariables || {};
-  const hasVars = Object.keys(variables).length > 0;
-
-  const sectionStyle: React.CSSProperties = {
-    marginTop: 16,
-    border: `1px solid ${success ? 'color-mix(in srgb, var(--accent, #50fa7b) 35%, transparent)' : 'color-mix(in srgb, var(--error, #c0392b) 35%, transparent)'}`,
-    borderRadius: 6,
-    overflow: 'hidden',
-  };
-
-  const headerStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '7px 12px',
-    background: success
-      ? 'color-mix(in srgb, var(--accent, #50fa7b) 12%, transparent)'
-      : 'color-mix(in srgb, var(--error, #c0392b) 12%, transparent)',
-    fontSize: 12,
-    fontWeight: 600,
-  };
-
-  const badge: React.CSSProperties = {
-    padding: '1px 7px',
-    borderRadius: 10,
-    fontSize: 10,
-    fontWeight: 700,
-    background: success ? 'var(--accent, #50fa7b)' : 'var(--error, #c0392b)',
-    color: success ? '#000' : '#fff',
-  };
-
-  const monoBlock: React.CSSProperties = {
-    fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
-    fontSize: 11,
-    padding: '6px 12px',
-    background: 'color-mix(in srgb, var(--input-bg) 50%, transparent)',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all',
-  };
-
-  const subHeader = (label: string, count: number, open: boolean, toggle: () => void): React.ReactNode => (
-    <div
-      onClick={toggle}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', cursor: 'pointer', userSelect: 'none', borderTop: '1px solid var(--border)', background: 'color-mix(in srgb, var(--input-bg) 30%, transparent)' }}
-    >
-      <span style={{ fontSize: 9, color: 'var(--muted)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>▶</span>
-      <span style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px', flex: 1 }}>{label}</span>
-      <span style={{ fontSize: 10, background: 'var(--border)', borderRadius: 8, padding: '1px 5px', color: 'var(--muted)' }}>{count}</span>
-    </div>
-  );
-
-  return (
-    <div style={sectionStyle}>
-      <div style={headerStyle}>
-        <span>🧩 Post-response Script</span>
-        <span style={badge}>{success ? 'Executed' : 'Error'}</span>
-      </div>
-
-      {error && (
-        <div style={{ ...monoBlock, color: 'var(--error, #c0392b)', borderTop: '1px solid var(--border)', padding: '8px 12px' }}>
-          ✗ {error}
-        </div>
-      )}
-
-      {logs.length > 0 && (
-        <>
-          {subHeader('Logs', logs.length, logsOpen, () => setLogsOpen((v) => !v))}
-          {logsOpen && logs.map((ln, i) => (
-            <div key={i} style={monoBlock}>{ln}</div>
-          ))}
-        </>
-      )}
-
-      {logs.length === 0 && !error && (
-        <div style={{ ...monoBlock, color: 'var(--muted)', borderTop: '1px solid var(--border)', padding: '8px 12px' }}>Script ran with no logs. Use log() to output values.</div>
-      )}
-
-      {hasVars && (
-        <>
-          {subHeader('Variables Extracted', Object.keys(variables).length, varsOpen, () => setVarsOpen((v) => !v))}
-          {varsOpen && Object.entries(variables).map(([k, v]) => (
-            <div key={k} style={{ ...monoBlock, display: 'flex', gap: 12 }}>
-              <span style={{ color: 'var(--accent-2, #8be9fd)', minWidth: 140 }}>{k}</span>
-              <span>{typeof v === 'string' ? v : JSON.stringify(v)}</span>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  );
-};
-
-interface LogEntryProps {
-  label: string;
-  value: string;
-  monospace?: boolean;
-  small?: boolean;
-  highlight?: boolean;
-  indent?: boolean;
-}
-
-const LogEntry: React.FC<LogEntryProps> = ({ 
-  label, 
-  value, 
-  monospace = false, 
-  small = false,
-  highlight = false,
-  indent = false
-}) => (
-  <div style={{
-    display: 'flex',
-    gap: '12px',
-    padding: small ? '4px 0' : '8px 0',
-    borderBottom: small ? 'none' : '1px solid color-mix(in srgb, var(--border) 40%, transparent)',
-    fontSize: small ? 11 : 12,
-    marginLeft: indent ? '20px' : '0',
-    color: highlight ? 'var(--error)' : 'var(--fg)',
-  }}>
-    <span style={{
-      minWidth: '180px',
-      color: 'var(--muted)',
-      fontWeight: 500,
-    }}>
-      {label}:
-    </span>
-    <span style={{
-      flex: 1,
-      fontFamily: monospace ? "'Cascadia Code', 'Fira Code', monospace" : 'inherit',
-      wordBreak: 'break-all',
-      color: highlight ? 'var(--error)' : 'var(--input-fg)',
-    }}>
-      {value}
-    </span>
-  </div>
-);

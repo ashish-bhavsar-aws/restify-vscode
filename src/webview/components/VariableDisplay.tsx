@@ -1,4 +1,5 @@
  import React, { useMemo } from 'react';
+import styled from 'styled-components';
 
 interface VariableDisplayProps {
   text: string;
@@ -13,6 +14,27 @@ interface ParsedPart {
   isResolved?: boolean;
   resolvedValue?: string;
 }
+
+const VariableTag = styled.span<{ $resolved?: boolean }>`
+  display: inline;
+  font-weight: 600;
+  font-size: inherit;
+  font-family: ${({ theme }) => theme.monoFamily};
+  white-space: nowrap;
+  padding: 0;
+  color: ${({ $resolved, theme }) => ($resolved ? theme.success : theme.error)};
+  background: none;
+  border: none;
+  ${({ $resolved, theme }) => !$resolved && `
+    text-decoration: wavy underline ${theme.error};
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 2px;
+  `}
+`;
+
+const BoldBrace = styled.span`
+  font-weight: 700;
+`;
 
 /**
  * Parses text to extract variables in format {{VAR}}
@@ -110,26 +132,24 @@ export const VariableDisplay: React.FC<VariableDisplayProps> = ({
         const varName = part.varName || '';
 
         if (isResolved) {
-          // Resolved variable: show in green
           return (
-            <span
+            <VariableTag
               key={idx}
-              className="variable-tag resolved"
+              $resolved
               title={`${varName} = ${part.resolvedValue}`}
             >
               {part.content}
-            </span>
+            </VariableTag>
           );
         } else {
-          // Unresolved variable: show in red with brackets highlighted
           const openBrace = '{{';
           const closeBrace = '}}';
           return (
-            <span key={idx} className="variable-tag unresolved" title={`Variable '${varName}' not found in current environment`}>
-              <span style={{ fontWeight: 700 }}>{openBrace}</span>
+            <VariableTag key={idx} title={`Variable '${varName}' not found in current environment`}>
+              <BoldBrace>{openBrace}</BoldBrace>
               <span>{varName}</span>
-              <span style={{ fontWeight: 700 }}>{closeBrace}</span>
-            </span>
+              <BoldBrace>{closeBrace}</BoldBrace>
+            </VariableTag>
           );
         }
       })}

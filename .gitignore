@@ -8,3 +8,6 @@ test-results
 test/node_modules
 test/out
 test/screenshots/*.png
+test/videos/*.webm
+test/*.html
+test/playwright-report/**

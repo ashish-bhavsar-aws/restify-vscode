@@ -7,38 +7,64 @@ const EXTENSION_PATH = path.resolve(__dirname, '..', '..');
 const TEST_USER_DATA = path.resolve(__dirname, '..', '.vscode-test-user-data');
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', 'screenshots');
 const VIDEO_DIR = path.resolve(__dirname, '..', 'videos');
+const LOG_FILE = path.resolve(__dirname, '..', 'test.log');
 
 // ─── Debug Logger ───────────────────────────────────────────────────
 
 let _step = 0;
+let _logStream: import('fs').WriteStream | null = null;
+
+function _ensureLogStream(): import('fs').WriteStream {
+  if (!_logStream) {
+    _logStream = require('fs').createWriteStream(LOG_FILE, { flags: 'w' });
+  }
+  return _logStream!;
+}
+
+function _writeToFile(line: string): void {
+  try {
+    _ensureLogStream().write(line + '\n');
+  } catch { /* ignore */ }
+}
 
 export function log(msg: string): void {
   _step++;
   const ts = new Date().toISOString().slice(11, 23);
-  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${msg}`);
+  const line = `[${ts}] [step ${String(_step).padStart(3, '0')}] ${msg}`;
+  console.log(`  ${line}`); // eslint-disable-line no-console
+  _writeToFile(line);
 }
 
 export function logCheck(msg: string, result: boolean | string | number): void {
   _step++;
   const ts = new Date().toISOString().slice(11, 23);
   const icon = result === false || result === 0 ? '✗' : '✓';
-  console.log(`  [${ts}] [step ${String(_step).padStart(3, '0')}] ${icon} CHECK: ${msg} → ${JSON.stringify(result)}`);
+  const line = `[${ts}] [step ${String(_step).padStart(3, '0')}] ${icon} CHECK: ${msg} → ${JSON.stringify(result)}`;
+  console.log(`  ${line}`); // eslint-disable-line no-console
+  _writeToFile(line);
 }
 
 export function logError(msg: string, err?: unknown): void {
   const ts = new Date().toISOString().slice(11, 23);
-  console.error(`  [${ts}] ✗ ERROR: ${msg}`, err ? String(err) : '');
+  const line = `[${ts}] ✗ ERROR: ${msg}${err ? ' ' + String(err) : ''}`;
+  console.error(`  ${line}`); // eslint-disable-line no-console
+  _writeToFile(line);
 }
 
 export function resetLog(): void {
   _step = 0;
+  if (_logStream) {
+    _logStream.end();
+    _logStream = null;
+  }
+  _writeToFile(`\n${'='.repeat(60)}\nTest run started at ${new Date().toISOString()}\n${'='.repeat(60)}\n`);
 }
 
 // ─── Frame/State diagnostics ────────────────────────────────────────
 
 export async function dumpPageState(page: Page, label: string): Promise<void> {
   const title = await page.title().catch(() => '<unknown>');
-  const url = page.url();
+  const _url = page.url();
   const frames = page.frames();
   const webviewFrames = frames.filter(f => f.url().includes('vscode-webview://'));
   const iframeCount = await page.locator('iframe').count().catch(() => 0);
@@ -56,8 +82,8 @@ export async function dumpPageState(page: Page, label: string): Promise<void> {
 
   for (let i = 0; i < webviewFrames.length; i++) {
     const f = webviewFrames[i];
-    const hasUrlBar = await f.locator('.url-bar').count().catch(() => 0);
-    const hasSendBtn = await f.locator('.send-btn').count().catch(() => 0);
+    const hasUrlBar = await f.locator('[data-testid="url-input"], .url-input').count().catch(() => 0);
+    const hasSendBtn = await f.locator('[data-testid="send-btn"]').count().catch(() => 0);
     const bodyText = await f.evaluate(() => document.body?.innerText?.slice(0, 120) || '', () => '').catch(() => '<err>');
     log(`  webview[${i}]: urlBar=${hasUrlBar} sendBtn=${hasSendBtn} body="${bodyText.replace(/\n/g, ' ').trim()}"`);
   }
@@ -72,8 +98,8 @@ export async function dumpSidebarState(page: Page): Promise<void> {
   const text = await sidebar.textContent().catch(() => '');
   log(`Sidebar visible, content preview: "${(text || '').slice(0, 200).replace(/\n/g, ' ').trim()}"`);
 
-  const historyItems = await sidebar.locator('.item').count().catch(() => 0);
-  const collectionItems = await sidebar.locator('.collection-group, .collection-header').count().catch(() => 0);
+  const historyItems = await sidebar.locator('[class*="item"], .item').count().catch(() => 0);
+  const collectionItems = await sidebar.locator('[class*="collection"], .collection-group, .collection-header').count().catch(() => 0);
   log(`  historyItems=${historyItems} collectionGroups=${collectionItems}`);
 }
 
@@ -145,23 +171,45 @@ export async function launchVSCode(): Promise<VSCodeApp> {
 export async function closeVSCode(app: VSCodeApp): Promise<void> {
   log('Closing VS Code...');
 
-  // Save recorded video before closing
+  // Close Electron first so Playwright finalizes the video file to disk
+  try { await app.electronApp.close(); } catch { /* already closed */ }
+  if (fs.existsSync(TEST_USER_DATA)) {
+    fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
+  }
+
+  // Save recorded video after closing (Playwright writes the file on close)
   try {
-    const videoPath = await app.window.video.path();
-    if (videoPath && fs.existsSync(videoPath)) {
-      fs.mkdirSync(VIDEO_DIR, { recursive: true });
-      const dest = path.join(VIDEO_DIR, 'final-demo.webm');
-      fs.copyFileSync(videoPath, dest);
-      log(`Video saved: ${dest}`);
+    const video = app.window.video();
+    if (video) {
+      const videoPath = await video.path();
+      if (videoPath && fs.existsSync(videoPath)) {
+        fs.mkdirSync(VIDEO_DIR, { recursive: true });
+        const dest = path.join(VIDEO_DIR, 'restify-demo.webm');
+        fs.copyFileSync(videoPath, dest);
+        log(`Video saved: ${dest}`);
+        try { fs.unlinkSync(videoPath); } catch { /* already gone */ }
+      } else {
+        log('Video path not available after close');
+      }
+    } else {
+      log('No video object available');
     }
   } catch (e) {
     log(`  Could not save video: ${e}`);
   }
 
-  try { await app.electronApp.close(); } catch { /* already closed */ }
-  if (fs.existsSync(TEST_USER_DATA)) {
-    fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
-  }
+  // Clean up any leftover random-named .webm files in the video dir
+  try {
+    if (fs.existsSync(VIDEO_DIR)) {
+      for (const f of fs.readdirSync(VIDEO_DIR)) {
+        if (f.endsWith('.webm') && f !== 'restify-demo.webm') {
+          fs.unlinkSync(path.join(VIDEO_DIR, f));
+          log(`  Cleaned up leftover video: ${f}`);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
   log('VS Code closed and cleanup done');
 }
 
@@ -177,78 +225,184 @@ export async function screenshot(page: Page, name: string): Promise<string> {
 
 // ─── Cursor overlay ───────────────────────────────────────────────
 
+// ─── Cursor overlay (DOM-based red dot for video capture) ─────────────
+// Playwright video capture records DOM pixels, NOT the OS cursor.
+// We must render the pointer as a DOM element to appear in the recording.
+
+const CURSOR_OVERLAY_STYLES = `
+  *, *::before, *::after { cursor: none !important; }
+
+    #restify-dot {
+      position: fixed;
+      width: 8px; height: 8px;
+      margin-left: -4px; margin-top: -4px;
+      top: -100px; left: -100px;
+      background: radial-gradient(circle, #ff3b3b 40%, rgba(255,59,59,0.4) 70%, transparent 100%);
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 4px 1px rgba(255,59,59,0.5);
+      pointer-events: none;
+      z-index: 2147483647;
+      will-change: top, left;
+    }
+    #restify-ring {
+      position: fixed;
+      width: 24px; height: 24px;
+      margin-left: -12px; margin-top: -12px;
+    top: -200px; left: -200px;
+    border: 2px solid rgba(255,59,59,0.85);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 2147483647;
+    opacity: 0;
+  }
+  #restify-ring.flash {
+    animation: restify-ring-pop 400ms ease-out forwards;
+  }
+  @keyframes restify-ring-pop {
+    0%   { transform: scale(0.4); opacity: 1; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+`;
+
+function injectCursorOverlayJS(): void {
+  const w = window as any;
+  if (w.__restifyDotInjected) {
+    const dot = document.getElementById('restify-dot');
+    if (dot) return;
+  }
+  w.__restifyDotInjected = true;
+
+  const head = document.head || document.documentElement;
+
+  const style = document.createElement('style');
+  style.id = 'restify-dot-style';
+  style.textContent = `
+    *, *::before, *::after { cursor: none !important; }
+    #restify-dot {
+      position: fixed;
+      width: 8px; height: 8px;
+      margin-left: -4px; margin-top: -4px;
+      top: -100px; left: -100px;
+      background: radial-gradient(circle, #ff3b3b 40%, rgba(255,59,59,0.4) 70%, transparent 100%);
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 4px 1px rgba(255,59,59,0.5);
+      pointer-events: none;
+      z-index: 2147483647;
+      will-change: top, left;
+    }
+    #restify-ring {
+      position: fixed;
+      width: 24px; height: 24px;
+      margin-left: -12px; margin-top: -12px;
+      top: -200px; left: -200px;
+      border: 2px solid rgba(255,59,59,0.85);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 2147483647;
+      opacity: 0;
+    }
+    #restify-ring.flash {
+      animation: restify-ring-pop 400ms ease-out forwards;
+    }
+    @keyframes restify-ring-pop {
+      0%   { transform: scale(0.4); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+  `;
+  head.appendChild(style);
+
+  const dot = document.createElement('div');
+  dot.id = 'restify-dot';
+  document.body.appendChild(dot);
+
+  const ring = document.createElement('div');
+  ring.id = 'restify-ring';
+  document.body.appendChild(ring);
+}
+
+/**
+ * Position the red dot at (x, y) in the main frame.
+ * This is called directly from Node.js after each page.mouse.move(),
+ * bypassing DOM event listeners entirely.
+ */
+async function positionDot(page: Page, x: number, y: number): Promise<void> {
+  const result = await page.evaluate(({ x, y }) => {
+    const dot = document.getElementById('restify-dot');
+    if (dot) {
+      dot.style.left = x + 'px';
+      dot.style.top = y + 'px';
+      const rect = dot.getBoundingClientRect();
+      return { ok: true, left: dot.style.left, top: dot.style.top, rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height } };
+    }
+    return { ok: false };
+  }, { x, y }).catch((e) => ({ ok: false, error: String(e) }));
+  log(`  positionDot: (${Math.round(x)},${Math.round(y)}) → ${JSON.stringify(result)}`);
+}
+
+/**
+ * Flash the click ring at (x, y) in the main frame.
+ */
+async function flashRing(page: Page, x: number, y: number): Promise<void> {
+  await page.evaluate(({ x, y }) => {
+    const ring = document.getElementById('restify-ring');
+    if (ring) {
+      ring.style.left = x + 'px';
+      ring.style.top = y + 'px';
+      ring.classList.remove('flash');
+      void (ring as HTMLElement).offsetWidth;
+      ring.classList.add('flash');
+    }
+  }, { x, y }).catch(() => {});
+}
+
 export async function injectCursorOverlay(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const CURSOR_SVG = `data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/></svg>`
-    )}`;
+  // VS Code Electron uses a workbench.html as the main frame.
+  // The actual UI is rendered inside that frame. We need to inject our
+  // red dot there and ensure it survives VS Code's DOM mutations.
 
-    const style = document.createElement('style');
-    style.textContent = `
-      *, *::before, *::after { cursor: none !important; }
+  const injectIntoFrame = async (label: string) => {
+    const mainFrame = page.mainFrame();
+    try {
+      const result = await mainFrame.evaluate(() => {
+        const dot = document.getElementById('restify-dot');
+        const style = document.getElementById('restify-dot-style');
+        return {
+          hasDot: !!dot,
+          hasStyle: !!style,
+          bodyExists: !!document.body,
+          bodyChildren: document.body?.children?.length ?? 0,
+          url: window.location?.href?.slice(0, 60) ?? 'unknown',
+        };
+      });
+      log(`  [${label}] Frame state: dot=${result.hasDot} style=${result.hasStyle} body=${result.bodyExists} children=${result.bodyChildren} url=${result.url}`);
 
-      #restify-cursor {
-        position: fixed;
-        top: 0; left: 0;
-        width: 24px; height: 24px;
-        pointer-events: none;
-        z-index: 2147483647;
-        transition: transform 80ms ease;
-        will-change: transform, top, left;
+      if (!result.hasDot || !result.hasStyle) {
+        await mainFrame.evaluate(injectCursorOverlayJS);
+        const after = await mainFrame.evaluate(() => ({
+          hasDot: !!document.getElementById('restify-dot'),
+          hasStyle: !!document.getElementById('restify-dot-style'),
+          dotRect: document.getElementById('restify-dot')?.getBoundingClientRect(),
+        }));
+        log(`  [${label}] After injection: dot=${after.hasDot} style=${after.hasStyle} dotRect=${JSON.stringify(after.dotRect)}`);
       }
-      #restify-cursor img {
-        width: 24px; height: 24px;
-        display: block;
-      }
-      #restify-cursor.scale-down {
-        transform: scale(0.85);
-      }
+    } catch (e) {
+      log(`  [${label}] Injection failed: ${e}`);
+    }
+  };
 
-      @keyframes restify-ripple {
-        0%   { transform: translate(-50%, -50%) scale(0);   opacity: 0.7; }
-        100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
-      }
-      .restify-ripple {
-        position: fixed;
-        width: 30px; height: 30px;
-        border: 2px solid rgba(255, 255, 255, 0.7);
-        border-radius: 50%;
-        pointer-events: none;
-        z-index: 2147483647;
-        animation: restify-ripple 300ms ease-out forwards;
-        will-change: transform, opacity;
-      }
-    `;
-    document.head.appendChild(style);
+  // Inject via addInitScript for future navigations
+  await page.addInitScript(injectCursorOverlayJS);
 
-    const cursor = document.createElement('div');
-    cursor.id = 'restify-cursor';
-    const img = document.createElement('img');
-    img.src = CURSOR_SVG;
-    img.draggable = false;
-    cursor.appendChild(img);
-    document.body.appendChild(cursor);
+  // Inject now
+  await injectIntoFrame('initial');
 
-    document.addEventListener('mousemove', (e) => {
-      cursor.style.left = `${e.clientX}px`;
-      cursor.style.top = `${e.clientY}px`;
-    }, { passive: true });
+  // Re-inject periodically (VS Code can reload the main frame)
+  const interval = setInterval(() => injectIntoFrame('periodic'), 2000);
+  setTimeout(() => clearInterval(interval), 600_000);
 
-    document.addEventListener('mousedown', () => {
-      cursor.classList.add('scale-down');
-      setTimeout(() => cursor.classList.remove('scale-down'), 80);
-    }, { passive: true });
-
-    document.addEventListener('mousedown', (e) => {
-      const ripple = document.createElement('div');
-      ripple.className = 'restify-ripple';
-      ripple.style.left = `${e.clientX}px`;
-      ripple.style.top = `${e.clientY}px`;
-      document.body.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 300);
-    }, { passive: true });
-  });
-  log('Cursor overlay injected');
+  log('Cursor overlay injected (DOM red dot on main frame)');
 }
 
 // ─── Frame discovery (with retry) ───────────────────────────────────
@@ -340,7 +494,7 @@ async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | nu
   const prefix = '  '.repeat(depth + 1);
 
   // Check this frame for Send button
-  const hasSend = await frame.locator('button:has-text("Send")').count().catch(() => 0);
+  const hasSend = await frame.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
   if (hasSend > 0) {
     log(`${prefix}✓ Found frame with Send button: ${frame.url().slice(0, 60)}`);
     return frame;
@@ -348,14 +502,14 @@ async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | nu
 
   // Check child frames (webview panels use nested iframes)
   for (const child of frame.childFrames()) {
-    const childSend = await child.locator('button:has-text("Send")').count().catch(() => 0);
+    const childSend = await child.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
     if (childSend > 0) {
       log(`${prefix}✓ Found child frame with Send button: ${child.url().slice(0, 60)}`);
       return child;
     }
     // One more level
     for (const gc of child.childFrames()) {
-      const gcSend = await gc.locator('button:has-text("Send")').count().catch(() => 0);
+      const gcSend = await gc.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
       if (gcSend > 0) {
         log(`${prefix}✓ Found grandchild frame with Send button: ${gc.url().slice(0, 60)}`);
         return gc;
@@ -374,9 +528,9 @@ export async function findSidebarWebviewFrames(page: Page): Promise<Frame[]> {
   const sidebarFrames: Frame[] = [];
   for (const frame of allFrames) {
     // Check if this frame contains sidebar content (Filter input, collection items, etc.)
-    const hasFilter = await frame.locator('input[placeholder*="Filter"], input[placeholder*="filter"]').count().catch(() => 0);
-    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"]').count().catch(() => 0);
-    const hasCollection = await frame.locator('text=Swagger Petstore, text=collection, .collection-header, .collection-name').count().catch(() => 0);
+    const hasFilter = await frame.locator('input[placeholder*="Filter"], input[placeholder*="filter"], [class*="filter"], [class*="search"]').count().catch(() => 0);
+    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"], [class*="expand"], [class*="collapse"]').count().catch(() => 0);
+    const hasCollection = await frame.locator('text=Swagger Petstore, text=collection, [class*="collection"], [class*="collection-name"]').count().catch(() => 0);
     log(`  Frame ${frame.url().slice(0, 50)}: filter=${hasFilter} expandBtn=${hasExpandAll} collection=${hasCollection}`);
 
     if (hasFilter > 0 || hasExpandAll > 0 || hasCollection > 0) {
@@ -392,7 +546,7 @@ export async function findCollectionsFrame(page: Page): Promise<Frame | null> {
   const allFrames = page.frames().filter(f => f.url().includes('vscode-webview://'));
 
   for (const frame of allFrames) {
-    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"]').count().catch(() => 0);
+    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"], [class*="expand"], [class*="collapse"]').count().catch(() => 0);
     const hasCollectionName = await frame.locator('text=Swagger Petstore, text=Petstore').count().catch(() => 0);
     if (hasExpandAll > 0 || hasCollectionName > 0) {
       log(`  ✓ Found collections frame: ${frame.url().slice(0, 60)}`);
@@ -516,12 +670,83 @@ export async function selectQuickPick(page: Page, label: string): Promise<void> 
 
 export async function typeInQuickInput(page: Page, text: string): Promise<void> {
   log(`Typing in quick input: "${text}"...`);
-  await page.locator('.quick-input-widget input').waitFor({ state: 'visible', timeout: 10_000 });
-  const input = page.locator('.quick-input-widget input');
+  // Wait for the quick input widget to be attached. After a quick pick
+  // closes and showInputBox opens, VS Code reuses the same container —
+  // the widget is always attached, but may briefly hide during transition.
+  try {
+    await page.locator('.quick-input-widget').waitFor({ state: 'attached', timeout: 10_000 });
+  } catch {
+    log('  .quick-input-widget not attached, trying .quick-input-box...');
+    await page.locator('.quick-input-box').waitFor({ state: 'attached', timeout: 5_000 });
+  }
+
+  const input = page.locator('.quick-input-widget input, .quick-input-box input');
+
+  // Wait for the actual input element to be visible inside the widget.
+  // This ensures the showInputBox input has rendered (not a stale quick-pick filter).
+  try {
+    await input.first().waitFor({ state: 'visible', timeout: 5_000 });
+  } catch {
+    log('  Input not visible within timeout, continuing anyway...');
+  }
+
+  // Strategy 1: click to focus, select all, then type via keyboard.
+  // This simulates real user interaction and is the most reliable with
+  // VS Code's quick input widget which may not react to synthetic events.
+  try {
+    await input.first().click({ force: true, timeout: 3_000 });
+    await page.waitForTimeout(100);
+    await page.keyboard.press('Meta+a');
+    await page.waitForTimeout(50);
+    await page.keyboard.type(text, { delay: 15 });
+    log('  Input filled via click + keyboard type');
+    await page.waitForTimeout(200);
+    return;
+  } catch {
+    log('  click+keyboard failed, trying fill()...');
+  }
+
+  // Strategy 2: try Playwright fill
   const count = await input.count();
   logCheck('Quick input field found', count);
-  await input.fill(text);
-  log('  Text filled');
+  if (count > 0) {
+    try {
+      await input.first().fill(text, { timeout: 3_000 });
+      log('  Input filled via fill()');
+      await page.waitForTimeout(200);
+      return;
+    } catch {
+      log('  fill() failed, trying evaluate...');
+    }
+  }
+
+  // Strategy 3: use evaluate to directly set the input value + dispatch events
+  try {
+    const set = await page.evaluate((t) => {
+      const inp = document.querySelector('.quick-input-widget input, .quick-input-box input') as HTMLInputElement | null;
+      if (!inp) return false;
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (nativeSetter) {
+        nativeSetter.call(inp, t);
+      } else {
+        inp.value = t;
+      }
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, text);
+    if (set) {
+      log('  Input value set via evaluate');
+      await page.waitForTimeout(200);
+      return;
+    }
+  } catch (e) {
+    log(`  evaluate set failed: ${e}`);
+  }
+
+  // Strategy 4: just type via keyboard (last resort)
+  await page.keyboard.type(text, { delay: 20 });
+  log('  Text filled via keyboard (last resort)');
   await page.waitForTimeout(200);
 }
 
@@ -549,6 +774,80 @@ export async function dismissNotification(page: Page): Promise<void> {
 
 // ─── Webview interaction helpers (click-based) ──────────────────────
 
+/**
+ * Move the visible cursor to the center of an element.
+ * Uses locator.boundingBox() which returns page-level coordinates,
+ * so page.mouse.move() lands exactly on the element.
+ */
+export async function moveMouseToElement(
+  page: Page,
+  frame: Frame,
+  selector: string,
+  opts?: { index?: number; steps?: number },
+): Promise<boolean> {
+  const index = opts?.index ?? 0;
+  const el = frame.locator(selector).nth(index);
+  const box = await el.boundingBox({ timeout: 3_000 }).catch(() => null);
+  if (!box) {
+    log(`  moveMouseToElement: no boundingBox for "${selector}"`);
+    return false;
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  log(`  moveMouseToElement: "${selector}" box=(${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}x${Math.round(box.height)}) → moving to (${Math.round(x)},${Math.round(y)})`);
+  await page.mouse.move(x, y, { steps: opts?.steps ?? 10 });
+  await positionDot(page, x, y);
+  await page.waitForTimeout(120);
+  return true;
+}
+
+/** Convenience: move cursor to a locator, then return its bounding box center. */
+export async function moveMouseToLocator(
+  page: Page,
+  locator: import('@playwright/test').Locator,
+): Promise<{ x: number; y: number } | null> {
+  const box = await locator.boundingBox({ timeout: 3_000 }).catch(() => null);
+  if (!box) {
+    log(`  moveMouseToLocator: no boundingBox`);
+    return null;
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  log(`  moveMouseToLocator: box=(${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}x${Math.round(box.height)}) → moving to (${Math.round(x)},${Math.round(y)})`);
+  await page.mouse.move(x, y, { steps: 10 });
+  await positionDot(page, x, y);
+  await page.waitForTimeout(120);
+  return { x, y };
+}
+
+/**
+ * Move the cursor to a locator's center, then click it.
+ * Use this instead of locator.click() for visible cursor movement in videos.
+ */
+export async function clickWithCursor(
+  locator: import('@playwright/test').Locator,
+  opts?: { force?: boolean; position?: { x: number; y: number }; timeout?: number },
+): Promise<void> {
+  try {
+    const page = locator.page();
+    const box = await locator.boundingBox({ timeout: opts?.timeout ?? 3_000 }).catch(() => null);
+    if (box) {
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      log(`  clickWithCursor: moving to (${Math.round(x)},${Math.round(y)})`);
+      await page.mouse.move(x, y, { steps: 10 });
+      await positionDot(page, x, y);
+      await flashRing(page, x, y);
+      await page.waitForTimeout(100);
+    } else {
+      log(`  clickWithCursor: no boundingBox, clicking directly`);
+    }
+  } catch (e) {
+    log(`  clickWithCursor: mouse move failed (${e}), clicking directly`);
+  }
+  await locator.click({ force: opts?.force, position: opts?.position, timeout: opts?.timeout });
+}
+
 export async function clickButton(frame: Frame, text: string): Promise<void> {
   log(`Clicking button "${text}" in webview frame...`);
   const btn = frame.locator(`button:has-text("${text}")`);
@@ -563,8 +862,18 @@ export async function clickButton(frame: Frame, text: string): Promise<void> {
       log(`    btn[${i}]: "${(t || '').trim().slice(0, 40)}"`);
     }
   }
-  // force:true — Playwright sees the outer iframe as intercepting pointer events
-  // but the button IS correctly inside the target frame
+  try {
+    const page = frame.page();
+    const moved = await moveMouseToLocator(page, btn.first());
+    if (moved) {
+      log(`  Cursor moved to button "${text}"`);
+      // Flash ring at the button position
+      const box = await btn.first().boundingBox({ timeout: 1_000 }).catch(() => null);
+      if (box) await flashRing(page, box.x + box.width / 2, box.y + box.height / 2);
+    }
+  } catch (e) {
+    log(`  Cursor move skipped for button "${text}" (${e})`);
+  }
   await btn.first().click({ force: true });
   log(`  Button "${text}" clicked`);
   await frame.waitForTimeout(300);
@@ -575,6 +884,9 @@ export async function clickClass(frame: Frame, className: string): Promise<void>
   const el = frame.locator(`.${className}`);
   const count = await el.count();
   logCheck(`.${className} found`, count);
+  const page = frame.page();
+  const moved = await moveMouseToLocator(page, el.first());
+  if (moved) log(`  Cursor moved to .${className}`);
   await el.first().click({ force: true });
   await frame.waitForTimeout(300);
 }
@@ -622,17 +934,59 @@ export async function clickTabInFrame(frame: Frame, tabName: string, containerSe
 //   1. focus() + keyboard Space/Enter — works if element is focusable
 //   2. force:true click — fallback for non-focusable elements
 
-export async function clickInFrame(frame: Frame, selector: string, opts?: { force?: boolean }): Promise<void> {
+export async function clickInFrame(
+  frame: Frame,
+  selector: string,
+  _opts?: { force?: boolean },
+): Promise<void> {
   log(`Clicking "${selector}" in frame (webview-safe)...`);
   const el = frame.locator(selector);
   const count = await el.count();
   logCheck(`"${selector}" found`, count);
   if (count === 0) return;
 
-  // Strategy 1: focus + keyboard Space (most reliable in webview iframes)
+  // Move the visible cursor to the element first
+  try {
+    const page = frame.page();
+    const moved = await moveMouseToLocator(page, el.first());
+    if (moved) {
+      log(`  Cursor moved to "${selector}"`);
+      const box = await el.first().boundingBox({ timeout: 1_000 }).catch(() => null);
+      if (box) await flashRing(page, box.x + box.width / 2, box.y + box.height / 2);
+    }
+  } catch (e) {
+    log(`  Cursor move skipped for "${selector}" (${e})`);
+  }
+
+  // Strategy 1: evaluate-based click (dispatches a real MouseEvent that React picks up)
+  try {
+    const dispatched = await frame.evaluate((sel) => {
+      const btn = document.querySelector(sel) as HTMLElement | null;
+      if (!btn) return false;
+      const rect = btn.getBoundingClientRect();
+      const evt = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      });
+      btn.dispatchEvent(evt);
+      return true;
+    }, selector);
+    if (dispatched) {
+      log(`  Clicked "${selector}" via evaluate dispatch`);
+      await frame.waitForTimeout(500);
+      return;
+    }
+  } catch {
+    log(`  evaluate click failed for "${selector}", trying focus+Space...`);
+  }
+
+  // Strategy 2: focus + keyboard Space
   try {
     await el.first().focus({ timeout: 3_000 });
-    await frame.locator('body').press('Space');
+    await el.first().press('Space');
     log(`  Clicked "${selector}" via focus + Space`);
     await frame.waitForTimeout(300);
     return;
@@ -640,7 +994,7 @@ export async function clickInFrame(frame: Frame, selector: string, opts?: { forc
     log(`  focus+Space failed for "${selector}", trying force:true...`);
   }
 
-  // Strategy 2: force:true click
+  // Strategy 3: force:true click
   try {
     await el.first().click({ force: true, timeout: 3_000 });
     log(`  Clicked "${selector}" via force:true`);
@@ -678,7 +1032,7 @@ export async function fillVariableInput(
   // Step 1: Use evaluate to dispatch a React-compatible mouseup on the display div.
   // This triggers the onMouseUp handler which calls focusInputWithSelection().
   await frame.evaluate((sel) => {
-    const display = document.querySelector(`${sel} .variable-text-display`);
+    const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
     if (display) {
       const rect = display.getBoundingClientRect();
       const evt = new MouseEvent('mouseup', {
@@ -694,13 +1048,13 @@ export async function fillVariableInput(
   await frame.waitForTimeout(300);
 
   // Step 2: The <input> should now be visible — find and fill it
-  const input = frame.locator(`${wrapperSelector} input.variable-text-input`);
+  const input = frame.locator(`${wrapperSelector} [data-testid="variable-text-input"]`);
   try {
     await input.first().waitFor({ state: 'visible', timeout: 3_000 });
   } catch {
     log('  Input still not visible after mouseup dispatch, trying direct focus...');
     await frame.evaluate((sel) => {
-      const display = document.querySelector(`${sel} .variable-text-display`);
+      const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
       if (display) (display as HTMLElement).click();
     }, wrapperSelector);
     await frame.waitForTimeout(300);
@@ -720,17 +1074,17 @@ export async function getVariableInputValue(
   wrapperSelector: string,
 ): Promise<string> {
   // When focused, the input shows the value
-  const input = frame.locator(`${wrapperSelector} input.variable-text-input`);
+  const input = frame.locator(`${wrapperSelector} [data-testid="variable-text-input"]`);
   if (await input.count() > 0) {
     return await input.first().inputValue().catch(() => '');
   }
   // When unfocused, check if it's showing a placeholder (empty value)
-  const placeholder = frame.locator(`${wrapperSelector} .variable-text-display .placeholder`);
+  const placeholder = frame.locator(`${wrapperSelector} .placeholder`);
   if (await placeholder.count() > 0) {
     return ''; // Value is empty, showing placeholder
   }
   // When unfocused with a value, the display shows VariableDisplay
-  const display = frame.locator(`${wrapperSelector} .variable-text-display`);
+  const display = frame.locator(`${wrapperSelector} [data-testid="variable-text-display"]`);
   if (await display.count() > 0) {
     const text = await display.first().textContent().catch(() => '');
     return (text || '').trim();
@@ -747,7 +1101,7 @@ export async function sendRequestViaEnter(frame: Frame): Promise<void> {
 
   // Step 1: Focus the display to switch VariableTextInput to input mode
   await frame.evaluate(() => {
-    const display = document.querySelector('.url-input .variable-text-display');
+    const display = document.querySelector('.url-input [data-testid="variable-text-display"]');
     if (display) {
       const rect = display.getBoundingClientRect();
       const evt = new MouseEvent('mouseup', {
@@ -763,7 +1117,7 @@ export async function sendRequestViaEnter(frame: Frame): Promise<void> {
   await frame.waitForTimeout(300);
 
   // Step 2: Wait for the input to appear
-  const input = frame.locator('.url-input input.variable-text-input');
+  const input = frame.locator('.url-input [data-testid="variable-text-input"]');
   try {
     await input.first().waitFor({ state: 'visible', timeout: 3_000 });
     // Step 3: Press Enter on the input — triggers React's onKeyDown → onSend()

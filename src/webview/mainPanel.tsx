@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import "./MainPanel.css";
+import styled, { css, keyframes } from "styled-components";
 
 import { TopBar } from "./components/TopBar";
 import { CodeGenModal } from "./components/CodeGenModal";
@@ -22,6 +22,126 @@ import {
 } from "./types";
 
 const vscodeApi = (window as any).acquireVsCodeApi?.();
+
+/* ─── Styled Components ───────────────────────────────────── */
+
+const Container = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+`;
+
+const loadingAnimation = keyframes`
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+`;
+
+const LoadingBar = styled.div<{ $active: boolean }>`
+  height: 2px;
+  display: ${({ $active }) => ($active ? "block" : "none")};
+  background: linear-gradient(
+    90deg,
+    ${({ theme }) => theme.accent},
+    ${({ theme }) => theme.accent2},
+    ${({ theme }) => theme.accent}
+  );
+  background-size: 200% 100%;
+  animation: ${loadingAnimation} 1.2s linear infinite;
+  flex-shrink: 0;
+`;
+
+const SslRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  background: ${({ theme }) => theme.surface};
+  flex-shrink: 0;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  input[type="checkbox"] {
+    accent-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const UsedVarsStrip = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 3px 14px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: color-mix(in srgb, ${({ theme }) => theme.surface} 92%, transparent);
+  flex-shrink: 0;
+`;
+
+const VarsLabel = styled.span`
+  font-size: 10px;
+  opacity: 0.5;
+  margin-right: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+`;
+
+const VarChip = styled.span<{ $resolved: boolean }>`
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-family: monospace;
+  user-select: none;
+  cursor: default;
+
+  ${({ $resolved, theme }) =>
+    $resolved
+      ? css`
+          background: ${theme.badgeBg};
+          color: ${theme.badgeFg};
+          border: 1px solid ${theme.badgeBg};
+        `
+      : css`
+          background: color-mix(in srgb, ${theme.error} 18%, transparent);
+          color: ${theme.error};
+          border: 1px solid color-mix(in srgb, ${theme.error} 35%, transparent);
+        `}
+`;
+
+const MainArea = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+`;
+
+const SplitPane = styled.div`
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+`;
+
+const Resizer = styled.div`
+  width: 4px;
+  cursor: col-resize;
+  background: ${({ theme }) => theme.border};
+  flex-shrink: 0;
+  transition: background 0.15s;
+  &:hover {
+    background: ${({ theme }) => theme.accent};
+  }
+`;
+
+/* ─── Component ───────────────────────────────────────────── */
 
 export const MainPanel: React.FC = () => {
   /* ── State ───────────────────────────────────────── */
@@ -413,7 +533,7 @@ export const MainPanel: React.FC = () => {
   ]);
 
   return (
-    <div className="restify-container">
+    <Container>
       <TopBar
         name={request.name}
         isDirty={isDirty}
@@ -428,7 +548,7 @@ export const MainPanel: React.FC = () => {
       />
 
       {/* Animated loading bar */}
-      <div className={`loading-bar ${loading ? "active" : ""}`} />
+      <LoadingBar $active={loading} />
 
       <UrlBar
         method={request.method}
@@ -443,7 +563,7 @@ export const MainPanel: React.FC = () => {
       />
 
       {/* Per-request SSL setting */}
-      <div className="ssl-row">
+      <SslRow>
         <label title="Uncheck to allow self-signed or untrusted certificates for this request">
           <input
             type="checkbox"
@@ -454,16 +574,16 @@ export const MainPanel: React.FC = () => {
           />
           Verify SSL Certificate
         </label>
-      </div>
+      </SslRow>
 
       {/* Used environment variables strip */}
       {usedVars && usedVars.length > 0 && (
-        <div className="used-vars-strip">
-          <span className="used-vars-label">Vars:</span>
+        <UsedVarsStrip>
+          <VarsLabel>Vars:</VarsLabel>
           {usedVars.map((v) => (
-            <span
+            <VarChip
               key={v.name}
-              className={`used-var-chip ${v.resolved ? "resolved" : "unresolved"}`}
+              $resolved={v.resolved}
               title={
                 v.resolved
                   ? "Resolved in active environment"
@@ -473,21 +593,21 @@ export const MainPanel: React.FC = () => {
               {"{{"}
               {v.name}
               {"}}"}
-            </span>
+            </VarChip>
           ))}
-        </div>
+        </UsedVarsStrip>
       )}
 
       {/* Split pane */}
-      <div className="main-area">
-        <div className="split-pane">
+      <MainArea>
+        <SplitPane>
           <RequestPane
             request={request}
             onUpdate={updateRequest}
             themeKind={themeKind}
             environment={activeEnvironment}
           />
-          <div className="resizer" />
+          <Resizer />
           <ResponsePane
             response={response}
             loading={loading}
@@ -495,8 +615,8 @@ export const MainPanel: React.FC = () => {
             onDownloadFile={handleDownloadFile}
             post={post}
           />
-        </div>
-      </div>
+        </SplitPane>
+      </MainArea>
 
       <SaveModal
         open={saveModalOpen}
@@ -531,6 +651,6 @@ export const MainPanel: React.FC = () => {
         environment={activeEnvironment}
         onClose={() => setCodeGenOpen(false)}
       />
-    </div>
+    </Container>
   );
 };

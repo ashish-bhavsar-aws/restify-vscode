@@ -122,7 +122,6 @@ export class RestifyPanel {
     );
 
     this.panel.webview.html = getMainPanelHtml(context, this.panel.webview);
-    this.activityProvider?.append("Restify panel opened", "The request editor is ready.", "info");
     this.panel.webview.onDidReceiveMessage((msg) => {
       this._handleMessage(msg).catch((err) => {
         console.error("Error handling message:", err);
@@ -170,10 +169,13 @@ export class RestifyPanel {
         command: "collections",
         data: this.storageManager.getCollections(),
       });
+      const settings = this.storageManager.getSettings();
       this.panel.webview.postMessage({
         command: "loadSettings",
-        settings: this.storageManager.getSettings(),
+        settings,
       });
+      // Sync activity log enabled state
+      this.activityProvider?.setEnabled(settings.showActivityLog !== false);
     }, 100);
   }
 
@@ -183,7 +185,6 @@ export class RestifyPanel {
     if (requestData && requestData.name) {
       this.panel.title = requestData.name;
     }
-    this.activityProvider?.append("Request loaded", requestData?.name || "The request editor was populated.", "info");
 
     // If webview is already ready, send immediately
     if (this.webviewReady) {
@@ -634,16 +635,10 @@ export class RestifyPanel {
       case "updateTitle":
         this.panel.title = msg.title || "New Request";
         break;
-      case "resolveTooltip": {
-        const resolved = this.storageManager.resolveVariables(msg.text);
-        this.panel.webview.postMessage({
-          command: "setTooltipValue",
-          value: resolved,
-        });
-        break;
-      }
       case "saveSettings":
         this.storageManager.saveSettings(msg.settings);
+        // Sync activity log enabled state
+        this.activityProvider?.setEnabled(msg.settings.showActivityLog !== false);
         // Send confirmation back with the saved settings
         this.panel.webview.postMessage({
           command: "loadSettings",

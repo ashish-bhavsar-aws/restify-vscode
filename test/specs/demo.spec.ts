@@ -21,6 +21,7 @@ import {
   fillVariableInput,
   getVariableInputValue,
   sendRequestViaEnter,
+  clickWithCursor,
   injectCursorOverlay,
   resetLog,
   log,
@@ -121,7 +122,7 @@ test('03 - Import Swagger Petstore collection', async () => {
     const count = await sidebar.locator(sel).count().catch(() => 0);
     log(`  Selector "${sel}": ${count} matches`);
     if (count > 0) {
-      await sidebar.locator(sel).first().click();
+      await clickWithCursor(sidebar.locator(sel).first());
       importClicked = true;
       log(`  Clicked import via: ${sel}`);
       break;
@@ -210,14 +211,14 @@ test('04 - Verify imported collection appears in sidebar', async () => {
         // Collection collapsed — click "Expand all" then collection header
         const expandAllBtn = collectionsFrame!.locator('button[title*="Expand"]');
         if (await expandAllBtn.count() > 0) {
-          await expandAllBtn.first().click();
+          await clickWithCursor(expandAllBtn.first());
           log('Clicked Expand all');
           await collectionsFrame!.waitForTimeout(1500);
         }
 
         const collectionHeader = collectionsFrame!.locator('[data-testid="collection-header"]').first();
         if (await collectionHeader.count() > 0) {
-          await collectionHeader.click();
+          await clickWithCursor(collectionHeader);
           log('Clicked collection header');
           await collectionsFrame!.waitForTimeout(1500);
         }
@@ -250,7 +251,7 @@ test('04 - Verify imported collection appears in sidebar', async () => {
           const caretTransform = await header.locator('span').first().evaluate(el => getComputedStyle(el).transform).catch(() => '');
           const isExpanded = caretTransform.includes('matrix');
           if (!isExpanded) {
-            await header.click();
+            await clickWithCursor(header);
             log(`Expanded group-header[${i}]`);
           }
           await collectionsFrame!.waitForTimeout(500);
@@ -293,7 +294,7 @@ test('05 - Load a request from the collection', async () => {
     // Nothing visible — click Expand All
     const expandAllBtn = collectionsFrame!.locator('button[title*="Expand"]');
     if (await expandAllBtn.count() > 0) {
-      await expandAllBtn.first().click();
+      await clickWithCursor(expandAllBtn.first());
       log('Clicked Expand all');
       await collectionsFrame!.waitForTimeout(1000);
     }
@@ -314,7 +315,7 @@ test('05 - Load a request from the collection', async () => {
       const caretTransform = await header.locator('span').first().evaluate(el => getComputedStyle(el).transform).catch(() => '');
       const isExpanded = caretTransform.includes('matrix');
       if (!isExpanded) {
-        await header.click();
+        await clickWithCursor(header);
         log(`Expanded group-header[${i}]`);
       }
       await collectionsFrame!.waitForTimeout(300);
@@ -344,7 +345,7 @@ test('05 - Load a request from the collection', async () => {
     }
     const reqText = await visibleReqLocator.nth(targetIdx).textContent().catch(() => '');
     log(`Clicking sub-item[${targetIdx}]: "${(reqText || '').trim().slice(0, 60)}"`);
-    await visibleReqLocator.nth(targetIdx).click();
+    await clickWithCursor(visibleReqLocator.nth(targetIdx));
     log('Request item clicked — a NEW panel should open');
     await window.waitForTimeout(3000);
   } else {
@@ -439,7 +440,7 @@ test('05b - Create BASE_URL environment variable', async () => {
   const devCount = await devOption.count();
   logCheck('Development option in dropdown', devCount);
   if (devCount > 0) {
-    await devOption.first().click({ force: true });
+    await clickWithCursor(devOption.first(), { force: true });
     await window.waitForTimeout(500);
     log('  Selected "Development" from dropdown');
   }
@@ -471,26 +472,19 @@ test('06 - Execute request and view response', async () => {
     await mainFrame!.waitForTimeout(300);
     const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
     if (await getOption.count() > 0) {
-      await getOption.first().click({ force: true });
+      await clickWithCursor(getOption.first(), { force: true });
       log('Switched to GET');
     }
     await mainFrame!.waitForTimeout(300);
   }
 
-  // Check if URL was already loaded from the sidebar click
-  let urlValue = await getVariableInputValue(mainFrame!, '.url-input');
+  // Use env var {{BASE_URL}} in the URL bar to demonstrate env variable usage
+  log('Setting URL to {{BASE_URL}}/store/inventory...');
+  await fillVariableInput(mainFrame!, '.url-input', '{{BASE_URL}}/store/inventory');
+  await mainFrame!.waitForTimeout(300);
+  const urlValue = await getVariableInputValue(mainFrame!, '.url-input');
   log(`URL bar value: "${urlValue.slice(0, 80)}"`);
-
-  // If URL is empty or still the placeholder, fill it manually
-  if (!urlValue || urlValue.length < 5 || urlValue.startsWith('https://api.example.com')) {
-    log('URL bar empty/placeholder — manually filling...');
-    await fillVariableInput(mainFrame!, '.url-input', '{{BASE_URL}}/store/inventory');
-    await mainFrame!.waitForTimeout(300);
-    urlValue = await getVariableInputValue(mainFrame!, '.url-input');
-    log(`URL after fill: "${urlValue.slice(0, 80)}"`);
-  }
-
-  expect(urlValue).toContain('petstore');
+  expect(urlValue).toContain('BASE_URL');
 
   // Send via Enter key
   await sendRequestViaEnter(mainFrame!);
@@ -556,7 +550,7 @@ test('07 - View response logs tab', async () => {
   logCheck('Logs tab found', logsTabCount);
 
   if (logsTabCount > 0) {
-    await logsTab.first().click();
+    await clickWithCursor(logsTab.first());
     log('Logs tab clicked');
   }
   await window.waitForTimeout(500);
@@ -704,7 +698,7 @@ test('10 - Show code generation modal', async () => {
   // Close modal
   const closeBtn = mainFrame!.locator('[data-testid="codegen-overlay"]');
   if (await closeBtn.count() > 0) {
-    await closeBtn.click({ position: { x: 10, y: 10 }, force: true });
+    await clickWithCursor(closeBtn, { position: { x: 10, y: 10 }, force: true });
     await window.waitForTimeout(400);
   }
 
@@ -748,34 +742,9 @@ test('11 - Show environment manager', async () => {
                         (envModalText || '').includes('Manage');
   logCheck('Env modal has expected content', hasEnvContent);
 
-  // Click "+ New Environment" button
-  const newEnvBtn = mainFrame!.locator('[data-testid="env-new-btn"]');
-  const newEnvCount = await newEnvBtn.count().catch(() => 0);
-  logCheck('+ New Environment button found', newEnvCount);
-
-  if (newEnvCount > 0) {
-    await clickInFrame(mainFrame!, '[data-testid="env-new-btn"]');
-    await window.waitForTimeout(500);
-
-    // Fill environment name
-    const nameInput = mainFrame!.locator('[data-testid="env-name-input"]').first();
-    const nameCount = await nameInput.count().catch(() => 0);
-    logCheck('Environment name input found', nameCount);
-    if (nameCount > 0) {
-      await nameInput.fill('Development');
-      log('  Filled env name: Development');
-    }
-
-    // Fill variable key and value
-    const varInputs = mainFrame!.locator('[data-testid="env-var-key"], [data-testid="env-var-value"]');
-    const varCount = await varInputs.count();
-    logCheck('Variable inputs found', varCount);
-    if (varCount >= 2) {
-      await varInputs.nth(0).fill('baseUrl');
-      await varInputs.nth(1).fill('https://petstore.swagger.io/v2');
-      log('  Filled env variable: baseUrl=https://petstore.swagger.io/v2');
-    }
-  }
+  // Verify existing environment is listed (created in test 05b)
+  const hasDevEnv = (envModalText || '').includes('Development');
+  logCheck('Development environment listed', hasDevEnv);
 
   await screenshot(window, '11-environment-manager');
 
@@ -908,7 +877,7 @@ test('13 - Export collection', async () => {
 
     if (exportCount > 0) {
       const btn = useAll ? exportAllBtn.first() : exportBtn.first();
-      await btn.click({ force: true });
+      await clickWithCursor(btn, { force: true });
       log('Export button clicked');
 
       await window.waitForTimeout(1000);
@@ -991,7 +960,7 @@ test('14 - Show bottom panel (Activity)', async () => {
     const count = await panelPart.locator(sel).count().catch(() => 0);
     log(`  Selector "${sel}": ${count} matches`);
     if (count > 0) {
-      await panelPart.locator(sel).first().click({ force: true });
+      await clickWithCursor(panelPart.locator(sel).first(), { force: true });
       log(`  Clicked Restify tab via: ${sel}`);
       clicked = true;
       await window.waitForTimeout(1500);
@@ -1004,7 +973,7 @@ test('14 - Show bottom panel (Activity)', async () => {
     log('  No tab found by selector, trying text-based search...');
     const restifyEl = panelPart.locator('text=Restify').first();
     if (await restifyEl.count() > 0) {
-      await restifyEl.click({ force: true });
+      await clickWithCursor(restifyEl, { force: true });
       log('  Clicked "Restify" text element');
       clicked = true;
       await window.waitForTimeout(1500);
@@ -1020,7 +989,7 @@ test('14 - Show bottom panel (Activity)', async () => {
     await window.waitForTimeout(800);
     const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Restify/i }).first();
     if (await cmdItem.count() > 0) {
-      await cmdItem.click({ force: true });
+      await clickWithCursor(cmdItem, { force: true });
       log('  Clicked Restify command');
       await window.waitForTimeout(1500);
     } else {
@@ -1066,7 +1035,7 @@ test('15 - Request pane tabs overview', async () => {
   // 1) Headers tab — add a Content-Type header so the table is populated
   const headersTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Headers/i });
   if (await headersTab.count() > 0) {
-    await headersTab.first().click({ force: true });
+    await clickWithCursor(headersTab.first(), { force: true });
     log('Clicked Headers tab');
     await window.waitForTimeout(500);
 
@@ -1076,7 +1045,7 @@ test('15 - Request pane tabs overview', async () => {
     log(`  Add row button count in active tab: ${addBtnCount}`);
 
     if (addBtnCount > 0) {
-      await addHeaderBtn.first().click({ force: true });
+      await clickWithCursor(addHeaderBtn.first(), { force: true });
       log('Clicked "+ Add Header" button');
       await window.waitForTimeout(500);
     } else {
@@ -1085,7 +1054,7 @@ test('15 - Request pane tabs overview', async () => {
       const anyCount = await anyAddBtn.count();
       log(`  Any add-row-btn count: ${anyCount}`);
       if (anyCount > 0) {
-        await anyAddBtn.first().click({ force: true });
+        await clickWithCursor(anyAddBtn.first(), { force: true });
         log('Clicked first add-row-btn');
         await window.waitForTimeout(500);
       }
@@ -1113,19 +1082,19 @@ test('15 - Request pane tabs overview', async () => {
     await mainFrame!.waitForTimeout(300);
     const postOption = mainFrame!.locator('.method-option').filter({ hasText: 'POST' });
     if (await postOption.count() > 0) {
-      await postOption.first().click({ force: true });
+      await clickWithCursor(postOption.first(), { force: true });
       log('Switched to POST');
       await window.waitForTimeout(300);
     }
 
-    await bodyTab.first().click({ force: true });
+    await clickWithCursor(bodyTab.first(), { force: true });
     log('Clicked Body tab');
     await window.waitForTimeout(300);
 
     // Select JSON body type
     const jsonBtn = mainFrame!.locator('[data-testid="body-type-json"]').filter({ hasText: /JSON/i });
     if (await jsonBtn.count() > 0) {
-      await jsonBtn.first().click({ force: true });
+      await clickWithCursor(jsonBtn.first(), { force: true });
       log('Selected JSON body type');
       await window.waitForTimeout(300);
     }
@@ -1133,7 +1102,7 @@ test('15 - Request pane tabs overview', async () => {
     // Enter some JSON body
     const bodyEditor = mainFrame!.locator('.cm-content, .CodeMirror, textarea').first();
     if (await bodyEditor.count() > 0) {
-      await bodyEditor.click({ force: true });
+      await clickWithCursor(bodyEditor, { force: true });
       await bodyEditor.fill('{"name": "Restify", "type": "API Client"}');
       log('Filled JSON body');
       await window.waitForTimeout(200);
@@ -1145,14 +1114,14 @@ test('15 - Request pane tabs overview', async () => {
   // 3) Script tab — click Insert Example to populate
   const scriptTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Script/i });
   if (await scriptTab.count() > 0) {
-    await scriptTab.first().click({ force: true });
+    await clickWithCursor(scriptTab.first(), { force: true });
     log('Clicked Script tab');
     await window.waitForTimeout(300);
 
     // Click "Insert Example" button to populate script
     const insertExampleBtn = mainFrame!.locator('button').filter({ hasText: /Insert Example/i }).first();
     if (await insertExampleBtn.count() > 0) {
-      await insertExampleBtn.click({ force: true });
+      await clickWithCursor(insertExampleBtn, { force: true });
       log('Inserted example script');
       await window.waitForTimeout(300);
     }
@@ -1163,20 +1132,20 @@ test('15 - Request pane tabs overview', async () => {
   // 4) Auth tab — select Bearer Token and fill a token value
   const authTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Auth/i });
   if (await authTab.count() > 0) {
-    await authTab.first().click({ force: true });
+    await clickWithCursor(authTab.first(), { force: true });
     log('Clicked Auth tab');
     await window.waitForTimeout(300);
 
     // Click the auth type dropdown to select Bearer
     const authDropdown = mainFrame!.locator('.auth-type-trigger');
     if (await authDropdown.count() > 0) {
-      await authDropdown.first().click({ force: true });
+      await clickWithCursor(authDropdown.first(), { force: true });
       log('Opened auth type dropdown');
       await window.waitForTimeout(300);
 
       const bearerOption = mainFrame!.locator('.auth-type-option').filter({ hasText: /Bearer/i });
       if (await bearerOption.count() > 0) {
-        await bearerOption.first().click({ force: true });
+        await clickWithCursor(bearerOption.first(), { force: true });
         log('Selected Bearer Token');
         await window.waitForTimeout(300);
       }
@@ -1185,7 +1154,7 @@ test('15 - Request pane tabs overview', async () => {
     // Fill the token field using fillVariableInput
     const tokenInput = mainFrame!.locator('.auth-input').first();
     if (await tokenInput.count() > 0) {
-      await tokenInput.click({ force: true });
+      await clickWithCursor(tokenInput, { force: true });
       await window.waitForTimeout(100);
       // Type directly since it's a VariableTextInput display div
       await window.keyboard.type('eyJhbGciOiJIUzI1NiIs...', { delay: 10 });
@@ -1199,7 +1168,7 @@ test('15 - Request pane tabs overview', async () => {
   // Go back to Params tab for subsequent tests
   const paramsTab = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Params/i });
   if (await paramsTab.count() > 0) {
-    await paramsTab.first().click({ force: true });
+    await clickWithCursor(paramsTab.first(), { force: true });
     log('Clicked Params tab');
   }
 
@@ -1221,7 +1190,7 @@ test('16 - Execute POST request with JSON body', async () => {
   logCheck('POST option in dropdown', postCount);
 
   if (postCount > 0) {
-    await postOption.first().click({ force: true });
+    await clickWithCursor(postOption.first(), { force: true });
     log('POST selected');
   }
   await window.waitForTimeout(300);
@@ -1237,14 +1206,14 @@ test('16 - Execute POST request with JSON body', async () => {
   // Switch to Body tab and add JSON
   const bodyTab16 = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Body/i });
   if (await bodyTab16.count() > 0) {
-    await bodyTab16.first().click({ force: true });
+    await clickWithCursor(bodyTab16.first(), { force: true });
     log('Body tab clicked');
     await window.waitForTimeout(300);
 
     // Select JSON body type
     const jsonBtn = mainFrame!.locator('[data-testid="body-type-json"]').filter({ hasText: /JSON/i });
     if (await jsonBtn.count() > 0) {
-      await jsonBtn.first().click({ force: true });
+      await clickWithCursor(jsonBtn.first(), { force: true });
       log('JSON body type selected');
       await window.waitForTimeout(300);
     }
@@ -1252,7 +1221,7 @@ test('16 - Execute POST request with JSON body', async () => {
     // Type JSON body in the editor (CodeMirror or textarea)
     const bodyEditor = mainFrame!.locator('.cm-content, .CodeMirror, textarea').first();
     if (await bodyEditor.count() > 0) {
-      await bodyEditor.click({ force: true });
+      await clickWithCursor(bodyEditor, { force: true });
       await bodyEditor.fill('{"id": 1, "name": "test", "status": "available"}');
       log('JSON body entered');
     }
@@ -1271,7 +1240,7 @@ test('17 - Full view: main panel with response', async () => {
   // Click Body tab in response pane to show response body
   const bodyTab = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Body/i });
   if (await bodyTab.count() > 0) {
-    await bodyTab.first().click({ force: true });
+    await clickWithCursor(bodyTab.first(), { force: true });
     log('Clicked Body tab in response pane');
   }
   await window.waitForTimeout(300);
@@ -1307,6 +1276,14 @@ test('18 - Execute GET request for PDF and verify PDF content', async () => {
 
   expect(mainFrame).not.toBeNull();
 
+  // Focus on Headers tab before sending the request
+  const headersTab18 = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Headers/i });
+  if (await headersTab18.count() > 0) {
+    await clickWithCursor(headersTab18.first(), { force: true });
+    log('Clicked Headers tab before sending request');
+    await window.waitForTimeout(500);
+  }
+
   // Ensure method is GET
   const methodLabel = await mainFrame!.locator('[data-testid="method-trigger-label"]').first().textContent().catch(() => '');
   const currentMethod = (methodLabel || '').trim();
@@ -1315,7 +1292,7 @@ test('18 - Execute GET request for PDF and verify PDF content', async () => {
     await mainFrame!.waitForTimeout(300);
     const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
     if (await getOption.count() > 0) {
-      await getOption.first().click({ force: true });
+      await clickWithCursor(getOption.first(), { force: true });
     }
     await mainFrame!.waitForTimeout(300);
   }
@@ -1341,6 +1318,14 @@ test('18 - Execute GET request for PDF and verify PDF content', async () => {
     logError('Timed out waiting for response status bar');
   }
   await window.waitForTimeout(2000);
+
+  // Click Body tab in response pane
+  const bodyTab18 = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Body/i });
+  if (await bodyTab18.count() > 0) {
+    await clickWithCursor(bodyTab18.first(), { force: true });
+    log('Clicked Body tab in response pane');
+    await window.waitForTimeout(300);
+  }
 
   // Check for PDF-specific elements in the response pane
   const resPane = mainFrame!.locator('#res-pane');
@@ -1377,16 +1362,24 @@ test('19 - Download file returns status 200', async () => {
 
   expect(mainFrame).not.toBeNull();
 
+  // Focus on Headers tab before sending the request
+  const headersTab19 = mainFrame!.locator('#req-tabs [role="tab"]').filter({ hasText: /Headers/i });
+  if (await headersTab19.count() > 0) {
+    await clickWithCursor(headersTab19.first(), { force: true });
+    log('Clicked Headers tab before sending request');
+    await window.waitForTimeout(500);
+  }
+
   // Ensure we are on GET method
   const methodTrigger = mainFrame!.locator('.method-trigger, [data-testid="method-trigger"]');
   if (await methodTrigger.count() > 0) {
     const currentMethod = await methodTrigger.first().textContent().catch(() => '');
     if (!(currentMethod || '').includes('GET')) {
-      await methodTrigger.first().click({ force: true });
+      await clickWithCursor(methodTrigger.first(), { force: true });
       await mainFrame!.waitForTimeout(300);
       const getOption = mainFrame!.locator('.method-option').filter({ hasText: 'GET' });
       if (await getOption.count() > 0) {
-        await getOption.first().click({ force: true });
+        await clickWithCursor(getOption.first(), { force: true });
       }
       await mainFrame!.waitForTimeout(300);
     }
@@ -1414,6 +1407,14 @@ test('19 - Download file returns status 200', async () => {
     logError('Timed out waiting for response status bar');
   }
   await window.waitForTimeout(2000);
+
+  // Click Body tab in response pane
+  const bodyTab19 = mainFrame!.locator('#res-tabs [role="tab"]').filter({ hasText: /Body/i });
+  if (await bodyTab19.count() > 0) {
+    await clickWithCursor(bodyTab19.first(), { force: true });
+    log('Clicked Body tab in response pane');
+    await window.waitForTimeout(300);
+  }
 
   // Check response status
   const statusBar = mainFrame!.locator('[data-testid="response-status-bar"]');

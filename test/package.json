@@ -4,13 +4,14 @@
   "private": true,
   "description": "End-to-end Playwright tests for Restify VS Code extension",
   "scripts": {
-    "test": "npx playwright test",
-    "test:headed": "npx playwright test --headed",
-    "test:debug": "npx playwright test --debug",
-    "test:ui": "npx playwright test --ui",
+    "prebuild": "cd .. && rm -rf dist && NODE_OPTIONS=\"--max-old-space-size=8192\" npm run build && rm -rf test/screenshots",
+    "test": "npm run prebuild && npx playwright test",
+    "test:headed": "npm run prebuild && npx playwright test --headed",
+    "test:debug": "npm run prebuild && npx playwright test --debug",
+    "test:ui": "npm run prebuild && npx playwright test --ui",
     "test:report": "npx playwright show-report",
-    "demo": "npx playwright test specs/demo.spec.ts --project=vscode",
-    "demo:headed": "npx playwright test specs/demo.spec.ts --project=vscode --headed"
+    "demo": "npm run prebuild && npx playwright test specs/demo.spec.ts --project=vscode",
+    "demo:headed": "npm run prebuild && npx playwright test specs/demo.spec.ts --project=vscode --headed"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

@@ -171,29 +171,45 @@ export async function launchVSCode(): Promise<VSCodeApp> {
 export async function closeVSCode(app: VSCodeApp): Promise<void> {
   log('Closing VS Code...');
 
-  // Save recorded video before closing
+  // Close Electron first so Playwright finalizes the video file to disk
+  try { await app.electronApp.close(); } catch { /* already closed */ }
+  if (fs.existsSync(TEST_USER_DATA)) {
+    fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
+  }
+
+  // Save recorded video after closing (Playwright writes the file on close)
   try {
-    const video = app.window.video;
+    const video = app.window.video();
     if (video) {
-      // Playwright auto-saves to recordVideo.dir; try to copy final video
-      const videoPath = typeof video.path === 'function' ? await video.path() : null;
+      const videoPath = await video.path();
       if (videoPath && fs.existsSync(videoPath)) {
         fs.mkdirSync(VIDEO_DIR, { recursive: true });
-        const dest = path.join(VIDEO_DIR, 'final-demo.webm');
+        const dest = path.join(VIDEO_DIR, 'restify-demo.webm');
         fs.copyFileSync(videoPath, dest);
         log(`Video saved: ${dest}`);
+        try { fs.unlinkSync(videoPath); } catch { /* already gone */ }
       } else {
-        log('Video recorded to recordVideo.dir (auto-saved)');
+        log('Video path not available after close');
       }
+    } else {
+      log('No video object available');
     }
   } catch (e) {
     log(`  Could not save video: ${e}`);
   }
 
-  try { await app.electronApp.close(); } catch { /* already closed */ }
-  if (fs.existsSync(TEST_USER_DATA)) {
-    fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
-  }
+  // Clean up any leftover random-named .webm files in the video dir
+  try {
+    if (fs.existsSync(VIDEO_DIR)) {
+      for (const f of fs.readdirSync(VIDEO_DIR)) {
+        if (f.endsWith('.webm') && f !== 'restify-demo.webm') {
+          fs.unlinkSync(path.join(VIDEO_DIR, f));
+          log(`  Cleaned up leftover video: ${f}`);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
   log('VS Code closed and cleanup done');
 }
 
@@ -209,78 +225,184 @@ export async function screenshot(page: Page, name: string): Promise<string> {
 
 // ─── Cursor overlay ───────────────────────────────────────────────
 
+// ─── Cursor overlay (DOM-based red dot for video capture) ─────────────
+// Playwright video capture records DOM pixels, NOT the OS cursor.
+// We must render the pointer as a DOM element to appear in the recording.
+
+const CURSOR_OVERLAY_STYLES = `
+  *, *::before, *::after { cursor: none !important; }
+
+    #restify-dot {
+      position: fixed;
+      width: 8px; height: 8px;
+      margin-left: -4px; margin-top: -4px;
+      top: -100px; left: -100px;
+      background: radial-gradient(circle, #ff3b3b 40%, rgba(255,59,59,0.4) 70%, transparent 100%);
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 4px 1px rgba(255,59,59,0.5);
+      pointer-events: none;
+      z-index: 2147483647;
+      will-change: top, left;
+    }
+    #restify-ring {
+      position: fixed;
+      width: 24px; height: 24px;
+      margin-left: -12px; margin-top: -12px;
+    top: -200px; left: -200px;
+    border: 2px solid rgba(255,59,59,0.85);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 2147483647;
+    opacity: 0;
+  }
+  #restify-ring.flash {
+    animation: restify-ring-pop 400ms ease-out forwards;
+  }
+  @keyframes restify-ring-pop {
+    0%   { transform: scale(0.4); opacity: 1; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+`;
+
+function injectCursorOverlayJS(): void {
+  const w = window as any;
+  if (w.__restifyDotInjected) {
+    const dot = document.getElementById('restify-dot');
+    if (dot) return;
+  }
+  w.__restifyDotInjected = true;
+
+  const head = document.head || document.documentElement;
+
+  const style = document.createElement('style');
+  style.id = 'restify-dot-style';
+  style.textContent = `
+    *, *::before, *::after { cursor: none !important; }
+    #restify-dot {
+      position: fixed;
+      width: 8px; height: 8px;
+      margin-left: -4px; margin-top: -4px;
+      top: -100px; left: -100px;
+      background: radial-gradient(circle, #ff3b3b 40%, rgba(255,59,59,0.4) 70%, transparent 100%);
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 4px 1px rgba(255,59,59,0.5);
+      pointer-events: none;
+      z-index: 2147483647;
+      will-change: top, left;
+    }
+    #restify-ring {
+      position: fixed;
+      width: 24px; height: 24px;
+      margin-left: -12px; margin-top: -12px;
+      top: -200px; left: -200px;
+      border: 2px solid rgba(255,59,59,0.85);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 2147483647;
+      opacity: 0;
+    }
+    #restify-ring.flash {
+      animation: restify-ring-pop 400ms ease-out forwards;
+    }
+    @keyframes restify-ring-pop {
+      0%   { transform: scale(0.4); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+  `;
+  head.appendChild(style);
+
+  const dot = document.createElement('div');
+  dot.id = 'restify-dot';
+  document.body.appendChild(dot);
+
+  const ring = document.createElement('div');
+  ring.id = 'restify-ring';
+  document.body.appendChild(ring);
+}
+
+/**
+ * Position the red dot at (x, y) in the main frame.
+ * This is called directly from Node.js after each page.mouse.move(),
+ * bypassing DOM event listeners entirely.
+ */
+async function positionDot(page: Page, x: number, y: number): Promise<void> {
+  const result = await page.evaluate(({ x, y }) => {
+    const dot = document.getElementById('restify-dot');
+    if (dot) {
+      dot.style.left = x + 'px';
+      dot.style.top = y + 'px';
+      const rect = dot.getBoundingClientRect();
+      return { ok: true, left: dot.style.left, top: dot.style.top, rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height } };
+    }
+    return { ok: false };
+  }, { x, y }).catch((e) => ({ ok: false, error: String(e) }));
+  log(`  positionDot: (${Math.round(x)},${Math.round(y)}) → ${JSON.stringify(result)}`);
+}
+
+/**
+ * Flash the click ring at (x, y) in the main frame.
+ */
+async function flashRing(page: Page, x: number, y: number): Promise<void> {
+  await page.evaluate(({ x, y }) => {
+    const ring = document.getElementById('restify-ring');
+    if (ring) {
+      ring.style.left = x + 'px';
+      ring.style.top = y + 'px';
+      ring.classList.remove('flash');
+      void (ring as HTMLElement).offsetWidth;
+      ring.classList.add('flash');
+    }
+  }, { x, y }).catch(() => {});
+}
+
 export async function injectCursorOverlay(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const CURSOR_SVG = `data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/></svg>`
-    )}`;
+  // VS Code Electron uses a workbench.html as the main frame.
+  // The actual UI is rendered inside that frame. We need to inject our
+  // red dot there and ensure it survives VS Code's DOM mutations.
 
-    const style = document.createElement('style');
-    style.textContent = `
-      *, *::before, *::after { cursor: none !important; }
+  const injectIntoFrame = async (label: string) => {
+    const mainFrame = page.mainFrame();
+    try {
+      const result = await mainFrame.evaluate(() => {
+        const dot = document.getElementById('restify-dot');
+        const style = document.getElementById('restify-dot-style');
+        return {
+          hasDot: !!dot,
+          hasStyle: !!style,
+          bodyExists: !!document.body,
+          bodyChildren: document.body?.children?.length ?? 0,
+          url: window.location?.href?.slice(0, 60) ?? 'unknown',
+        };
+      });
+      log(`  [${label}] Frame state: dot=${result.hasDot} style=${result.hasStyle} body=${result.bodyExists} children=${result.bodyChildren} url=${result.url}`);
 
-      #restify-cursor {
-        position: fixed;
-        top: 0; left: 0;
-        width: 24px; height: 24px;
-        pointer-events: none;
-        z-index: 2147483647;
-        transition: transform 80ms ease;
-        will-change: transform, top, left;
+      if (!result.hasDot || !result.hasStyle) {
+        await mainFrame.evaluate(injectCursorOverlayJS);
+        const after = await mainFrame.evaluate(() => ({
+          hasDot: !!document.getElementById('restify-dot'),
+          hasStyle: !!document.getElementById('restify-dot-style'),
+          dotRect: document.getElementById('restify-dot')?.getBoundingClientRect(),
+        }));
+        log(`  [${label}] After injection: dot=${after.hasDot} style=${after.hasStyle} dotRect=${JSON.stringify(after.dotRect)}`);
       }
-      #restify-cursor img {
-        width: 24px; height: 24px;
-        display: block;
-      }
-      #restify-cursor.scale-down {
-        transform: scale(0.85);
-      }
+    } catch (e) {
+      log(`  [${label}] Injection failed: ${e}`);
+    }
+  };
 
-      @keyframes restify-ripple {
-        0%   { transform: translate(-50%, -50%) scale(0);   opacity: 0.7; }
-        100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
-      }
-      .restify-ripple {
-        position: fixed;
-        width: 30px; height: 30px;
-        border: 2px solid rgba(255, 255, 255, 0.7);
-        border-radius: 50%;
-        pointer-events: none;
-        z-index: 2147483647;
-        animation: restify-ripple 300ms ease-out forwards;
-        will-change: transform, opacity;
-      }
-    `;
-    document.head.appendChild(style);
+  // Inject via addInitScript for future navigations
+  await page.addInitScript(injectCursorOverlayJS);
 
-    const cursor = document.createElement('div');
-    cursor.id = 'restify-cursor';
-    const img = document.createElement('img');
-    img.src = CURSOR_SVG;
-    img.draggable = false;
-    cursor.appendChild(img);
-    document.body.appendChild(cursor);
+  // Inject now
+  await injectIntoFrame('initial');
 
-    document.addEventListener('mousemove', (e) => {
-      cursor.style.left = `${e.clientX}px`;
-      cursor.style.top = `${e.clientY}px`;
-    }, { passive: true });
+  // Re-inject periodically (VS Code can reload the main frame)
+  const interval = setInterval(() => injectIntoFrame('periodic'), 2000);
+  setTimeout(() => clearInterval(interval), 600_000);
 
-    document.addEventListener('mousedown', () => {
-      cursor.classList.add('scale-down');
-      setTimeout(() => cursor.classList.remove('scale-down'), 80);
-    }, { passive: true });
-
-    document.addEventListener('mousedown', (e) => {
-      const ripple = document.createElement('div');
-      ripple.className = 'restify-ripple';
-      ripple.style.left = `${e.clientX}px`;
-      ripple.style.top = `${e.clientY}px`;
-      document.body.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 300);
-    }, { passive: true });
-  });
-  log('Cursor overlay injected');
+  log('Cursor overlay injected (DOM red dot on main frame)');
 }
 
 // ─── Frame discovery (with retry) ───────────────────────────────────
@@ -652,6 +774,80 @@ export async function dismissNotification(page: Page): Promise<void> {
 
 // ─── Webview interaction helpers (click-based) ──────────────────────
 
+/**
+ * Move the visible cursor to the center of an element.
+ * Uses locator.boundingBox() which returns page-level coordinates,
+ * so page.mouse.move() lands exactly on the element.
+ */
+export async function moveMouseToElement(
+  page: Page,
+  frame: Frame,
+  selector: string,
+  opts?: { index?: number; steps?: number },
+): Promise<boolean> {
+  const index = opts?.index ?? 0;
+  const el = frame.locator(selector).nth(index);
+  const box = await el.boundingBox({ timeout: 3_000 }).catch(() => null);
+  if (!box) {
+    log(`  moveMouseToElement: no boundingBox for "${selector}"`);
+    return false;
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  log(`  moveMouseToElement: "${selector}" box=(${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}x${Math.round(box.height)}) → moving to (${Math.round(x)},${Math.round(y)})`);
+  await page.mouse.move(x, y, { steps: opts?.steps ?? 10 });
+  await positionDot(page, x, y);
+  await page.waitForTimeout(120);
+  return true;
+}
+
+/** Convenience: move cursor to a locator, then return its bounding box center. */
+export async function moveMouseToLocator(
+  page: Page,
+  locator: import('@playwright/test').Locator,
+): Promise<{ x: number; y: number } | null> {
+  const box = await locator.boundingBox({ timeout: 3_000 }).catch(() => null);
+  if (!box) {
+    log(`  moveMouseToLocator: no boundingBox`);
+    return null;
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  log(`  moveMouseToLocator: box=(${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}x${Math.round(box.height)}) → moving to (${Math.round(x)},${Math.round(y)})`);
+  await page.mouse.move(x, y, { steps: 10 });
+  await positionDot(page, x, y);
+  await page.waitForTimeout(120);
+  return { x, y };
+}
+
+/**
+ * Move the cursor to a locator's center, then click it.
+ * Use this instead of locator.click() for visible cursor movement in videos.
+ */
+export async function clickWithCursor(
+  locator: import('@playwright/test').Locator,
+  opts?: { force?: boolean; position?: { x: number; y: number }; timeout?: number },
+): Promise<void> {
+  try {
+    const page = locator.page();
+    const box = await locator.boundingBox({ timeout: opts?.timeout ?? 3_000 }).catch(() => null);
+    if (box) {
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      log(`  clickWithCursor: moving to (${Math.round(x)},${Math.round(y)})`);
+      await page.mouse.move(x, y, { steps: 10 });
+      await positionDot(page, x, y);
+      await flashRing(page, x, y);
+      await page.waitForTimeout(100);
+    } else {
+      log(`  clickWithCursor: no boundingBox, clicking directly`);
+    }
+  } catch (e) {
+    log(`  clickWithCursor: mouse move failed (${e}), clicking directly`);
+  }
+  await locator.click({ force: opts?.force, position: opts?.position, timeout: opts?.timeout });
+}
+
 export async function clickButton(frame: Frame, text: string): Promise<void> {
   log(`Clicking button "${text}" in webview frame...`);
   const btn = frame.locator(`button:has-text("${text}")`);
@@ -666,8 +862,18 @@ export async function clickButton(frame: Frame, text: string): Promise<void> {
       log(`    btn[${i}]: "${(t || '').trim().slice(0, 40)}"`);
     }
   }
-  // force:true — Playwright sees the outer iframe as intercepting pointer events
-  // but the button IS correctly inside the target frame
+  try {
+    const page = frame.page();
+    const moved = await moveMouseToLocator(page, btn.first());
+    if (moved) {
+      log(`  Cursor moved to button "${text}"`);
+      // Flash ring at the button position
+      const box = await btn.first().boundingBox({ timeout: 1_000 }).catch(() => null);
+      if (box) await flashRing(page, box.x + box.width / 2, box.y + box.height / 2);
+    }
+  } catch (e) {
+    log(`  Cursor move skipped for button "${text}" (${e})`);
+  }
   await btn.first().click({ force: true });
   log(`  Button "${text}" clicked`);
   await frame.waitForTimeout(300);
@@ -678,6 +884,9 @@ export async function clickClass(frame: Frame, className: string): Promise<void>
   const el = frame.locator(`.${className}`);
   const count = await el.count();
   logCheck(`.${className} found`, count);
+  const page = frame.page();
+  const moved = await moveMouseToLocator(page, el.first());
+  if (moved) log(`  Cursor moved to .${className}`);
   await el.first().click({ force: true });
   await frame.waitForTimeout(300);
 }
@@ -725,12 +934,29 @@ export async function clickTabInFrame(frame: Frame, tabName: string, containerSe
 //   1. focus() + keyboard Space/Enter — works if element is focusable
 //   2. force:true click — fallback for non-focusable elements
 
-export async function clickInFrame(frame: Frame, selector: string, _opts?: { force?: boolean }): Promise<void> {
+export async function clickInFrame(
+  frame: Frame,
+  selector: string,
+  _opts?: { force?: boolean },
+): Promise<void> {
   log(`Clicking "${selector}" in frame (webview-safe)...`);
   const el = frame.locator(selector);
   const count = await el.count();
   logCheck(`"${selector}" found`, count);
   if (count === 0) return;
+
+  // Move the visible cursor to the element first
+  try {
+    const page = frame.page();
+    const moved = await moveMouseToLocator(page, el.first());
+    if (moved) {
+      log(`  Cursor moved to "${selector}"`);
+      const box = await el.first().boundingBox({ timeout: 1_000 }).catch(() => null);
+      if (box) await flashRing(page, box.x + box.width / 2, box.y + box.height / 2);
+    }
+  } catch (e) {
+    log(`  Cursor move skipped for "${selector}" (${e})`);
+  }
 
   // Strategy 1: evaluate-based click (dispatches a real MouseEvent that React picks up)
   try {

@@ -350,8 +350,6 @@ const MethodBadge = styled.span<{ $method: string }>`
   border-radius: 3px;
   flex-shrink: 0;
   letter-spacing: 0.5px;
-  width: 36px;
-  text-align: center;
   background: color-mix(in srgb, currentColor 15%, transparent);
   color: ${({ $method }) => METHOD_COLORS[$method] || 'var(--muted)'};
 `;

@@ -1,9 +1,0 @@
-1. check sidepanel is active or not, if not then only click on sidebar icon go open the sidepane (activation)
-2. import swagger collection of petstore(a. click button b. select type swagger c. add url d. import collection e. show imported collection on side panel)
-3. execute any 2-3 requests from the collection(and script and show logs from response pane)
-4. show history should added for these request
-5. show code generation
-6. setup env vars and usage
-7. show settings (proxy and mTLS) - without any request execution
-8. show export functionality of current collection
-9. show bottom pannel with activity list launch vs code using playwrite click based cases and add package.json /Users/ashishbhasvar/Workspace/restify-vscode/test

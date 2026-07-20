@@ -33,11 +33,12 @@ const GlobalStyles = createGlobalStyle`
 
     /* Method badge colors — light defaults */
     --tag-get:    #1a7f37;
-    --tag-post:   #cf222e;
-    --tag-put:    #0550ae;
+    --tag-post:   #0550ae;
+    --tag-put:    #9a6700;
     --tag-delete: #cf222e;
-    --tag-patch:  #953800;
-    --tag-head:   #8250df;
+    --tag-patch:  #8250df;
+    --tag-head:   #4d5970;
+    --tag-options: #bf3989;
 
     /* Bottom view / widget tokens */
     --card:        var(--vscode-sideBar-background, #252526);
@@ -63,11 +64,12 @@ const GlobalStyles = createGlobalStyle`
     --accent-2: var(--vscode-textLink-foreground, #d2a8ff);
 
     --tag-get:    #7ee787;
-    --tag-post:   #ffa198;
-    --tag-put:    #79c0ff;
+    --tag-post:   #79c0ff;
+    --tag-put:    #e3b341;
     --tag-delete: #ffa198;
-    --tag-patch:  #e3b341;
-    --tag-head:   #d2a8ff;
+    --tag-patch:  #d2a8ff;
+    --tag-head:   #90a4ae;
+    --tag-options: #f778ba;
   }
 
   /* High-contrast overrides */
@@ -78,11 +80,12 @@ const GlobalStyles = createGlobalStyle`
     --border:   var(--vscode-panel-border, rgba(255,255,255,0.3));
 
     --tag-get:    #7ee787;
-    --tag-post:   #ffa198;
-    --tag-put:    #79c0ff;
+    --tag-post:   #79c0ff;
+    --tag-put:    #e3b341;
     --tag-delete: #ffa198;
-    --tag-patch:  #e3b341;
-    --tag-head:   #d2a8ff;
+    --tag-patch:  #d2a8ff;
+    --tag-head:   #90a4ae;
+    --tag-options: #f778ba;
   }
 
   /* ─── Reset ───────────────────────────────────────────────── */

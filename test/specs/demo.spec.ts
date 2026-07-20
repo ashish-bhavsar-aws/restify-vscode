@@ -643,7 +643,7 @@ test('10 - Show code generation modal', async () => {
   logCheck('Codegen button found', codeGenCount);
 
   if (codeGenCount > 0) {
-    const isDisabled = await codeGenBtn.first().getAttribute('disabled');
+    const isDisabled = await codeGenBtn.first().getAttribute('disabled') ?? '';
     logCheck('Codegen button disabled attribute', isDisabled);
 
     // Check if it has the .disabled class
@@ -887,7 +887,9 @@ test('13 - Export collection', async () => {
       logCheck('Filename input box visible', inputVisible);
 
       if (inputVisible > 0) {
-        await inputBox.first().clear();
+        await inputBox.first().click();
+        await window.keyboard.press('Meta+A');
+        await window.waitForTimeout(100);
         await inputBox.first().fill('export-test.json');
         await window.waitForTimeout(300);
         await window.keyboard.press('Enter');

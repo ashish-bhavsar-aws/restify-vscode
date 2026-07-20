@@ -23,7 +23,12 @@ const METHOD_COLORS: Record<string, string> = {
   DELETE: 'var(--tag-delete)',
   PATCH: 'var(--tag-patch)',
   HEAD: 'var(--tag-head)',
-  OPTIONS: 'var(--muted)',
+  OPTIONS: 'var(--tag-options)',
+};
+
+const METHOD_SHORT: Record<string, string> = {
+  DELETE: 'DEL',
+  OPTIONS: 'OPT',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -344,6 +349,8 @@ const MethodBadge = styled.span<{ $method: string }>`
   border-radius: 3px;
   flex-shrink: 0;
   letter-spacing: 0.5px;
+  width: 32px;
+  text-align: center;
   background: color-mix(in srgb, currentColor 15%, transparent);
   color: ${({ $method }) => METHOD_COLORS[$method] || 'var(--muted)'};
 `;
@@ -783,7 +790,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
             const sc = !entry.status || entry.status === 0 ? 'err' : entry.status < 300 ? 'ok' : entry.status < 400 ? 'warn' : 'err';
             return (
               <Item key={entry.id} tabIndex={0} onClick={() => onLoad(entry.id)} onKeyDown={(e) => { if (e.key === 'Enter') onLoad(entry.id); }}>
-                <MethodBadge $method={entry.method}>{entry.method}</MethodBadge>
+                <MethodBadge $method={entry.method}>{METHOD_SHORT[entry.method] || entry.method}</MethodBadge>
                 <ItemContent>
                   <ItemName title={entry.name || entry.url}>{entry.name || entry.url}</ItemName>
                   <ItemMeta>{relativeTime(entry.timestamp)}{entry.url !== entry.name && entry.url ? ` · ${entry.url}` : ''}</ItemMeta>
@@ -871,7 +878,7 @@ const RequestRow: React.FC<RequestRowProps> = ({ req, collectionName: _collectio
     onClick={onLoad} onKeyDown={e => { if (e.key === 'Enter') onLoad(); }}
     onDragStart={onDragStart} onDragEnd={onDragEnd}>
     <DragHandle><Icon icon={faGripVertical} size={11} /></DragHandle>
-    <MethodBadge $method={req.method}>{req.method}</MethodBadge>
+    <MethodBadge $method={req.method}>{METHOD_SHORT[req.method] || req.method}</MethodBadge>
     {editing
       ? <InlineRename autoFocus defaultValue={req.name || ''}
           onBlur={e => { if (e.target.value.trim()) onCommitRename(e.target.value.trim()); else onCancelRename(); }}
@@ -1246,7 +1253,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                       onDragStart={e => { dragRef.current = { requestId: req.id!, fromCollectionId: col.id, fromGroupId: null }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).setAttribute('data-dragging', ''); }}
                       onDragEnd={e => { (e.currentTarget as HTMLElement).removeAttribute('data-dragging'); }}>
                       <DragHandle><Icon icon={faGripVertical} size={11} /></DragHandle>
-                      <MethodBadge $method={req.method}>{req.method}</MethodBadge>
+    <MethodBadge $method={req.method}>{METHOD_SHORT[req.method] || req.method}</MethodBadge>
                       {editingRequest?.collectionId === col.id && editingRequest.requestId === req.id
                         ? <InlineRename autoFocus defaultValue={req.name || ''}
                             onBlur={e => { if (e.target.value.trim()) onRenameRequest(col.id, req.id!, e.target.value.trim()); setEditingRequest(null); }}

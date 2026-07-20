@@ -155,6 +155,7 @@ export const MainPanel: React.FC = () => {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [envManagerOpen, setEnvManagerOpen] = useState(false);
+  const [editingEnvForModal, setEditingEnvForModal] = useState<Environment | null>(null);
   const [codeGenOpen, setCodeGenOpen] = useState(false);
   const [codeGenEnabled, setCodeGenEnabled] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
@@ -541,7 +542,19 @@ export const MainPanel: React.FC = () => {
         activeEnvId={activeEnvId}
         onNameChange={(name) => updateRequest({ name })}
         onEnvChange={handleEnvChange}
-        onManageEnvs={() => setEnvManagerOpen(true)}
+        onManageEnvs={() => {
+          setEditingEnvForModal(null);
+          setEnvManagerOpen(true);
+        }}
+        onEditEnv={(env) => {
+          setEditingEnvForModal(env);
+          setEnvManagerOpen(true);
+        }}
+        onDeleteEnv={handleDeleteEnvironment}
+        onAddEnv={() => {
+          setEditingEnvForModal({ id: '', name: '', variables: [{ key: '', value: '' }] });
+          setEnvManagerOpen(true);
+        }}
         onOpenSettings={() => setSettingsModalOpen(true)}
         onGenerateCode={() => setCodeGenOpen(true)}
         codegenEnabled={codeGenEnabled}
@@ -637,7 +650,11 @@ export const MainPanel: React.FC = () => {
         open={envManagerOpen}
         environments={environments}
         activeEnvId={activeEnvId}
-        onClose={() => setEnvManagerOpen(false)}
+        initialEditingEnv={editingEnvForModal}
+        onClose={() => {
+          setEditingEnvForModal(null);
+          setEnvManagerOpen(false);
+        }}
         onSetActive={(id) => {
           handleEnvChange(id);
         }}

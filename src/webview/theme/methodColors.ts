@@ -1,58 +1,61 @@
 export const METHOD_COLORS_LIGHT: Record<string, string> = {
   GET: '#1a7f37',
-  POST: '#cf222e',
-  PUT: '#0550ae',
+  POST: '#0550ae',
+  PUT: '#9a6700',
   DELETE: '#cf222e',
-  PATCH: '#953800',
-  HEAD: '#8250df',
-  OPTIONS: '#0d7a6b',
+  PATCH: '#8250df',
+  HEAD: '#4d5970',
+  OPTIONS: '#bf3989',
 };
 
 export const METHOD_COLORS_DARK: Record<string, string> = {
   GET: '#7ee787',
-  POST: '#ffa198',
-  PUT: '#79c0ff',
+  POST: '#79c0ff',
+  PUT: '#e3b341',
   DELETE: '#ffa198',
-  PATCH: '#e3b341',
-  HEAD: '#d2a8ff',
-  OPTIONS: '#7ee787',
+  PATCH: '#d2a8ff',
+  HEAD: '#90a4ae',
+  OPTIONS: '#f778ba',
 };
 
 export const METHOD_COLORS_HC: Record<string, string> = {
   GET: '#7ee787',
-  POST: '#ffa198',
-  PUT: '#79c0ff',
+  POST: '#79c0ff',
+  PUT: '#e3b341',
   DELETE: '#ffa198',
-  PATCH: '#e3b341',
-  HEAD: '#d2a8ff',
-  OPTIONS: '#7ee787',
+  PATCH: '#d2a8ff',
+  HEAD: '#90a4ae',
+  OPTIONS: '#f778ba',
 };
 
 export const TAG_COLORS_LIGHT: Record<string, string> = {
   GET: '#1a7f37',
-  POST: '#cf222e',
-  PUT: '#0550ae',
+  POST: '#0550ae',
+  PUT: '#9a6700',
   DELETE: '#cf222e',
-  PATCH: '#953800',
-  HEAD: '#8250df',
+  PATCH: '#8250df',
+  HEAD: '#4d5970',
+  OPTIONS: '#bf3989',
 };
 
 export const TAG_COLORS_DARK: Record<string, string> = {
   GET: '#7ee787',
-  POST: '#ffa198',
-  PUT: '#79c0ff',
+  POST: '#79c0ff',
+  PUT: '#e3b341',
   DELETE: '#ffa198',
-  PATCH: '#e3b341',
-  HEAD: '#d2a8ff',
+  PATCH: '#d2a8ff',
+  HEAD: '#90a4ae',
+  OPTIONS: '#f778ba',
 };
 
 export const TAG_COLORS_HC: Record<string, string> = {
   GET: '#7ee787',
-  POST: '#ffa198',
-  PUT: '#79c0ff',
+  POST: '#79c0ff',
+  PUT: '#e3b341',
   DELETE: '#ffa198',
-  PATCH: '#e3b341',
-  HEAD: '#d2a8ff',
+  PATCH: '#d2a8ff',
+  HEAD: '#90a4ae',
+  OPTIONS: '#f778ba',
 };
 
 function isHighContrast(): boolean {

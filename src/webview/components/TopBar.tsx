@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import styled, { css } from 'styled-components';
 import { Environment } from '../types';
 import { Icon, faCode } from './FaIcon';
+import { faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons';
 
 interface TopBarProps {
   name: string;
@@ -10,8 +11,11 @@ interface TopBarProps {
   activeEnvId: string | null;
   onNameChange: (name: string) => void;
   onEnvChange: (id: string | null) => void;
-  onOpenSettings: () => void;
   onManageEnvs: () => void;
+  onEditEnv: (env: Environment) => void;
+  onDeleteEnv: (id: string) => void;
+  onAddEnv: () => void;
+  onOpenSettings: () => void;
   onGenerateCode: () => void;
   codegenEnabled?: boolean;
 }
@@ -177,6 +181,52 @@ const EnvOptionLabel = styled.span`
   white-space: nowrap;
 `;
 
+const EnvOptionIconBtn = styled.button<{ $danger?: boolean }>`
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.muted};
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, background 0.12s;
+  flex-shrink: 0;
+
+  &:hover {
+    ${({ $danger, theme }) => $danger
+      ? css`
+          color: ${theme.error};
+          background: color-mix(in srgb, ${theme.error} 12%, transparent);
+        `
+      : css`
+          color: ${theme.fg};
+          background: ${theme.hover};
+        `}
+  }
+`;
+
+const EnvOptionActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+
+  ${EnvOption}:hover & {
+    opacity: 1;
+  }
+`;
+
+const EnvOptionWrapper = styled.div`
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+`;
+
 const ManageEnvBtn = styled.button`
   background: transparent;
   border: none;
@@ -248,7 +298,14 @@ const CodegenBtn = styled.button<{ $enabled: boolean }>`
   }
 `;
 
-const EnvDropdown: React.FC<{ environments: Environment[]; activeEnvId: string | null; onChange: (id: string | null) => void }> = ({ environments, activeEnvId, onChange }) => {
+const EnvDropdown: React.FC<{
+  environments: Environment[];
+  activeEnvId: string | null;
+  onChange: (id: string | null) => void;
+  onEdit: (env: Environment) => void;
+  onDelete: (id: string) => void;
+  onAdd: () => void;
+}> = ({ environments, activeEnvId, onChange, onEdit, onDelete, onAdd }) => {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -322,9 +379,56 @@ const EnvDropdown: React.FC<{ environments: Environment[]; activeEnvId: string |
               }}
               onMouseEnter={() => setActiveIndex(idx)}
             >
-              <EnvOptionLabel>{opt.name}</EnvOptionLabel>
+              <EnvOptionWrapper>
+                <EnvOptionLabel>{opt.name}</EnvOptionLabel>
+                {opt.id && (
+                  <EnvOptionActions>
+                    <EnvOptionIconBtn
+                      title="Edit"
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onEdit(opt as Environment);
+                        setOpen(false);
+                      }}
+                    >
+                      <Icon icon={faPen} size={10} />
+                    </EnvOptionIconBtn>
+                    <EnvOptionIconBtn
+                      $danger
+                      title="Delete"
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onDelete(opt.id);
+                        setOpen(false);
+                      }}
+                    >
+                      <Icon icon={faTrash} size={10} />
+                    </EnvOptionIconBtn>
+                  </EnvOptionActions>
+                )}
+              </EnvOptionWrapper>
             </EnvOption>
           ))}
+          <EnvOption
+            key="__add_new__"
+            role="option"
+            $selected={false}
+            $highlighted={allOptions.length === activeIndex}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onAdd();
+              setOpen(false);
+            }}
+            onMouseEnter={() => setActiveIndex(allOptions.length)}
+            style={{ color: 'inherit', opacity: 0.7 }}
+          >
+            <EnvOptionWrapper>
+              <Icon icon={faPlus} size={10} />
+              <EnvOptionLabel>New Environment</EnvOptionLabel>
+            </EnvOptionWrapper>
+          </EnvOption>
         </EnvMenu>
       )}
     </EnvDropdownContainer>
@@ -338,8 +442,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   activeEnvId,
   onNameChange,
   onEnvChange,
-  onOpenSettings,
   onManageEnvs,
+  onEditEnv,
+  onDeleteEnv,
+  onAddEnv,
+  onOpenSettings,
   onGenerateCode,
   codegenEnabled = false,
 }) => (
@@ -359,7 +466,14 @@ export const TopBar: React.FC<TopBarProps> = ({
       {isDirty && <DirtyDot title="Unsaved changes" />}
     </RequestNameWrapper>
 
-    <EnvDropdown environments={environments} activeEnvId={activeEnvId} onChange={onEnvChange} />
+    <EnvDropdown
+      environments={environments}
+      activeEnvId={activeEnvId}
+      onChange={onEnvChange}
+      onEdit={onEditEnv}
+      onDelete={onDeleteEnv}
+      onAdd={onAddEnv}
+    />
 
     <ManageEnvBtn data-testid="manage-env-btn" title="Manage Environments" onClick={onManageEnvs}>
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">

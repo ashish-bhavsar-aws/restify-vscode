@@ -310,7 +310,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
         />
       </UrlInputWrapper>
 
-      <SaveBtn onClick={onSave} title="Save to Collection">
+      <SaveBtn data-testid="save-btn" onClick={onSave} title="Save to Collection">
         <Icon icon={faFloppyDisk} size={13} style={{ marginRight: 5 }} />
         Save
       </SaveBtn>

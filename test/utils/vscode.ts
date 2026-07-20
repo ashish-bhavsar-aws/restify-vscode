@@ -2,29 +2,22 @@ import { _electron as electron, type ElectronApplication, type Page, type Frame 
 import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { DailyFileAppender } from './daily-appender';
 
 const EXTENSION_PATH = path.resolve(__dirname, '..', '..');
 const TEST_USER_DATA = path.resolve(__dirname, '..', '.vscode-test-user-data');
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', 'screenshots');
 const VIDEO_DIR = path.resolve(__dirname, '..', 'videos');
-const LOG_FILE = path.resolve(__dirname, '..', 'test.log');
 
 // ─── Debug Logger ───────────────────────────────────────────────────
 
 let _step = 0;
-let _logStream: import('fs').WriteStream | null = null;
 
-function _ensureLogStream(): import('fs').WriteStream {
-  if (!_logStream) {
-    _logStream = require('fs').createWriteStream(LOG_FILE, { flags: 'w' });
-  }
-  return _logStream!;
-}
+/** Singleton daily appender — writes to test/logs/YYYY-MM-DD.log */
+const _daily = new DailyFileAppender();
 
 function _writeToFile(line: string): void {
-  try {
-    _ensureLogStream().write(line + '\n');
-  } catch { /* ignore */ }
+  _daily.write(line);
 }
 
 export function log(msg: string): void {
@@ -53,11 +46,7 @@ export function logError(msg: string, err?: unknown): void {
 
 export function resetLog(): void {
   _step = 0;
-  if (_logStream) {
-    _logStream.end();
-    _logStream = null;
-  }
-  _writeToFile(`\n${'='.repeat(60)}\nTest run started at ${new Date().toISOString()}\n${'='.repeat(60)}\n`);
+  _daily.writeBanner('Test run');
 }
 
 // ─── Frame/State diagnostics ────────────────────────────────────────
@@ -125,6 +114,11 @@ export async function launchVSCode(): Promise<VSCodeApp> {
   fs.writeFileSync(path.join(settingsDir, 'settings.json'), JSON.stringify({
     'workbench.colorTheme': 'Default Dark Modern',
     'window.newWindowDimensions': 'maximized',
+    'workbench.startupEditor': 'none',
+    'workbench.welcome.enabled': false,
+    'workbench.welcome.walkthroughs.skipBackgroundTheme': true,
+    'update.showReleaseNotes': false,
+    'workbench.tips.enabled': false,
   }, null, 2));
   log('  settings.json written (dark theme + maximize)');
 
@@ -140,6 +134,15 @@ export async function launchVSCode(): Promise<VSCodeApp> {
       '--disable-gpu',
       `--user-data-dir=${TEST_USER_DATA}`,
       `--extensionDevelopmentPath=${EXTENSION_PATH}`,
+      '--disable-extension=vscode.git',
+      '--disable-extension=vscode.github.gitUsage',
+      '--disable-extension=vscode.welcomePage',
+      '--disable-extension=github.copilot',
+      '--disable-extension=github.copilot-chat',
+      '--disable-extension=github.vscode-pull-request-github',
+      '--disable-extension=ms-vscode.vscode-github-prerelease',
+      '--disable-extension=ms-python.python',
+      '--disable-extension=ms-vscode.copilot',
     ],
     env: {
       ...process.env,
@@ -171,34 +174,47 @@ export async function launchVSCode(): Promise<VSCodeApp> {
 export async function closeVSCode(app: VSCodeApp): Promise<void> {
   log('Closing VS Code...');
 
-  // Close Electron first so Playwright finalizes the video file to disk
+  // Snapshot current video files before close
+  const videosBefore = new Set(
+    fs.existsSync(VIDEO_DIR)
+      ? fs.readdirSync(VIDEO_DIR).filter(f => f.endsWith('.webm'))
+      : [],
+  );
+
+  // Close Electron — Playwright finalizes the video file after this
   try { await app.electronApp.close(); } catch { /* already closed */ }
-  if (fs.existsSync(TEST_USER_DATA)) {
-    fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
-  }
 
-  // Save recorded video after closing (Playwright writes the file on close)
-  try {
-    const video = app.window.video();
-    if (video) {
-      const videoPath = await video.path();
-      if (videoPath && fs.existsSync(videoPath)) {
-        fs.mkdirSync(VIDEO_DIR, { recursive: true });
-        const dest = path.join(VIDEO_DIR, 'restify-demo.webm');
-        fs.copyFileSync(videoPath, dest);
-        log(`Video saved: ${dest}`);
-        try { fs.unlinkSync(videoPath); } catch { /* already gone */ }
-      } else {
-        log('Video path not available after close');
+  // Helper: wait without using the (now-closed) page
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+  // Wait for Playwright to write the new video file (up to 10s)
+  const dest = path.join(VIDEO_DIR, 'restify-demo.webm');
+  fs.mkdirSync(VIDEO_DIR, { recursive: true });
+  let saved = false;
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const all = fs.readdirSync(VIDEO_DIR).filter(f => f.endsWith('.webm'));
+    const newFile = all.find(f => !videosBefore.has(f));
+    if (newFile) {
+      const src = path.join(VIDEO_DIR, newFile);
+      // Wait until file size stabilizes (Playwright is done writing)
+      let prevSize = -1;
+      for (let j = 0; j < 10; j++) {
+        const curSize = fs.statSync(src).size;
+        if (curSize === prevSize && curSize > 0) break;
+        prevSize = curSize;
+        await sleep(500);
       }
-    } else {
-      log('No video object available');
+      fs.copyFileSync(src, dest);
+      fs.unlinkSync(src);
+      log(`Video saved: ${dest}`);
+      saved = true;
+      break;
     }
-  } catch (e) {
-    log(`  Could not save video: ${e}`);
   }
+  if (!saved) log('No video file captured');
 
-  // Clean up any leftover random-named .webm files in the video dir
+  // Clean up any leftover random-named .webm files
   try {
     if (fs.existsSync(VIDEO_DIR)) {
       for (const f of fs.readdirSync(VIDEO_DIR)) {
@@ -209,6 +225,10 @@ export async function closeVSCode(app: VSCodeApp): Promise<void> {
       }
     }
   } catch { /* ignore */ }
+
+  if (fs.existsSync(TEST_USER_DATA)) {
+    fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
+  }
 
   log('VS Code closed and cleanup done');
 }
@@ -471,18 +491,45 @@ export async function findMainPanelFrame(page: Page, timeoutMs = 30_000): Promis
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    if (page.isClosed()) {
+      logError('Page is closed, aborting frame search');
+      return null;
+    }
+
     const result = await findSendButtonNewest(page);
     if (result) return result;
 
+    // Also search ALL frames (not just vscode-webview://) for Send button
+    try {
+      const allFrames = [...page.frames()].reverse();
+      for (const frame of allFrames) {
+        const hasSend = await frame.locator('[data-testid="send-btn"]').count().catch(() => 0);
+        if (hasSend > 0) {
+          log(`  ✓ Found Send button in non-webview frame: ${frame.url().slice(0, 60)}`);
+          return frame;
+        }
+      }
+    } catch { /* continue */ }
+
     // Try clicking the Restify/New Request tab to trigger frame creation
-    const restifyTab = page.locator('.tab').filter({ hasText: /Restify|New Request/i });
-    if (await restifyTab.count() > 0) {
-      log('  Found Restify/New Request tab, clicking to focus...');
-      await restifyTab.first().click();
-      await page.waitForTimeout(2000);
+    try {
+      const restifyTab = page.locator('.tab').filter({ hasText: /Restify|New Request/i });
+      if (await restifyTab.count() > 0) {
+        log('  Found Restify/New Request tab, clicking to focus...');
+        await restifyTab.first().click();
+      }
+    } catch {
+      // Transient error — continue retrying
     }
 
-    log('  Retrying in 2s...');
+    // Diagnostic: log all frames for debugging
+    try {
+      const allFrameUrls = page.frames().map(f => f.url().slice(0, 80));
+      log(`  [diag] Total frames: ${allFrameUrls.length}, webview frames: ${allFrameUrls.filter(u => u.includes('vscode-webview://')).length}`);
+      const iframeCount = await page.locator('iframe').count().catch(() => 0);
+      log(`  [diag] DOM iframes: ${iframeCount}`);
+    } catch { /* continue */ }
+
     await page.waitForTimeout(2000);
   }
 
@@ -622,10 +669,16 @@ export async function isSidebarVisible(page: Page): Promise<boolean> {
     logCheck('Sidebar in DOM', false);
     return false;
   }
-  const content = await sidebar.textContent().catch(() => '');
-  const visible = content.includes('History') || content.includes('Collections');
-  logCheck('Sidebar visible with History/Collections', visible);
-  return visible;
+  // Check if the sidebar is actually visible (has height > 0)
+  const box = await sidebar.boundingBox().catch(() => null);
+  const visible = box !== null && box.height > 50;
+  logCheck('Sidebar visible', visible);
+  if (box) log(`  Sidebar box: ${JSON.stringify(box)}`);
+  // Also check if the Restify activity bar icon is toggled/active
+  const icon = page.locator('.part.activitybar .action-label[aria-label*="Restify"]');
+  const iconActive = (await icon.getAttribute('aria-checked').catch(() => 'false')) === 'true';
+  logCheck('Restify icon active', iconActive);
+  return visible || iconActive;
 }
 
 export async function ensureSidebarOpen(page: Page): Promise<void> {
@@ -1099,6 +1152,14 @@ export async function getVariableInputValue(
 export async function sendRequestViaEnter(frame: Frame): Promise<void> {
   log('Sending request via Enter key...');
 
+  // Check if input is already visible (after fillVariableInput)
+  const input = frame.locator('.url-input [data-testid="variable-text-input"]');
+  if (await input.first().isVisible().catch(() => false)) {
+    await input.first().press('Enter');
+    log('  Enter pressed on URL input (already visible)');
+    return;
+  }
+
   // Step 1: Focus the display to switch VariableTextInput to input mode
   await frame.evaluate(() => {
     const display = document.querySelector('.url-input [data-testid="variable-text-display"]');
@@ -1117,7 +1178,6 @@ export async function sendRequestViaEnter(frame: Frame): Promise<void> {
   await frame.waitForTimeout(300);
 
   // Step 2: Wait for the input to appear
-  const input = frame.locator('.url-input [data-testid="variable-text-input"]');
   try {
     await input.first().waitFor({ state: 'visible', timeout: 3_000 });
     // Step 3: Press Enter on the input — triggers React's onKeyDown → onSend()

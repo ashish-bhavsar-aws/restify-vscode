@@ -8,6 +8,7 @@ interface EnvManagerModalProps {
   open: boolean;
   environments: Environment[];
   activeEnvId: string | null;
+  initialEditingEnv?: Environment | null;
   onClose: () => void;
   onSetActive: (id: string | null) => void;
   onSave: (env: Environment) => void;
@@ -327,12 +328,21 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
   open,
   environments,
   activeEnvId,
+  initialEditingEnv,
   onClose,
   onSetActive,
   onSave,
   onDelete,
 }) => {
   const [editingEnv, setEditingEnv] = useState<Environment | null>(null);
+
+  React.useEffect(() => {
+    if (open && initialEditingEnv) {
+      setEditingEnv({ ...initialEditingEnv });
+    } else if (open && !initialEditingEnv) {
+      setEditingEnv(null);
+    }
+  }, [open, initialEditingEnv]);
 
   if (!open) return null;
 
@@ -483,7 +493,7 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                   );
                   const isActive = env.id === activeEnvId;
                   return (
-                    <EnvItem key={env.id} $active={isActive}>
+                    <EnvItem key={env.id} $active={isActive} data-testid={`env-item-${env.name}`}>
                       <RadioBtn
                         $active={isActive}
                         title={

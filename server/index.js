@@ -81,8 +81,40 @@ if (!fs.existsSync('uploads')) {
   fs.mkdirSync('uploads');
 }
 
-// Middleware
-app.use(express.json());
+// Middleware — parse JSON, XML, and text bodies
+app.use((req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+
+  // Try JSON first
+  if (contentType.includes('application/json')) {
+    express.json()(req, res, (err) => {
+      if (err) { req.body = undefined; }
+      next();
+    });
+  }
+  // XML bodies (application/xml or text/xml)
+  else if (contentType.includes('application/xml') || contentType.includes('text/xml')) {
+    express.raw({ type: ['application/xml', 'text/xml'] })(req, res, (err) => {
+      if (err) { req.body = undefined; }
+      else if (Buffer.isBuffer(req.body)) { req.body = req.body.toString('utf8'); }
+      next();
+    });
+  }
+  // Text bodies (text/plain)
+  else if (contentType.includes('text/plain')) {
+    express.text({ type: 'text/plain' })(req, res, (err) => {
+      if (err) { req.body = undefined; }
+      next();
+    });
+  }
+  // URL-encoded or fallback
+  else {
+    express.json()(req, res, (err) => {
+      if (err) { req.body = undefined; }
+      next();
+    });
+  }
+});
 app.use(express.static('public'));
 
 // Swagger UI
@@ -678,6 +710,151 @@ function isValidJSON(str) {
     return false;
   }
 }
+
+// ─── Echo / Utility Endpoints for Feature Tests ────────────────────
+
+/**
+ * @swagger
+ * /api/echo:
+ *   all:
+ *     summary: Echo endpoint for all HTTP methods
+ *     description: Returns method, query params, body, and headers
+ *     tags:
+ *       - Echo
+ *     responses:
+ *       200:
+ *         description: Echoed request details
+ */
+app.all('/api/echo', (req, res) => {
+  res.json({
+    method: req.method,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+  });
+});
+
+/**
+ * @swagger
+ * /api/status/{code}:
+ *   get:
+ *     summary: Return a specific HTTP status code
+ *     tags:
+ *       - Echo
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Requested status code
+ */
+app.get('/api/status/:code', (req, res) => {
+  const code = parseInt(req.params.code, 10);
+  if (Number.isNaN(code) || code < 100 || code > 599) {
+    return res.status(400).json({ error: 'Invalid status code' });
+  }
+  res.status(code).json({ status: code });
+});
+
+/**
+ * @swagger
+ * /api/auth/verify:
+ *   get:
+ *     summary: Verify auth headers are present
+ *     tags:
+ *       - Echo
+ *     responses:
+ *       200:
+ *         description: Auth header values
+ */
+app.get('/api/auth/verify', (req, res) => {
+  res.json({
+    authorization: req.headers.authorization || null,
+    'x-api-key': req.headers['x-api-key'] || null,
+    query: req.query,
+  });
+});
+app.post('/api/auth/verify', (req, res) => {
+  res.json({
+    authorization: req.headers.authorization || null,
+    'x-api-key': req.headers['x-api-key'] || null,
+    query: req.query,
+    body: req.body,
+  });
+});
+
+/**
+ * @swagger
+ * /api/csv:
+ *   get:
+ *     summary: Returns CSV content
+ *     tags:
+ *       - Echo
+ *     responses:
+ *       200:
+ *         description: CSV data
+ */
+app.get('/api/csv', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv');
+  res.send('Name,Age,City\nJohn,30,NYC\nJane,25,LA\nBob,35,Chicago');
+});
+
+/**
+ * @swagger
+ * /api/text:
+ *   get:
+ *     summary: Returns plain text content
+ *     tags:
+ *       - Echo
+ *     responses:
+ *       200:
+ *         description: Plain text
+ */
+app.get('/api/text', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send('Hello, this is a plain text response from the mock server.');
+});
+
+/**
+ * @swagger
+ * /api/xml-response:
+ *   get:
+ *     summary: Returns XML content
+ *     tags:
+ *       - Echo
+ *     responses:
+ *       200:
+ *         description: XML data
+ */
+app.get('/api/xml-response', (req, res) => {
+  res.setHeader('Content-Type', 'application/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><root><message>Hello</message><status>ok</status></root>');
+});
+
+/**
+ * @swagger
+ * /api/json-response:
+ *   get:
+ *     summary: Returns nested JSON content
+ *     tags:
+ *       - Echo
+ *     responses:
+ *       200:
+ *         description: JSON data
+ */
+app.get('/api/json-response', (req, res) => {
+  res.json({
+    users: [
+      { id: 1, name: 'Alice', email: 'alice@example.com' },
+      { id: 2, name: 'Bob', email: 'bob@example.com' },
+    ],
+    total: 2,
+    page: 1,
+  });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {

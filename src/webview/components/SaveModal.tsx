@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import styled from 'styled-components';
+import React, { useState, useEffect, useRef } from 'react';
+import styled, { css } from 'styled-components';
 import { Collection, CollectionGroup } from '../types';
 
 interface SaveModalProps {
@@ -69,21 +69,102 @@ const Input = styled.input`
   }
 `;
 
-const Select = styled.select`
+const DropdownWrapper = styled.div`
+  position: relative;
+  width: 100%;
+  margin-bottom: 10px;
+`;
+
+const DropdownTrigger = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 28px;
   width: 100%;
   background: ${({ theme }) => theme.inputBg};
   border: 1px solid ${({ theme }) => theme.border};
-  color: ${({ theme }) => theme.fg};
-  padding: 7px 10px;
   border-radius: ${({ theme }) => theme.radius};
-  font-size: 12px;
-  outline: none;
-  margin-bottom: 10px;
+  cursor: pointer;
   font-family: inherit;
+  font-size: 11px;
+  color: ${({ theme }) => theme.fg};
+  transition: border-color 0.15s, background 0.15s;
+  outline: none;
+
+  &:hover {
+    background: ${({ theme }) => theme.hover};
+    border-color: ${({ theme }) => theme.accent};
+  }
 
   &:focus {
     border-color: ${({ theme }) => theme.accent};
   }
+`;
+
+const DropdownTriggerLabel = styled.span`
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const DropdownChevron = styled.svg<{ $open: boolean }>`
+  fill: ${({ theme }) => theme.muted};
+  transition: transform 0.18s;
+  flex-shrink: 0;
+  ${({ $open }) => $open && css`
+    transform: rotate(180deg);
+  `}
+`;
+
+const DropdownMenu = styled.ul`
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 160px;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  list-style: none;
+  padding: 4px;
+  z-index: 9999;
+  box-shadow: 0 12px 32px ${({ theme }) => theme.shadowSm};
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+`;
+
+const DropdownOption = styled.li<{ $selected: boolean; $highlighted: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: ${({ theme }) => theme.fg};
+  transition: background 0.1s;
+  user-select: none;
+
+  ${({ $highlighted, theme }) => $highlighted && css`
+    background: ${theme.hover};
+  `}
+
+  ${({ $selected, theme }) => $selected && css`
+    background: color-mix(in srgb, ${theme.accent} 12%, transparent);
+    color: ${theme.accent};
+    font-weight: 600;
+  `}
+`;
+
+const DropdownOptionLabel = styled.span`
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 const Actions = styled.div`
@@ -126,6 +207,99 @@ const GhostButton = styled.button`
   }
 `;
 
+interface CustomDropdownProps {
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}
+
+const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, options, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      const idx = options.findIndex((o) => o.value === value);
+      setActiveIndex(idx >= 0 ? idx : 0);
+    }
+  }, [open, value, options]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, options.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      onChange(options[activeIndex].value);
+      setOpen(false);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  const selectedLabel = options.find((o) => o.value === value)?.label || value;
+
+  return (
+    <DropdownWrapper ref={ref}>
+      <DropdownTrigger
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={handleKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <DropdownTriggerLabel>{selectedLabel}</DropdownTriggerLabel>
+        <DropdownChevron $open={open} viewBox="0 0 10 6" width="10" height="6">
+          <path d="M0 0l5 6 5-6z" />
+        </DropdownChevron>
+      </DropdownTrigger>
+
+      {open && (
+        <DropdownMenu role="listbox">
+          {options.map((opt, idx) => (
+            <DropdownOption
+              key={opt.value}
+              role="option"
+              aria-selected={opt.value === value}
+              $selected={opt.value === value}
+              $highlighted={idx === activeIndex}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(opt.value);
+                setOpen(false);
+              }}
+              onMouseEnter={() => setActiveIndex(idx)}
+            >
+              <DropdownOptionLabel>{opt.label}</DropdownOptionLabel>
+            </DropdownOption>
+          ))}
+        </DropdownMenu>
+      )}
+    </DropdownWrapper>
+  );
+};
+
 export const SaveModal: React.FC<SaveModalProps> = ({
   open,
   requestName,
@@ -156,7 +330,7 @@ export const SaveModal: React.FC<SaveModalProps> = ({
 
   return (
     <Overlay $open={open} onClick={onClose}>
-      <Modal onClick={(e) => e.stopPropagation()}>
+      <Modal onClick={(e) => e.stopPropagation()} data-testid="save-modal">
         <Title>Save to Collection</Title>
 
         <Label>Request Name</Label>
@@ -167,17 +341,14 @@ export const SaveModal: React.FC<SaveModalProps> = ({
         />
 
         <Label>Collection</Label>
-        <Select
+        <CustomDropdown
           value={selectedCollection}
-          onChange={(e) => setSelectedCollection(e.target.value)}
-        >
-          <option value="__new__">+ New Collection</option>
-          {collections.map((c) => (
-            <option key={c.id} value={c.name}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
+          options={[
+            { value: '__new__', label: '+ New Collection' },
+            ...collections.map((c) => ({ value: c.name, label: c.name })),
+          ]}
+          onChange={setSelectedCollection}
+        />
 
         {selectedCollection === '__new__' && (
           <>
@@ -193,17 +364,14 @@ export const SaveModal: React.FC<SaveModalProps> = ({
         {availableGroups.length > 0 && (
           <>
             <Label>Folder (optional)</Label>
-            <Select
+            <CustomDropdown
               value={selectedGroup}
-              onChange={(e) => setSelectedGroup(e.target.value)}
-            >
-              <option value="__none__">— Root (no folder) —</option>
-              {availableGroups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.label}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: '__none__', label: '— Root (no folder) —' },
+                ...availableGroups.map((g) => ({ value: g.id, label: g.label })),
+              ]}
+              onChange={setSelectedGroup}
+            />
           </>
         )}
 

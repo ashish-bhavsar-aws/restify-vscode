@@ -4,10 +4,10 @@ file.js
 *.vsix
 **.vscode-**
 test-results
-*.log
 test/node_modules
 test/out
 test/screenshots/*.png
 test/videos/*.webm
+test/logs/*.log
 test/*.html
 test/playwright-report/**

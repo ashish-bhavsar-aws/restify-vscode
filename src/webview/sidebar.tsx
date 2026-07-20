@@ -29,6 +29,7 @@ const METHOD_COLORS: Record<string, string> = {
 const METHOD_SHORT: Record<string, string> = {
   DELETE: 'DEL',
   OPTIONS: 'OPT',
+  PATCH: 'PAT'
 };
 
 const STATUS_COLORS: Record<string, string> = {

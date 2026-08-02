@@ -17,9 +17,11 @@ import {
   decompressBody,
   getHeaderValue,
   getHeaderArray,
+  getCookieHeader,
   hasHeader,
   isRedirectStatus,
   normalizeResponseHeaders,
+  parseSetCookies,
   removeHeader,
   resolveRedirectUrl,
   serializeRequestBody,
@@ -27,6 +29,7 @@ import {
   shouldSendBodyOnRedirect,
   shouldStripAuthorization,
   getRedirectMethod,
+  storeCookies,
   type CoreRequestForBody,
 } from "../core";
 
@@ -527,6 +530,20 @@ export class RestifyPanel {
       fileBase64,
       filePreviewType,
     };
+  }
+
+  private _captureCookies(
+    headers: Record<string, string | string[]>,
+    url: string,
+  ): void {
+    try {
+      const incoming = parseSetCookies(headers, url);
+      if (incoming.length === 0) return;
+      const jar = storeCookies(this.storageManager.getCookies(), incoming);
+      this.storageManager.saveCookies(jar);
+    } catch (err) {
+      console.error("Failed to store response cookies:", err);
+    }
   }
 
   private async _handleMessage(msg: any): Promise<void> {
@@ -1242,6 +1259,9 @@ export class RestifyPanel {
         timeoutMs,
       );
 
+      // Capture Set-Cookie from every hop so redirects accumulate cookies too.
+      this._captureCookies(result.headers, currentUrl);
+
       if (hop >= maxRedirects || !isRedirectStatus(result.status)) {
         return result;
       }
@@ -1326,6 +1346,15 @@ export class RestifyPanel {
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(url);
       const isHttps = parsedUrl.protocol === "https:";
+
+      // Inject matching cookies from the jar unless the user supplied their own.
+      if (!hasHeader(headers, "cookie")) {
+        const cookieHeader = getCookieHeader(
+          this.storageManager.getCookies(),
+          url,
+        );
+        if (cookieHeader) setHeader(headers, "Cookie", cookieHeader);
+      }
 
       const rawProxyAuth = proxyOpts?.auth?.trim();
       let proxyAuthToken: string | undefined;

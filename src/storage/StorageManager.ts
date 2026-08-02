@@ -857,6 +857,21 @@ export class StorageManager {
     return resolved;
   }
 
+  // ─── Cookies (cookie jar) ─────────────────────────────────
+  getCookies(): any[] {
+    return this.globalState.get("restify.cookies", []);
+  }
+
+  saveCookies(cookies: any[]): void {
+    this.globalState.update("restify.cookies", cookies);
+    this.notifyChange();
+  }
+
+  clearCookies(): void {
+    this.globalState.update("restify.cookies", []);
+    this.notifyChange();
+  }
+
   // ─── Settings ─────────────────────────────────────────────
   getSettings(): SettingsState {
     return this.globalState.get("restify.settings", {

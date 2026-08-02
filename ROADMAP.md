@@ -2,13 +2,19 @@
 
 **Status**: Living document · **Last reviewed**: 2026-08-02 · **Extension version**: 1.0.26
 
-This document inventories the gaps between Restify's current feature set and what a mature REST API client (Postman, Thunder Client, Bruno, HTTPie, REST Client) offers, then sequences them into an implementation roadmap.
+This document inventories the gaps between Restify's current feature set and what a mature REST API client (Postman, Thunder Client, Bruno, HTTPie, REST Client) offers, then sequences them into an implementation roadmap for features that belong inside the VS Code extension itself.
 
 Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-value (most user impact) · 🟡 **P2** productivity/niche · ⚪ **P3** long-term/experimental
 
+## Product Scope Guardrails
+- **Extension-owned only**: every item below should be implemented directly in the VS Code extension through its UI, request engine, local storage, collections, environments, import/export logic, or editor integration.
+- **Local-first only**: prioritize features that work well for single-user and local workspace workflows.
+- **No cloud sync / org collaboration**: team cloud sync, hosted collaboration, and enterprise-managed sharing are explicitly out of scope for this roadmap.
+- **VS Code discoverability**: improve marketplace findability with stronger metadata and keywords so the extension is easier to discover from within VS Code.
+
 ---
 
-## Part 1 — Missing Features Inventory
+## Part 1 — Extension-Owned Missing Features Inventory
 
 ### 1.1 Bugs & Core Networking (verified by code inspection)
 
@@ -102,10 +108,11 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F56 | **Undo/redo in body editor** | ⚪ P3 | CodeMirror history is present; ensure it's surfaced with shortcuts. |
 | F57 | **History search & pins** | 🟡 P2 | Persist search query, pin favorites, fuzzy search across history. |
 | F58 | **Screenshots/theme polish** | 🟡 P2 | Icon themes, method color on request rows, empty-state CTAs. |
+| F59 | **VS Code discoverability / marketplace metadata** | 🟡 P2 | Improve extension keywords, tags, descriptions, and category metadata so Restify is easier to find in the VS Code marketplace and command palette. |
 
 ---
 
-## Part 2 — Implementation Roadmap
+## Part 2 — Extension-Native Implementation Roadmap
 
 Phases are ordered by (bug/security first) → (high user impact) → (ecosystem integration) → (experimental). Each phase ends green: build + lint + existing E2E pass.
 
@@ -161,6 +168,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F23 **JSONPath/XPath query** in response viewer.
 - [ ] F25 **Save response to file**; F30 **completion notifications**.
 - [ ] F57 **History pins + fuzzy search**; F54 **palette commands**.
+- [ ] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [ ] F46 **WebSocket client** (read-only connection viewer first).
 - [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
 
@@ -170,6 +178,76 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
 - [ ] F39 workspace `.restify` files, F40 collection-level scripts.
 - [ ] F47 gRPC, F29 response cache/offline replay, F55/F56 editor polish.
+
+---
+
+## Suggested Release Plan
+
+### Release 1 — Core reliability and usability (target: 2–3 weeks)
+Focus: fix correctness issues, make the extension feel stable, and improve everyday usage.
+
+**Must-have**
+- F2 — SSL verification default on
+- F3 — Redirect following
+- F4 — Response decompression
+- F5 — Cookie jar and persistence
+- F6 — Request cancellation
+- F8 — Configurable timeout
+- F9 — Core unit tests
+
+**Nice-to-have**
+- F10 — Pre-request scripts
+- F13 — cURL import
+- F16 — Dynamic variables
+- F57 — History search and pins
+- F59 — VS Code discoverability metadata
+
+### Release 2 — Workflow productivity (target: 3–4 weeks)
+Focus: move from basic request sending to practical daily workflows.
+
+**Must-have**
+- F10 — Pre-request scripts
+- F31 — Collection runner
+- F33 — Test/assertion scripts
+- F41 — Secret variables
+- F51 — .http file support
+- F54 — Command palette actions
+
+**Nice-to-have**
+- F14 — Bulk editor for headers/params
+- F15 — Clipboard paste into KV tables
+- F17 — Variable autocomplete
+- F19 — Header presets/groups
+- F44 — Environment import/export
+
+### Release 3 — Ecosystem and editor integration (target: 4+ weeks)
+Focus: make Restify fit into broader developer workflows and existing API toolchains.
+
+**Must-have**
+- F13 — cURL import
+- F34/F35 — OpenAPI/HAR/Insomnia/.http import-export
+- F53 — Additional code generation languages
+- F52 — Multi-tab/multi-panel support
+
+**Nice-to-have**
+- F11 — OAuth 2.0
+- F22 — JSON schema validation
+- F23 — JSONPath/XPath query
+- F24 — Response beautify options
+- F46 — WebSocket client
+
+### Release 4 — Advanced and experimental (target: later)
+Focus: more advanced API workflows and long-term differentiation.
+
+- F26 — Response diff
+- F27 — Timeline breakdown
+- F28 — Streaming/SSE
+- F36 — OpenAPI explorer
+- F37 — Mock server generation
+- F39 — Workspace file format
+- F47 — gRPC support
+- F48 — HTTP/2 support
+- F50 — Interceptors/middleware
 
 ---
 

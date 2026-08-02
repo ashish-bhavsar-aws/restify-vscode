@@ -2,6 +2,19 @@
   "name": "restify-client",
   "displayName": "Restify — API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
+  "keywords": [
+    "api",
+    "rest",
+    "graphql",
+    "http",
+    "client",
+    "curl",
+    "developer tools",
+    "testing",
+    "collections",
+    "environment",
+    "vscode"
+  ],
   "version": "1.0.26",
   "license": "MIT",
   "publisher": "AshishBhavsar",
@@ -178,7 +191,7 @@
     "style-loader": "^4.0.0",
     "ts-loader": "^9.4.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.1.9",
+    "vitest": "^4.1.10",
     "webpack": "^5.88.0",
     "webpack-cli": "^5.1.0"
   },

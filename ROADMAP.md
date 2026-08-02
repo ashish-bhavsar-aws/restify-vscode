@@ -109,6 +109,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F57 | **History search & pins** | 🟡 P2 | Persist search query, pin favorites, fuzzy search across history. |
 | F58 | **Screenshots/theme polish** | 🟡 P2 | Icon themes, method color on request rows, empty-state CTAs. |
 | F59 | **VS Code discoverability / marketplace metadata** | 🟡 P2 | Improve extension keywords, tags, descriptions, and category metadata so Restify is easier to find in the VS Code marketplace and command palette. |
+| F60 | **Code size and maintainability guardrails** | 🟠 P1 | Keep the extension maintainable by enforcing file-size limits, component boundaries, shared utilities, and a clear rule for when to extract logic into core modules. |
 
 ---
 
@@ -120,7 +121,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 > Short, cheap, high-confidence changes. Do first; everything builds on this.
 
 - [x] F2 Flip `rejectUnauthorized` default to `true`; keep per-request checkbox; show a warning badge when disabled. *(done — default now `true`, badge shown when `!== true`)*
-- [x] F9 Scaffold unit tests (Vitest/Jest, no heavy webpack) for: variable resolution, body serialization, URL/query merging, multipart builder, auth injection, import parsers. *(scaffolded — Vitest + 58 tests covering body serialization incl. GraphQL, URL/query merging, multipart builder, redirects, decompression)*
+- [x] F9 Scaffold unit tests (Vitest/Jest, no heavy webpack) for: variable resolution, body serialization, URL/query merging, multipart builder, auth injection, import parsers. *(scaffolded — Vitest 4 + 87 tests covering body serialization incl. GraphQL, URL/query merging, multipart builder, redirects, decompression, cookies)*
 - [x] Extract the request engine (`_doRequest`, body serialization, header canonicalization) into `src/core/` so it's unit-testable and shared. *(done — `src/core/{constants,headers,body,decompress,redirects,url}.ts`)*
 
 ### Phase 1 — Core Networking (P0 fixes)
@@ -129,12 +130,12 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F1 **GraphQL**: add `graphql` branch to body serialization (`{"query": …, "variables": …}`), `Content-Type: application/json`, codegen already correct.
 - [x] F3 **Redirects**: follow 3xx up to N hops (default 10), preserve method for 307/308, convert 303→GET, strip `Authorization` cross-host; add "Follow Redirects" toggle (on/auto-off) to the request.
 - [x] F4 **Decompression**: inflate `Content-Encoding: gzip/deflate/br` (`zlib`); fall back to raw bytes on decode failure; only set `Accept-Encoding` when handled.
-- [ ] F5 **Cookie jar**: persist cookies per domain in storage; send stored cookies for matching host/path; honor `Secure`, `Domain`, `Path`, `Expires`, `HttpOnly`; surface `Set-Cookie` in response headers (already preserved).
+- [x] F5 **Cookie jar**: persist cookies per domain in storage; send stored cookies for matching host/path; honor `Secure`, `Domain`, `Path`, `Expires`, `HttpOnly`; surface `Set-Cookie` in response headers (already preserved). *(done — `src/core/cookies.ts`, globalState persistence, engine injection + per-hop capture; 29 tests. Cookie Manager view deferred to a later polish pass.)*
 - [x] F7 **Proxy size cap**: apply `MAX_RESPONSE_SIZE` + size counting to the proxy path.
 - [ ] F6 **Cancellation**: `AbortController`-style signal through the engine; Cancel button in the panel; history entry marked `cancelled`.
 - [x] F8 **Timeouts**: `timeout` on RequestState (per-request) + default in Settings; wire both direct and proxy paths.
 
-**Exit criteria:** unit tests for redirects, decompression, cookie matching, GraphQL body, proxy cap. Full E2E suite green. *(status: redirects ✅, decompression ✅, GraphQL body ✅, cookie matching + proxy cap pending F5/F6; HTTP + Settings E2E suites green)*
+**Exit criteria:** unit tests for redirects, decompression, cookie matching, GraphQL body, proxy cap. Full E2E suite green. *(status: redirects ✅, decompression ✅, cookie matching ✅, GraphQL body ✅, proxy cap covered by engine tests; HTTP + Settings E2E suites green. Remaining: F6 cancellation.)*
 
 ### Phase 2 — Scripting & Variables (P1)
 > Turns Restify from "send and see" into "automate workflows".
@@ -187,13 +188,13 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 Focus: fix correctness issues, make the extension feel stable, and improve everyday usage.
 
 **Must-have**
-- F2 — SSL verification default on
-- F3 — Redirect following
-- F4 — Response decompression
-- F5 — Cookie jar and persistence
-- F6 — Request cancellation
-- F8 — Configurable timeout
-- F9 — Core unit tests
+- F2 — SSL verification default on ✅
+- F3 — Redirect following ✅
+- F4 — Response decompression ✅
+- F5 — Cookie jar and persistence ✅
+- F6 — Request cancellation ⬜ *(next up)*
+- F8 — Configurable timeout ✅
+- F9 — Core unit tests ✅
 
 **Nice-to-have**
 - F10 — Pre-request scripts
@@ -203,7 +204,7 @@ Focus: fix correctness issues, make the extension feel stable, and improve every
 - F59 — VS Code discoverability metadata
 
 ### Release 2 — Workflow productivity (target: 3–4 weeks)
-Focus: move from basic request sending to practical daily workflows.
+Focus: move from basic request sending to practical daily workflows while keeping the codebase maintainable.
 
 **Must-have**
 - F10 — Pre-request scripts
@@ -212,6 +213,7 @@ Focus: move from basic request sending to practical daily workflows.
 - F41 — Secret variables
 - F51 — .http file support
 - F54 — Command palette actions
+- F60 — Code size and maintainability guardrails
 
 **Nice-to-have**
 - F14 — Bulk editor for headers/params
@@ -253,7 +255,7 @@ Focus: more advanced API workflows and long-term differentiation.
 
 ## Suggested First Sprint (highest value, smallest risk)
 
-> ✅ **Complete** — all six items shipped in one sprint (see commit history); build + lint + 58 unit tests + HTTP/Settings E2E suites green.
+> ✅ **Complete** — all six items shipped in one sprint (see commit history); build + lint + 87 unit tests + HTTP/Settings E2E suites green.
 
 1. **F2** — SSL default on (one-line default + warning badge)
 2. **F1** — send GraphQL bodies

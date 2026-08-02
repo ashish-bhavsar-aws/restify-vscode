@@ -9,6 +9,7 @@ import { ResponsePane } from "./components/ResponsePane";
 import { SaveModal } from "./components/SaveModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { EnvManagerModal } from "./components/EnvManagerModal";
+import { Icon, faShieldHalved, faArrowsRotate, faClock } from "./components/FaIcon";
 
 import {
   DEFAULT_REQUEST,
@@ -69,11 +70,24 @@ const SslRow = styled.div`
     align-items: center;
     gap: 6px;
     cursor: pointer;
+    white-space: nowrap;
   }
 
   input[type="checkbox"] {
     accent-color: ${({ theme }) => theme.accent};
   }
+`;
+
+const RowDivider = styled.span`
+  width: 1px;
+  height: 14px;
+  background: ${({ theme }) => theme.border};
+  flex-shrink: 0;
+`;
+
+const OptionIcon = styled(Icon)`
+  color: ${({ theme }) => theme.muted};
+  flex-shrink: 0;
 `;
 
 const SslWarning = styled.span`
@@ -608,6 +622,7 @@ export const MainPanel: React.FC = () => {
           title="Uncheck to allow self-signed or untrusted certificates for this request"
           data-testid="verify-ssl-toggle"
         >
+          <OptionIcon icon={faShieldHalved} size={12} />
           <input
             type="checkbox"
             checked={request.rejectUnauthorized !== false}
@@ -625,6 +640,7 @@ export const MainPanel: React.FC = () => {
           title="Automatically follow 3xx redirect responses (max 10 hops)"
           data-testid="follow-redirects-toggle"
         >
+          <OptionIcon icon={faArrowsRotate} size={12} />
           <input
             type="checkbox"
             checked={request.followRedirects !== false}
@@ -635,9 +651,12 @@ export const MainPanel: React.FC = () => {
           Follow Redirects
         </label>
 
+        <RowDivider />
+
         <label
           title="Request timeout in milliseconds. Leave empty to use the default from Settings."
         >
+          <OptionIcon icon={faClock} size={12} />
           Timeout (ms)
           <TimeoutInput
             type="number"

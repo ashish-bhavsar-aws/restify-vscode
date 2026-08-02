@@ -270,6 +270,9 @@ const TabBar = styled.div`
 `;
 
 const TabItem = styled.div<{ $active: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 8px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -1448,7 +1451,16 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             role="tab"
             data-testid={`res-tab-${tab}`}
           >
-            {tab === 'logs' ? <><Icon icon={faClipboardList} size={12} style={{ marginRight: 5 }} />Logs</> : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            <Icon
+              icon={
+                tab === 'body' ? faCode
+                : tab === 'headers' ? faList
+                : tab === 'logs' ? faClipboardList
+                : faFileCode
+              }
+              size={12}
+            />
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'headers' && (
               <TabBadge>{headerRows.length}</TabBadge>
             )}

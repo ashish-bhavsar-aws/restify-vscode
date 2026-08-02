@@ -36,6 +36,10 @@ import {
   faBars,
   faEye,
   faEyeSlash,
+  faKey,
+  faClock,
+  faArrowsRotate,
+  faShieldHalved,
 } from '@fortawesome/free-solid-svg-icons';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 
@@ -44,11 +48,30 @@ library.add(
   faGripVertical, faFolder, faAnglesDown, faAnglesUp, faFloppyDisk,
   faPaperPlane, faTerminal, faClipboardList, faList, faLink, faFileCode,
   faDownload, faTriangleExclamation, faCode, faPlus, faChevronRight,
-  faTrash, faChevronDown, faUpload, faArrowUp, faBars, faEye, faEyeSlash
+  faTrash, faChevronDown, faUpload, faArrowUp, faBars, faEye, faEyeSlash,
+  faKey, faClock, faArrowsRotate, faShieldHalved
 );
 
 export type { IconProp };
-export { FontAwesomeIcon, faEye, faEyeSlash, faCode, faTrash, faChevronDown, faUpload, faArrowUp, faBars };
+export {
+  FontAwesomeIcon,
+  faEye,
+  faEyeSlash,
+  faCode,
+  faTrash,
+  faChevronDown,
+  faUpload,
+  faArrowUp,
+  faBars,
+  faKey,
+  faClock,
+  faArrowsRotate,
+  faShieldHalved,
+  faList,
+  faLink,
+  faTerminal,
+  faFileCode,
+};
 
 const IconWrapper = styled.span<{ $size?: number }>`
   display: inline-flex;

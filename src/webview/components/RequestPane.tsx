@@ -5,7 +5,7 @@ import { KeyValueTable } from './KeyValueTable';
 import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
-import { Icon, faEye, faEyeSlash, faTrash } from './FaIcon';
+import { Icon, faEye, faEyeSlash, faTrash, faList, faLink, faCode, faTerminal, faKey } from './FaIcon';
 import { getSuggestedContentType } from '../utils/formDataTypeDetector';
 
 interface RequestPaneProps {
@@ -42,6 +42,9 @@ const TabBarContainer = styled.div`
 `;
 
 const TabItem = styled.div<{ $active?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 8px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -56,6 +59,11 @@ const TabItem = styled.div<{ $active?: boolean }>`
   &:hover {
     color: ${({ $active, theme }) => ($active ? theme.accent : theme.fg)};
   }
+`;
+
+const TabIcon = styled(Icon)<{ $active?: boolean }>`
+  color: ${({ $active, theme }) => ($active ? theme.accent : theme.muted)};
+  flex-shrink: 0;
 `;
 
 const TabBadgeCount = styled.span`
@@ -971,6 +979,17 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
             role="tab"
             data-testid={`req-tab-${tab}`}
           >
+            <TabIcon
+              icon={
+                tab === 'params' ? faList
+                : tab === 'headers' ? faLink
+                : tab === 'body' ? faCode
+                : tab === 'script' ? faTerminal
+                : faKey
+              }
+              size={12}
+              $active={activeTab === tab}
+            />
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'params' && activeParamCount > 0 && (
               <TabBadgeCount>{activeParamCount}</TabBadgeCount>

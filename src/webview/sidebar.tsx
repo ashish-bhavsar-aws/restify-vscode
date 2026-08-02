@@ -247,7 +247,8 @@ const SubItem = styled.div`
   cursor: pointer;
   transition: background 0.1s;
 
-  &:hover {
+  &:hover,
+  &:focus-within {
     background: ${({ theme }) => theme.hover};
 
     ${DragHandle} {
@@ -363,7 +364,8 @@ const Item = styled.div`
   cursor: pointer;
   transition: background 0.1s, transform 0.1s;
 
-  &:hover {
+  &:hover,
+  &:focus-within {
     background: ${({ theme }) => theme.hover};
 
     ${ItemActions} {
@@ -461,7 +463,8 @@ const CollectionHeader = styled.div`
   user-select: none;
   transition: background 0.1s;
 
-  &:hover {
+  &:hover,
+  &:focus-within {
     background: ${({ theme }) => theme.hover};
 
     ${AddGroupBtn} {
@@ -532,7 +535,8 @@ const GroupHeader = styled.div`
   transition: background 0.1s;
   user-select: none;
 
-  &:hover {
+  &:hover,
+  &:focus-within {
     background: ${({ theme }) => theme.hover};
 
     ${AddGroupBtn} {

@@ -818,7 +818,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
         <LogEntry label="Method" value={request?.method || 'N/A'} />
         <LogEntry label="URL" value={request?.url || 'N/A'} monospace />
         <LogEntry label="Protocol" value={request?.url?.startsWith('https') ? 'HTTPS' : 'HTTP'} />
-        <LogEntry label="SSL Verification" value={request?.rejectUnauthorized ? '✓ Enabled' : '✗ Disabled (Insecure)'} highlight={!request?.rejectUnauthorized} />
+        <LogEntry label="SSL Verification" value={request?.rejectUnauthorized === false ? '✗ Disabled (Insecure)' : '✓ Enabled'} highlight={request?.rejectUnauthorized === false} />
         <LogEntry label="mTLS (Client Certificate)" value={hasMtls ? '✓ Enabled' : '✗ Not Used'} highlight={hasMtls} />
         {hasMtls && mtlsHostname && <LogEntry label="  Certificate Hostname" value={mtlsHostname} monospace indent />}
         <LogEntry label="Proxy" value={request?.proxyUsed ? '✓ Enabled' : '✗ Not Used'} highlight={false} />

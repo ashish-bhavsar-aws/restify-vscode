@@ -33,6 +33,8 @@ export interface RequestState {
     addTo?: 'header' | 'query';
   };
   rejectUnauthorized: boolean;
+  followRedirects?: boolean;
+  timeout?: number; // per-request timeout in ms; falls back to settings default
   script?: string; // JavaScript to extract variables from response
   urlencoded?: KVItem[]; // URL-encoded form parameters (application/x-www-form-urlencoded)
 }
@@ -95,6 +97,7 @@ export interface SettingsState {
   noProxy: string;          // comma-separated
   certificates: CertEntry[];
   showActivityLog: boolean;
+  defaultTimeout: number;   // default request timeout in ms
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -103,6 +106,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   noProxy: '',
   certificates: [],
   showActivityLog: true,
+  defaultTimeout: 30000,
 };
 
 export const DEFAULT_REQUEST: RequestState = {
@@ -119,7 +123,8 @@ export const DEFAULT_REQUEST: RequestState = {
   gqlVars: '',
   authType: 'none',
   authData: {},
-  rejectUnauthorized: false,
+  rejectUnauthorized: true,
+  followRedirects: true,
   script: '',
   urlencoded: [],
 };

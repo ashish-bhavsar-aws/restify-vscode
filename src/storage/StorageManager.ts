@@ -50,6 +50,7 @@ export interface SettingsState {
   noProxy: string;
   certificates: CertEntry[];
   showActivityLog: boolean;
+  defaultTimeout: number;
 }
 
 export class StorageManager {
@@ -864,6 +865,7 @@ export class StorageManager {
       noProxy: "",
       certificates: [],
       showActivityLog: true,
+      defaultTimeout: 30000,
     });
   }
 

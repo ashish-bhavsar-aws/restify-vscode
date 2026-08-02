@@ -8,6 +8,27 @@ import { URL } from "url";
 import { StorageManager } from "../storage/StorageManager";
 import { getMainPanelHtml } from "../webview/mainPanelHtml";
 import { ActivityProvider } from "./ActivityProvider";
+import {
+  DEFAULT_MAX_REDIRECTS,
+  DEFAULT_TIMEOUT_MS,
+  MAX_RESPONSE_SIZE,
+  applyHeadersToRequest,
+  applyQueryParams,
+  decompressBody,
+  getHeaderValue,
+  getHeaderArray,
+  hasHeader,
+  isRedirectStatus,
+  normalizeResponseHeaders,
+  removeHeader,
+  resolveRedirectUrl,
+  serializeRequestBody,
+  setHeader,
+  shouldSendBodyOnRedirect,
+  shouldStripAuthorization,
+  getRedirectMethod,
+  type CoreRequestForBody,
+} from "../core";
 
 // Load https-proxy-agent at runtime to avoid module resolution issues
 let HttpProxyAgent: any;
@@ -39,7 +60,6 @@ class NoProxyAgentHttps extends https.Agent {
 
 const noProxyAgentHttp = new NoProxyAgent();
 const noProxyAgentHttps = new NoProxyAgentHttps();
-const MAX_RESPONSE_SIZE = 100 * 1024 * 1024; // 100MB
 
 interface RequestData {
   id?: string;
@@ -73,6 +93,8 @@ interface RequestData {
   };
   gqlQuery?: string;
   gqlVars?: string;
+  followRedirects?: boolean;
+  timeout?: number;
   activeEnvironmentId?: string;
 }
 
@@ -252,48 +274,6 @@ export class RestifyPanel {
       }
     }
     return null;
-  }
-
-  private _canonicalHeaderName(name: string): string {
-    if (name.toLowerCase() === "set-cookie") return "Set-Cookie";
-    return name
-      .split("-")
-      .map((part) =>
-        part.length > 0
-          ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
-          : part,
-      )
-      .join("-");
-  }
-
-  private _normalizeResponseHeaders(
-    headers: http.IncomingHttpHeaders,
-  ): Record<string, string | string[]> {
-    const normalized: Record<string, string | string[]> = {};
-
-    Object.entries(headers || {}).forEach(([rawKey, rawValue]) => {
-      if (rawValue === undefined) return;
-      const key = this._canonicalHeaderName(rawKey);
-
-      if (Array.isArray(rawValue)) {
-        normalized[key] = rawValue.map((v) => String(v));
-      } else {
-        normalized[key] = String(rawValue);
-      }
-    });
-
-    return normalized;
-  }
-
-  private _getHeaderValue(
-    headers: Record<string, string | string[]>,
-    name: string,
-  ): string {
-    const hit = Object.entries(headers).find(
-      ([k]) => k.toLowerCase() === name.toLowerCase(),
-    )?.[1];
-    if (!hit) return "";
-    return Array.isArray(hit) ? hit.join("; ") : hit;
   }
 
   private _extractFilename(contentDisposition: string): string | undefined {
@@ -489,9 +469,14 @@ export class RestifyPanel {
     rawData: Buffer,
     requestPathOrUrl: string,
   ): RequestResult {
-    const normalizedHeaders = this._normalizeResponseHeaders(headers);
-    const contentType = this._getHeaderValue(normalizedHeaders, "Content-Type");
-    const contentDisposition = this._getHeaderValue(
+    // Decompress the wire bytes so the viewer receives decoded content.
+    const data = decompressBody(
+      rawData,
+      headers["content-encoding"] as string | string[] | undefined,
+    );
+    const normalizedHeaders = normalizeResponseHeaders(headers);
+    const contentType = getHeaderValue(normalizedHeaders, "Content-Type");
+    const contentDisposition = getHeaderValue(
       normalizedHeaders,
       "Content-Disposition",
     );
@@ -509,8 +494,8 @@ export class RestifyPanel {
         status,
         statusText,
         headers: normalizedHeaders,
-        body: rawData.toString("utf8"),
-        bodySize: rawData.length,
+        body: data.toString("utf8"),
+        bodySize: data.length,
         isFileResponse: false,
       };
     }
@@ -524,9 +509,9 @@ export class RestifyPanel {
       contentDisposition,
       safeFileName,
     );
-    const fileBase64 = rawData.toString("base64");
+    const fileBase64 = data.toString("base64");
     const textBody = this._isTextLike(safeMimeType, safeFileName)
-      ? rawData.toString("utf8")
+      ? data.toString("utf8")
       : "";
 
     return {
@@ -534,7 +519,7 @@ export class RestifyPanel {
       statusText,
       headers: normalizedHeaders,
       body: textBody,
-      bodySize: rawData.length,
+      bodySize: data.length,
       isFileResponse: true,
       fileDetectionSource,
       fileName: safeFileName,
@@ -847,110 +832,23 @@ export class RestifyPanel {
     });
 
     let body: string | Buffer | undefined = undefined;
-    if (req.bodyType === "json" && req.body) {
-      body = resolveVars(req.body);
-      if (!headers["Content-Type"] && !headers["content-type"]) {
-        headers["Content-Type"] = "application/json";
-      }
-    } else if (req.bodyType === "form" && req.formData) {
-      const enabledFields = (req.formData || []).filter(
-        (f) => f.key && f.enabled !== false,
-      );
-      const hasFileField = enabledFields.some(
-        (f) => (f.formType || "text") === "file",
-      );
+    const serialized = serializeRequestBody(
+      req as CoreRequestForBody,
+      (s) => this.storageManager.resolveVariables(s || ""),
+    );
+    if (serialized.body !== undefined) {
+      body = serialized.body;
+    }
+    applyHeadersToRequest(headers, serialized.headers, serialized.forceHeaders);
 
-      if (hasFileField) {
-        const boundary = `----RestifyFormBoundary${Date.now().toString(16)}`;
-        const chunks: Buffer[] = [];
-
-        enabledFields.forEach((field) => {
-          const fieldName = resolveVars(field.key);
-          const fieldType = field.formType || "text";
-
-          if (fieldType === "file" && field.fileContentBase64) {
-            const fileName = field.fileName || "upload.bin";
-            const contentType = field.contentType || "application/octet-stream";
-            const fileBuffer = Buffer.from(field.fileContentBase64, "base64");
-
-            chunks.push(
-              Buffer.from(
-                `--${boundary}\r\n` +
-                  `Content-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\n` +
-                  `Content-Type: ${contentType}\r\n\r\n`,
-              ),
-            );
-            chunks.push(fileBuffer);
-            chunks.push(Buffer.from("\r\n"));
-            return;
-          }
-
-          const fieldValue = resolveVars(field.value || "");
-          let header = `--${boundary}\r\n` +
-            `Content-Disposition: form-data; name="${fieldName}"\r\n`;
-          
-          // Add Content-Type header for text fields with custom content type
-          if (fieldType === "text" && field.contentType) {
-            header += `Content-Type: ${field.contentType}\r\n`;
-          }
-          
-          header += `\r\n`;
-          
-          chunks.push(Buffer.from(header));
-          chunks.push(Buffer.from(fieldValue));
-          chunks.push(Buffer.from("\r\n"));
-        });
-
-        chunks.push(Buffer.from(`--${boundary}--\r\n`));
-        body = Buffer.concat(chunks);
-
-        headers["Content-Type"] = `multipart/form-data; boundary=${boundary}`;
-        headers["Content-Length"] = String(body.length);
-      } else {
-        const params = new URLSearchParams();
-        enabledFields.forEach((f) => {
-          params.append(resolveVars(f.key), resolveVars(f.value || ""));
-        });
-        body = params.toString();
-        if (!headers["Content-Type"]) {
-          headers["Content-Type"] = "application/x-www-form-urlencoded";
-        }
-      }
-    } else if (req.bodyType === "urlencoded") {
-      const enabledFields = (req.urlencoded || []).filter(
-        (f) => f.key && f.enabled !== false,
-      );
-      const params = new URLSearchParams();
-      enabledFields.forEach((f) => {
-        params.append(resolveVars(f.key), resolveVars(f.value || ""));
-      });
-      body = params.toString();
-      if (!headers["Content-Type"]) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-    } else if (req.bodyType === "text" || req.bodyType === "xml") {
-      body = resolveVars(req.body);
-      if (req.bodyType === "xml" && !headers["Content-Type"]) {
-        headers["Content-Type"] = "application/xml";
-      }
+    // Ask the server for compressed responses only when we can decode them.
+    if (!hasHeader(headers, "Accept-Encoding")) {
+      setHeader(headers, "Accept-Encoding", "gzip, deflate, br");
     }
 
     let finalUrl = rawUrl;
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(rawUrl);
-      if (req.queryParams && req.queryParams.length > 0) {
-        req.queryParams.forEach((p) => {
-          if (p.key && p.enabled !== false) {
-            parsedUrl.searchParams.append(
-              resolveVars(p.key),
-              resolveVars(p.value),
-            );
-          }
-        });
-        finalUrl = parsedUrl.toString();
-      }
-    } catch {
+    const withParams = applyQueryParams(rawUrl, req.queryParams, resolveVars);
+    if (withParams === null) {
       this.activityProvider?.append(
         "Invalid request URL",
         [
@@ -967,6 +865,8 @@ export class RestifyPanel {
       });
       return;
     }
+    finalUrl = withParams;
+    const parsedUrl = new URL(finalUrl);
 
     const settings = this.storageManager.getSettings();
     let proxyOpts: { proxy: string; auth?: string } | null = null;
@@ -1028,6 +928,9 @@ export class RestifyPanel {
       /* ignore postMessage failures for debug */
     }
 
+    const verifySsl = req.rejectUnauthorized !== false;
+    const timeoutMs = req.timeout ?? settings.defaultTimeout ?? DEFAULT_TIMEOUT_MS;
+
     this.activityProvider?.append(
       "Request started",
       [
@@ -1035,7 +938,9 @@ export class RestifyPanel {
         `URL: ${finalUrl}`,
         `Headers: ${Object.keys(headers).length}`,
         `Body: ${this._formatRequestBodySummary(body, req.bodyType)}`,
-        `SSL verification: ${req.rejectUnauthorized === true ? "enabled" : "disabled"}`,
+        `SSL verification: ${verifySsl ? "enabled" : "disabled"}`,
+        `Follow redirects: ${req.followRedirects === false ? "off" : "on (${DEFAULT_MAX_REDIRECTS} max)"}`,
+        `Timeout: ${timeoutMs}ms`,
         `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
       ].join("\n"),
       "info",
@@ -1049,8 +954,13 @@ export class RestifyPanel {
         finalUrl,
         headers,
         body,
-        req.rejectUnauthorized === true,
+        verifySsl,
         proxyOpts,
+        {
+          followRedirects: req.followRedirects !== false,
+          maxRedirects: DEFAULT_MAX_REDIRECTS,
+          timeout: timeoutMs,
+        },
       );
       try {
         this.panel.webview.postMessage({
@@ -1175,7 +1085,7 @@ export class RestifyPanel {
         headers: resolvedHeaders,
         queryParams: req.queryParams,
         body: req.body,
-        rejectUnauthorized: req.rejectUnauthorized === true,
+        rejectUnauthorized: req.rejectUnauthorized !== false,
         curlCommand,
       };
 
@@ -1240,7 +1150,7 @@ export class RestifyPanel {
           `Duration: ${duration}ms`,
           `Network: ${timings.network ?? 0}ms`,
           `Size: ${this._formatBytes(responseData.size)}`,
-          `Content-Type: ${this._getHeaderValue(result.headers, "content-type") || "unknown"}`,
+          `Content-Type: ${getHeaderValue(result.headers, "content-type") || "unknown"}`,
           `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
           `mTLS: ${mtlsCerts ? `enabled for ${parsedUrl.hostname}` : "not used"}`,
         ].join("\n"),
@@ -1297,13 +1207,121 @@ export class RestifyPanel {
     }
   }
 
-  private _doRequest(
+  private async _doRequest(
     method: string,
     url: string,
     headers: Record<string, string>,
     body: string | Buffer | undefined,
     rejectUnauthorized: boolean,
     proxyOpts: { proxy: string; auth?: string } | null,
+    options: {
+      followRedirects?: boolean;
+      maxRedirects?: number;
+      timeout?: number;
+    } = {},
+  ): Promise<RequestResult> {
+    const maxRedirects =
+      options.followRedirects === false
+        ? 0
+        : options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
+    const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
+
+    let currentMethod = method;
+    let currentUrl = url;
+    let currentHeaders = { ...headers };
+    let currentBody = body;
+
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+      const result = await this._doRequestOnce(
+        currentMethod,
+        currentUrl,
+        currentHeaders,
+        currentBody,
+        rejectUnauthorized,
+        proxyOpts,
+        timeoutMs,
+      );
+
+      if (hop >= maxRedirects || !isRedirectStatus(result.status)) {
+        return result;
+      }
+
+      const locations = getHeaderArray(result.headers, "location");
+      const nextUrl = resolveRedirectUrl(currentUrl, locations[0]);
+      if (!nextUrl) {
+        return result;
+      }
+
+      const nextMethod = getRedirectMethod(currentMethod, result.status);
+      const sendBody = shouldSendBodyOnRedirect(currentMethod, result.status);
+
+      const nextHeaders = { ...currentHeaders };
+      if (shouldStripAuthorization(currentUrl, nextUrl)) {
+        removeHeader(nextHeaders, "authorization");
+        removeHeader(nextHeaders, "proxy-authorization");
+      }
+      if (!sendBody) {
+        removeHeader(nextHeaders, "content-length");
+        removeHeader(nextHeaders, "content-type");
+        removeHeader(nextHeaders, "transfer-encoding");
+      }
+      // Content-Length no longer matches if we keep the body.
+      if (sendBody && currentBody !== undefined) {
+        removeHeader(nextHeaders, "content-length");
+        if (Buffer.isBuffer(currentBody)) {
+          setHeader(nextHeaders, "Content-Length", String(currentBody.length));
+        } else {
+          setHeader(
+            nextHeaders,
+            "Content-Length",
+            String(Buffer.byteLength(currentBody, "utf8")),
+          );
+        }
+      }
+
+      try {
+        this.panel.webview.postMessage({
+          command: "debugLog",
+          data: {
+            stage: "redirect",
+            info: {
+              from: currentUrl,
+              to: nextUrl,
+              status: result.status,
+              method: nextMethod,
+            },
+          },
+        });
+      } catch {
+        /* empty */
+      }
+
+      currentMethod = nextMethod;
+      currentUrl = nextUrl;
+      currentHeaders = nextHeaders;
+      currentBody = sendBody ? currentBody : undefined;
+    }
+
+    // Unreachable: loop bounded by maxRedirects above.
+    return this._doRequestOnce(
+      currentMethod,
+      currentUrl,
+      currentHeaders,
+      currentBody,
+      rejectUnauthorized,
+      proxyOpts,
+      timeoutMs,
+    );
+  }
+
+  private _doRequestOnce(
+    method: string,
+    url: string,
+    headers: Record<string, string>,
+    body: string | Buffer | undefined,
+    rejectUnauthorized: boolean,
+    proxyOpts: { proxy: string; auth?: string } | null,
+    timeoutMs: number,
   ): Promise<RequestResult> {
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(url);
@@ -1418,6 +1436,7 @@ export class RestifyPanel {
               body,
               resolve,
               reject,
+              timeoutMs,
             );
           }
 
@@ -1445,7 +1464,7 @@ export class RestifyPanel {
           }
 
           const lib = isProxyHttps ? https : http;
-          return this._executeProxyRequest(lib, options, body, resolve, reject);
+          return this._executeProxyRequest(lib, options, body, resolve, reject, timeoutMs);
         } catch(e) {
           console.error("Proxy URL parsing error:", e);
           return reject(
@@ -1533,9 +1552,9 @@ export class RestifyPanel {
         }
         reject(err);
       });
-      req.setTimeout(30000, () => {
+      req.setTimeout(timeoutMs, () => {
         req.destroy();
-        reject(new Error("Request timed out after 30 seconds"));
+        reject(new Error(`Request timed out after ${timeoutMs}ms`));
       });
 
       if (body) req.write(body);
@@ -1549,6 +1568,7 @@ export class RestifyPanel {
     body: string | Buffer | undefined,
     resolve: (value: RequestResult) => void,
     reject: (reason?: any) => void,
+    timeoutMs: number,
   ): void {
     try {
       this.panel.webview.postMessage({
@@ -1564,10 +1584,22 @@ export class RestifyPanel {
 
     const req = lib.request(options, (res) => {
       const chunks: Buffer[] = [];
+      let totalSize = 0;
+      let aborted = false;
       res.on("data", (chunk: Buffer) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalSize += buf.length;
+        if (totalSize > MAX_RESPONSE_SIZE) {
+          aborted = true;
+          req.destroy(
+            new Error("Response exceeded maximum allowed size of 100MB"),
+          );
+          return;
+        }
+        chunks.push(buf);
       });
       res.on("end", () => {
+        if (aborted) return;
         const rawData = Buffer.concat(chunks);
         const requestPathOrUrl =
           typeof options.path === "string" ? options.path : "";
@@ -1610,17 +1642,17 @@ export class RestifyPanel {
       }
       reject(err);
     });
-    req.setTimeout(30000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
       try {
         this.panel.webview.postMessage({
           command: "debugLog",
-          data: { stage: "proxyRequest-timeout", info: { timeoutMs: 30000 } },
+          data: { stage: "proxyRequest-timeout", info: { timeoutMs } },
         });
       } catch {
         /* empty */
       }
-      reject(new Error("Request timed out after 30 seconds"));
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
     });
 
     if (body) req.write(body);

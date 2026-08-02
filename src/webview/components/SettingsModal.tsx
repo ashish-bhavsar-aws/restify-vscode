@@ -362,6 +362,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     caPath: '',
   });
   const [showActivityLog, setShowActivityLog] = useState(true);
+  const [defaultTimeout, setDefaultTimeout] = useState(30000);
 
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -408,6 +409,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       setCertificates(initialSettings.certificates || []);
       setShowActivityLog(initialSettings.showActivityLog !== false);
+      setDefaultTimeout(initialSettings.defaultTimeout ?? 30000);
     }
 
     if (!open) {
@@ -446,6 +448,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       noProxy: noProxyTags.join(','),
       certificates,
       showActivityLog,
+      defaultTimeout:
+        typeof defaultTimeout === 'number' && defaultTimeout > 0
+          ? defaultTimeout
+          : 30000,
     });
   };
 
@@ -503,6 +509,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </CheckboxLabel>
           <HelperText>
             Enable or disable the activity log panel that records request events.
+          </HelperText>
+
+          <Label>Default Timeout (ms)</Label>
+          <Input
+            type="number"
+            min={1}
+            placeholder="30000"
+            value={defaultTimeout}
+            onChange={(e) => setDefaultTimeout(Number(e.target.value))}
+          />
+          <HelperText>
+            Default timeout applied to requests that don't specify one.
           </HelperText>
         </Section>
 

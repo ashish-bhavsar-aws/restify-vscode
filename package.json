@@ -178,6 +178,7 @@
     "style-loader": "^4.0.0",
     "ts-loader": "^9.4.0",
     "typescript": "^5.0.0",
+    "vitest": "^2.1.9",
     "webpack": "^5.88.0",
     "webpack-cli": "^5.1.0"
   },
@@ -211,6 +212,7 @@
     "package": "vsce package",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
-    "lint:unused": "eslint . --ext .ts,.tsx --rule 'unused-imports/no-unused-imports: error' --rule '@typescript-eslint/no-unused-vars: error'"
+    "lint:unused": "eslint . --ext .ts,.tsx --rule 'unused-imports/no-unused-imports: error' --rule '@typescript-eslint/no-unused-vars: error'",
+    "test:unit": "vitest run"
   }
 }

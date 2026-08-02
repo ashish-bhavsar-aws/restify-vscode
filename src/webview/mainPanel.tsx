@@ -55,13 +55,14 @@ const LoadingBar = styled.div<{ $active: boolean }>`
 const SslRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
   padding: 6px 14px;
   border-bottom: 1px solid ${({ theme }) => theme.border};
   font-size: 11px;
   color: ${({ theme }) => theme.muted};
   background: ${({ theme }) => theme.surface};
   flex-shrink: 0;
+  flex-wrap: wrap;
 
   label {
     display: flex;
@@ -72,6 +73,32 @@ const SslRow = styled.div`
 
   input[type="checkbox"] {
     accent-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const SslWarning = styled.span`
+  font-size: 10px;
+  font-weight: 600;
+  color: ${({ theme }) => theme.error};
+  background: color-mix(in srgb, ${({ theme }) => theme.error} 14%, transparent);
+  border: 1px solid color-mix(in srgb, ${({ theme }) => theme.error} 35%, transparent);
+  padding: 1px 6px;
+  border-radius: 8px;
+`;
+
+const TimeoutInput = styled.input`
+  width: 72px;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: monospace;
+  outline: none;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
   }
 `;
 
@@ -575,17 +602,57 @@ export const MainPanel: React.FC = () => {
         onSave={() => setSaveModalOpen(true)}
       />
 
-      {/* Per-request SSL setting */}
+      {/* Per-request options */}
       <SslRow>
-        <label title="Uncheck to allow self-signed or untrusted certificates for this request">
+        <label
+          title="Uncheck to allow self-signed or untrusted certificates for this request"
+          data-testid="verify-ssl-toggle"
+        >
           <input
             type="checkbox"
-            checked={request.rejectUnauthorized}
+            checked={request.rejectUnauthorized !== false}
             onChange={(e) =>
               updateRequest({ rejectUnauthorized: e.target.checked })
             }
           />
           Verify SSL Certificate
+        </label>
+        {request.rejectUnauthorized === false && (
+          <SslWarning>Insecure — TLS not verified</SslWarning>
+        )}
+
+        <label
+          title="Automatically follow 3xx redirect responses (max 10 hops)"
+          data-testid="follow-redirects-toggle"
+        >
+          <input
+            type="checkbox"
+            checked={request.followRedirects !== false}
+            onChange={(e) =>
+              updateRequest({ followRedirects: e.target.checked })
+            }
+          />
+          Follow Redirects
+        </label>
+
+        <label
+          title="Request timeout in milliseconds. Leave empty to use the default from Settings."
+        >
+          Timeout (ms)
+          <TimeoutInput
+            type="number"
+            min={1}
+            placeholder={String(
+              settings.defaultTimeout ?? DEFAULT_SETTINGS.defaultTimeout,
+            )}
+            value={request.timeout ?? ""}
+            onChange={(e) =>
+              updateRequest({
+                timeout:
+                  e.target.value === "" ? undefined : Number(e.target.value),
+              })
+            }
+          />
         </label>
       </SslRow>
 

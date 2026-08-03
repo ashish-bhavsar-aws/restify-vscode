@@ -2,6 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const zlib = require('zlib');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
@@ -856,6 +858,124 @@ app.get('/api/json-response', (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /api/redirect:
+ *   get:
+ *     summary: Respond with a 302 redirect to /api/redirect-target
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       302:
+ *         description: Redirect response
+ */
+app.get('/api/redirect', (req, res) => {
+  res.redirect(302, '/api/redirect-target');
+});
+
+/**
+ * @swagger
+ * /api/redirect-target:
+ *   get:
+ *     summary: Final destination after a redirect
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       200:
+ *         description: Redirect target reached
+ */
+app.get('/api/redirect-target', (req, res) => {
+  res.json({
+    redirected: true,
+    from: '/api/redirect',
+    cookieHeader: req.headers.cookie || null,
+  });
+});
+
+/**
+ * @swagger
+ * /api/gzip:
+ *   get:
+ *     summary: Return a gzip-compressed JSON body
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       200:
+ *         description: Gzipped JSON body
+ */
+app.get('/api/gzip', (req, res) => {
+  const payload = JSON.stringify({
+    compressed: true,
+    message: 'This response body was gzip-compressed on the wire.',
+    items: Array.from({ length: 5 }, (_, i) => ({ id: i + 1, label: `item-${i + 1}` })),
+  });
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Encoding', 'gzip');
+  res.send(zlib.gzipSync(payload));
+});
+
+/**
+ * @swagger
+ * /api/cookie/set:
+ *   get:
+ *     summary: Set a cookie and echo it back
+ *     parameters:
+ *       - in: query
+ *         name: name
+ *         schema: { type: string, default: session }
+ *       - in: query
+ *         name: value
+ *         schema: { type: string, default: abc123 }
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       200:
+ *         description: Cookie set
+ */
+app.get('/api/cookie/set', (req, res) => {
+  const name = req.query.name || 'session';
+  const value = req.query.value || 'abc123';
+  res.setHeader('Set-Cookie', `${name}=${value}; Path=/`);
+  res.json({ set: true, cookie: `${name}=${value}` });
+});
+
+/**
+ * @swagger
+ * /api/cookie/check:
+ *   get:
+ *     summary: Echo the cookie header received
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       200:
+ *         description: Received cookies
+ */
+app.get('/api/cookie/check', (req, res) => {
+  res.json({ cookie: req.headers.cookie || null });
+});
+
+/**
+ * @swagger
+ * /api/slow:
+ *   get:
+ *     summary: Delay the response so tests can exercise cancellation/timeouts
+ *     parameters:
+ *       - in: query
+ *         name: ms
+ *         schema: { type: integer, default: 8000 }
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       200:
+ *         description: Delayed response
+ */
+app.get('/api/slow', (req, res) => {
+  const ms = Math.min(parseInt(req.query.ms, 10) || 8000, 30000);
+  setTimeout(() => {
+    res.json({ slow: true, waited: ms });
+  }, ms);
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
@@ -888,3 +1008,23 @@ app.listen(PORT, () => {
 ╚════════════════════════════════════════════════════════════╝
   `);
 });
+
+// Self-signed HTTPS listener for SSL-verification feature tests.
+const certPath = path.join(__dirname, 'certs', 'cert.pem');
+const keyPath = path.join(__dirname, 'certs', 'key.pem');
+if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+  const HTTPS_PORT = 3443;
+  https
+    .createServer(
+      {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      },
+      app,
+    )
+    .listen(HTTPS_PORT, () => {
+      console.log(`HTTPS test server: https://localhost:${HTTPS_PORT} (self-signed)`);
+    });
+} else {
+  console.log('HTTPS test server skipped (certs/ not found)');
+}

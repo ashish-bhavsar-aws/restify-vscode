@@ -69,12 +69,21 @@ export async function dumpPageState(page: Page, label: string): Promise<void> {
     log(`  dom_iframe[${i}]: src="${(src || '').slice(0, 80)}"`);
   }
 
+  const webviewTags = await page.locator('webview').count().catch(() => 0);
+  log(`  DOM webview tags: ${webviewTags}`);
   for (let i = 0; i < webviewFrames.length; i++) {
     const f = webviewFrames[i];
     const hasUrlBar = await f.locator('[data-testid="url-input"], .url-input').count().catch(() => 0);
     const hasSendBtn = await f.locator('[data-testid="send-btn"]').count().catch(() => 0);
     const bodyText = await f.evaluate(() => document.body?.innerText?.slice(0, 120) || '', () => '').catch(() => '<err>');
     log(`  webview[${i}]: urlBar=${hasUrlBar} sendBtn=${hasSendBtn} body="${bodyText.replace(/\n/g, ' ').trim()}"`);
+  }
+
+  if (webviewTags > 0) {
+    for (let i = 0; i < webviewTags; i++) {
+      const src = await page.locator('webview').nth(i).getAttribute('src').catch(() => '<err>');
+      log(`  webviewTag[${i}]: src="${src?.slice(0, 120)}"`);
+    }
   }
 }
 
@@ -101,6 +110,12 @@ export interface VSCodeApp {
 
 export async function launchVSCode(): Promise<VSCodeApp> {
   log('Launching VS Code...');
+
+  if (!fs.existsSync(path.join(EXTENSION_PATH, 'dist', 'extension.js'))) {
+    const msg = 'dist/extension.js is missing — build the extension first with: npm run compile';
+    logError(msg);
+    throw new Error(msg);
+  }
 
   if (fs.existsSync(TEST_USER_DATA)) {
     log('  Cleaning previous user-data dir...');
@@ -539,29 +554,19 @@ export async function findMainPanelFrame(page: Page, timeoutMs = 30_000): Promis
 
 async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | null> {
   const prefix = '  '.repeat(depth + 1);
+  const selector = '[data-testid="send-btn"], button:has-text("Send")';
 
   // Check this frame for Send button
-  const hasSend = await frame.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
+  const hasSend = await frame.locator(selector).count().catch(() => 0);
   if (hasSend > 0) {
     log(`${prefix}✓ Found frame with Send button: ${frame.url().slice(0, 60)}`);
     return frame;
   }
 
-  // Check child frames (webview panels use nested iframes)
+  // Recursively search nested child frames
   for (const child of frame.childFrames()) {
-    const childSend = await child.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
-    if (childSend > 0) {
-      log(`${prefix}✓ Found child frame with Send button: ${child.url().slice(0, 60)}`);
-      return child;
-    }
-    // One more level
-    for (const gc of child.childFrames()) {
-      const gcSend = await gc.locator('[data-testid="send-btn"], button:has-text("Send")').count().catch(() => 0);
-      if (gcSend > 0) {
-        log(`${prefix}✓ Found grandchild frame with Send button: ${gc.url().slice(0, 60)}`);
-        return gc;
-      }
-    }
+    const result = await findSendButtonInTree(child, depth + 1);
+    if (result) return result;
   }
 
   return null;

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import { resolveDynamicVariables } from "../core";
 
 export interface Environment {
   id: string;
@@ -845,16 +846,17 @@ export class StorageManager {
 
   // ─── Variable resolution ──────────────────────────────────
   resolveVariables(text: string): string {
-    const activeEnv = this.getActiveEnvironment();
-    if (!activeEnv || !activeEnv.variables) return text;
     let resolved = text;
-    for (const v of activeEnv.variables) {
-      resolved = resolved.replace(
-        new RegExp(`\\{\\{${v.key}\\}\\}`, "g"),
-        v.value,
-      );
+    const activeEnv = this.getActiveEnvironment();
+    if (activeEnv && activeEnv.variables) {
+      for (const v of activeEnv.variables) {
+        resolved = resolved.replace(
+          new RegExp(`\\{\\{${v.key}\\}\\}`, "g"),
+          v.value,
+        );
+      }
     }
-    return resolved;
+    return resolveDynamicVariables(resolved);
   }
 
   // ─── Cookies (cookie jar) ─────────────────────────────────

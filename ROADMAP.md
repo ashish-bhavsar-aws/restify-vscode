@@ -134,17 +134,17 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F4 **Decompression**: inflate `Content-Encoding: gzip/deflate/br` (`zlib`); fall back to raw bytes on decode failure; only set `Accept-Encoding` when handled.
 - [x] F5 **Cookie jar**: persist cookies per domain in storage; send stored cookies for matching host/path; honor `Secure`, `Domain`, `Path`, `Expires`, `HttpOnly`; surface `Set-Cookie` in response headers (already preserved). *(done — `src/core/cookies.ts`, globalState persistence, engine injection + per-hop capture; 29 tests. Cookie Manager view deferred to a later polish pass.)*
 - [x] F7 **Proxy size cap**: apply `MAX_RESPONSE_SIZE` + size counting to the proxy path.
-- [ ] F6 **Cancellation**: `AbortController`-style signal through the engine; Cancel button in the panel; history entry marked `cancelled`.
+- [x] F6 **Cancellation**: `AbortController`-style signal through the engine; Cancel button in the panel; history entry marked `cancelled`. *(done — `AbortController` wired through `src/core/http.ts`, cancel button + cancelled history state; covered by `features.spec.ts` F6 and unit tests)*
 - [x] F8 **Timeouts**: `timeout` on RequestState (per-request) + default in Settings; wire both direct and proxy paths.
 
-**Exit criteria:** unit tests for redirects, decompression, cookie matching, GraphQL body, proxy cap. Full E2E suite green. *(status: redirects ✅, decompression ✅, cookie matching ✅, GraphQL body ✅, proxy cap covered by engine tests; HTTP + Settings E2E suites green. Remaining: F6 cancellation.)*
+**Exit criteria:** unit tests for redirects, decompression, cookie matching, GraphQL body, proxy cap. Full E2E suite green. *(status: redirects ✅, decompression ✅, cookie matching ✅, GraphQL body ✅, proxy cap covered by engine tests; cancellation ✅; HTTP + Settings E2E suites green.)*
 
 ### Phase 2 — Scripting & Variables (P1)
 > Turns Restify from "send and see" into "automate workflows".
 
-- [ ] F10 **Pre-request scripts**: extend `scriptExecutor.ts` to a generic pipeline (pre → request → post); API parity (`vars`, `request`, `log`).
+- [x] F10 **Pre-request scripts**: extend `scriptExecutor.ts` to a generic pipeline (pre → request → post); API parity (`vars`, `request`, `log`). *(done — `preScript` on RequestState, run host-side via `src/core/script.ts` before the request; `src/core/http.ts` shared engine)*
 - [ ] F33 **Test/assertion scripts**: post-request `tests` object (`tests["status is 200"] = response.status === 200`); render pass/fail badges in response pane; store results in history.
-- [ ] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$envVar}}` resolved host-side before request.
+- [x] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$processEnv:NAME}}`, `{{$localDateTime}}` resolved host-side before request. *(done — `src/core/dynamicVars.ts`, wired into `StorageManager.resolveVariables`, unit-tested)*
 - [ ] F21 **Request chaining**: after each run, expose response as `{{response.<method>.<jsonpath>}}` style or via script `set()`; picker UI in Save/history flow.
 - [ ] F41 **Secret variables**: add `secret` flag to `KVItem`; store secret values in `context.secrets`/`SecretStorage`; mask in UI (dot display + reveal).
 - [ ] F31 **Collection runner** (first slice): run a folder/collection sequentially, reusing the single-request engine; results grid with status/time/test badges; cancel support.
@@ -194,14 +194,14 @@ Focus: fix correctness issues, make the extension feel stable, and improve every
 - F3 — Redirect following ✅
 - F4 — Response decompression ✅
 - F5 — Cookie jar and persistence ✅
-- F6 — Request cancellation ⬜ *(next up)*
+- F6 — Request cancellation ✅
 - F8 — Configurable timeout ✅
 - F9 — Core unit tests ✅
 
 **Nice-to-have**
-- F10 — Pre-request scripts
+- F10 — Pre-request scripts ✅
 - F13 — cURL import
-- F16 — Dynamic variables
+- F16 — Dynamic variables ✅
 - F57 — History search and pins
 - F59 — VS Code discoverability metadata
 

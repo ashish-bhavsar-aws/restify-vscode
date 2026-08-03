@@ -3,5 +3,7 @@ export * from "./constants";
 export * from "./cookies";
 export * from "./decompress";
 export * from "./headers";
+export * from "./http";
 export * from "./redirects";
+export * from "./script";
 export * from "./url";

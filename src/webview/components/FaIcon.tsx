@@ -24,6 +24,7 @@ import {
   faList,
   faLink,
   faFileCode,
+  faFileLines,
   faDownload,
   faTriangleExclamation,
   faCode,
@@ -47,7 +48,7 @@ library.add(
   faMagnifyingGlass, faXmark, faPen, faFileExport, faFileImport, faCopy,
   faGripVertical, faFolder, faAnglesDown, faAnglesUp, faFloppyDisk,
   faPaperPlane, faTerminal, faClipboardList, faList, faLink, faFileCode,
-  faDownload, faTriangleExclamation, faCode, faPlus, faChevronRight,
+  faFileLines, faDownload, faTriangleExclamation, faCode, faPlus, faChevronRight,
   faTrash, faChevronDown, faUpload, faArrowUp, faBars, faEye, faEyeSlash,
   faKey, faClock, faArrowsRotate, faShieldHalved
 );
@@ -71,6 +72,7 @@ export {
   faLink,
   faTerminal,
   faFileCode,
+  faFileLines,
 };
 
 const IconWrapper = styled.span<{ $size?: number }>`

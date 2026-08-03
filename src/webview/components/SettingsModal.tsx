@@ -520,7 +520,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onChange={(e) => setDefaultTimeout(Number(e.target.value))}
           />
           <HelperText>
-            Default timeout applied to requests that don't specify one.
+            Default timeout applied to requests that don&apos;t specify one.
           </HelperText>
         </Section>
 

@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { METHODS, KVItem, Environment } from '../types';
 import VariableTextInput from './VariableTextInput';
 import { Icon } from './FaIcon';
-import { faFloppyDisk } from '@fortawesome/free-solid-svg-icons';
+import { faFloppyDisk, faStop } from '@fortawesome/free-solid-svg-icons';
 import { getMethodColor } from '../theme/methodColors';
 
 interface UrlBarProps {
@@ -16,6 +16,7 @@ interface UrlBarProps {
   onMethodChange: (method: string) => void;
   onUrlChange: (url: string) => void;
   onSend: () => void;
+  onCancel?: () => void;
   onSave: () => void;
 }
 
@@ -184,6 +185,35 @@ const SendBtn = styled.button<{ $disabled: boolean }>`
   }
 `;
 
+const CancelBtn = styled.button`
+  background: color-mix(in srgb, ${({ theme }) => theme.error} 14%, transparent);
+  color: ${({ theme }) => theme.error};
+  border: 1px solid color-mix(in srgb, ${({ theme }) => theme.error} 45%, transparent);
+  height: 34px;
+  padding: 0 18px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+
+  &:hover {
+    background: color-mix(in srgb, ${({ theme }) => theme.error} 22%, transparent);
+    border-color: ${({ theme }) => theme.error};
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+`;
+
 const MethodDropdown: React.FC<{ method: string; onChange: (m: string) => void }> = ({ method, onChange }) => {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -282,6 +312,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
   onMethodChange,
   onUrlChange,
   onSend,
+  onCancel,
   onSave,
 }) => {
   const displayUrl = useMemo(() => {
@@ -315,9 +346,21 @@ export const UrlBar: React.FC<UrlBarProps> = ({
         Save
       </SaveBtn>
 
-      <SendBtn data-testid="send-btn" $disabled={loading || sendDisabled} disabled={loading || sendDisabled} onClick={onSend}>
-        {loading ? 'Sending…' : sendDisabled ? 'Waiting…' : 'Send →'}
-      </SendBtn>
+      {loading ? (
+        <CancelBtn
+          data-testid="cancel-btn"
+          onClick={onCancel}
+          title="Cancel request"
+          type="button"
+        >
+          <Icon icon={faStop} size={12} />
+          Cancel
+        </CancelBtn>
+      ) : (
+        <SendBtn data-testid="send-btn" $disabled={sendDisabled} disabled={sendDisabled} onClick={onSend}>
+          {sendDisabled ? 'Waiting…' : 'Send →'}
+        </SendBtn>
+      )}
     </UrlBarContainer>
   );
 };

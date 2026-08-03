@@ -312,6 +312,17 @@ export const MainPanel: React.FC = () => {
             size: 0,
           });
           break;
+        case "requestCancelled":
+          setLoading(false);
+          setResponse({
+            status: 0,
+            statusText: "Cancelled",
+            headers: {},
+            body: "Request was cancelled",
+            duration: msg.duration ?? 0,
+            size: 0,
+          });
+          break;
         case "setTheme":
           setThemeKind(msg.kind ?? 2);
           applyThemeClass(msg.kind ?? 2);
@@ -411,6 +422,11 @@ export const MainPanel: React.FC = () => {
 
   // Normal send handler
   const handleSendGuarded = handleSend;
+
+  // Cancel the in-flight request
+  const handleCancel = useCallback(() => {
+    post({ command: "cancelRequest" });
+  }, []);
 
   // Ctrl+S / Cmd+S — silent save if already in a collection, otherwise open SaveModal
   useEffect(() => {
@@ -613,6 +629,7 @@ export const MainPanel: React.FC = () => {
         onMethodChange={(method) => updateRequest({ method })}
         onUrlChange={handleUrlChange}
         onSend={handleSendGuarded}
+        onCancel={handleCancel}
         onSave={() => setSaveModalOpen(true)}
       />
 
@@ -661,6 +678,7 @@ export const MainPanel: React.FC = () => {
           <TimeoutInput
             type="number"
             min={1}
+            data-testid="timeout-input"
             placeholder={String(
               settings.defaultTimeout ?? DEFAULT_SETTINGS.defaultTimeout,
             )}

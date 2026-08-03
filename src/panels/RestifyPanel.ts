@@ -11,10 +11,10 @@ import { ActivityProvider } from "./ActivityProvider";
 import {
   DEFAULT_MAX_REDIRECTS,
   DEFAULT_TIMEOUT_MS,
-  MAX_RESPONSE_SIZE,
   applyHeadersToRequest,
   applyQueryParams,
   decompressBody,
+  executeUserScript,
   getHeaderValue,
   getHeaderArray,
   getCookieHeader,
@@ -29,6 +29,7 @@ import {
   shouldSendBodyOnRedirect,
   shouldStripAuthorization,
   getRedirectMethod,
+  performHttpRequest,
   storeCookies,
   type CoreRequestForBody,
 } from "../core";
@@ -84,6 +85,7 @@ interface RequestData {
   urlencoded?: Array<{ key: string; value: string; enabled?: boolean }>;
   queryParams?: Array<{ key: string; value: string; enabled?: boolean }>;
   rejectUnauthorized?: boolean;
+  preScript?: string;
   script?: string; // Post-response script for variable extraction
   authType?: "none" | "bearer" | "basic" | "apikey";
   authData?: {
@@ -123,6 +125,7 @@ export class RestifyPanel {
   private activityProvider?: ActivityProvider;
   private pendingRequest: RequestData | null = null;
   private webviewReady: boolean = false;
+  private _activeController: AbortController | null = null;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -546,6 +549,13 @@ export class RestifyPanel {
     }
   }
 
+  private _cancelActiveRequest(): void {
+    const controller = this._activeController;
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+    }
+  }
+
   private async _handleMessage(msg: any): Promise<void> {
     switch (msg.command) {
       case "webviewReady":
@@ -558,6 +568,9 @@ export class RestifyPanel {
       case "executeRequest":
         // msg.savedRequest is the original state (no injected auth headers) — used for history.
         await this._executeRequest(msg.request, msg.savedRequest);
+        break;
+      case "cancelRequest":
+        this._cancelActiveRequest();
         break;
       case "setScriptVariables":
         // Script extracted variables - add them to the active environment
@@ -838,8 +851,78 @@ export class RestifyPanel {
     const resolveVars = (s: string | undefined) =>
       this.storageManager.resolveVariables(s || "");
 
-    const rawUrl = resolveVars(req.url);
-    const method = req.method || "GET";
+    const executionReq: RequestData = {
+      ...req,
+      headers: Array.isArray(req.headers)
+        ? req.headers.map((h) => ({ ...h }))
+        : [],
+      queryParams: Array.isArray(req.queryParams)
+        ? req.queryParams.map((p) => ({ ...p }))
+        : [],
+      formData: Array.isArray(req.formData)
+        ? req.formData.map((f) => ({ ...f }))
+        : [],
+      urlencoded: Array.isArray(req.urlencoded)
+        ? req.urlencoded.map((u) => ({ ...u }))
+        : [],
+      authData: { ...req.authData },
+    };
+
+    const requestData = executionReq;
+    const preScript = (requestData.preScript || "").trim();
+    if (preScript) {
+      const scriptResult = await executeUserScript(
+        preScript,
+        {
+          request: requestData,
+          variables: {},
+          params: requestData.queryParams,
+        },
+        5000,
+      );
+
+      if (!scriptResult.success) {
+        const duration = Date.now() - startTime;
+        this.panel.webview.postMessage({
+          command: "requestError",
+          error: `Pre-request script failed: ${scriptResult.error}`,
+          duration,
+        });
+        this.activityProvider?.append(
+          "Pre-request script failed",
+          [`Method: ${req.method || "GET"}`, `URL: ${req.url || ""}`, `Error: ${scriptResult.error}`].join("\n"),
+          "error",
+        );
+        this.storageManager.addToHistory({
+          method: req.method || "GET",
+          url: req.url || "",
+          name: historyReq.name || `${req.method || "GET"} ${req.url || ""}`,
+          status: 0,
+          error: `Pre-request script failed: ${scriptResult.error}`,
+          duration,
+          request: historyReq,
+          activeEnvironmentId:
+            this.storageManager.getActiveEnvironment()?.id || null,
+        });
+        if (Object.keys(scriptResult.variables).length > 0) {
+          await this._handleMessage({
+            command: "setScriptVariables",
+            variables: scriptResult.variables,
+          });
+        }
+        return;
+      }
+
+      if (Object.keys(scriptResult.variables).length > 0) {
+        await this._handleMessage({
+          command: "setScriptVariables",
+          variables: scriptResult.variables,
+        });
+      }
+    }
+
+    const rawUrl = resolveVars(requestData.url);
+    const method = requestData.method || "GET";
     const headers: Record<string, string> = {};
 
     (req.headers || []).forEach((h) => {
@@ -850,7 +933,7 @@ export class RestifyPanel {
 
     let body: string | Buffer | undefined = undefined;
     const serialized = serializeRequestBody(
-      req as CoreRequestForBody,
+      requestData as CoreRequestForBody,
       (s) => this.storageManager.resolveVariables(s || ""),
     );
     if (serialized.body !== undefined) {
@@ -864,7 +947,7 @@ export class RestifyPanel {
     }
 
     let finalUrl = rawUrl;
-    const withParams = applyQueryParams(rawUrl, req.queryParams, resolveVars);
+    const withParams = applyQueryParams(rawUrl, requestData.queryParams, resolveVars);
     if (withParams === null) {
       this.activityProvider?.append(
         "Invalid request URL",
@@ -945,8 +1028,8 @@ export class RestifyPanel {
       /* ignore postMessage failures for debug */
     }
 
-    const verifySsl = req.rejectUnauthorized !== false;
-    const timeoutMs = req.timeout ?? settings.defaultTimeout ?? DEFAULT_TIMEOUT_MS;
+    const verifySsl = requestData.rejectUnauthorized !== false;
+    const timeoutMs = requestData.timeout ?? settings.defaultTimeout ?? DEFAULT_TIMEOUT_MS;
 
     this.activityProvider?.append(
       "Request started",
@@ -954,15 +1037,18 @@ export class RestifyPanel {
         `Method: ${method}`,
         `URL: ${finalUrl}`,
         `Headers: ${Object.keys(headers).length}`,
-        `Body: ${this._formatRequestBodySummary(body, req.bodyType)}`,
+        `Body: ${this._formatRequestBodySummary(body, requestData.bodyType)}`,
         `SSL verification: ${verifySsl ? "enabled" : "disabled"}`,
-        `Follow redirects: ${req.followRedirects === false ? "off" : "on (${DEFAULT_MAX_REDIRECTS} max)"}`,
+        `Follow redirects: ${requestData.followRedirects === false ? "off" : "on (${DEFAULT_MAX_REDIRECTS} max)"}`,
         `Timeout: ${timeoutMs}ms`,
         `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
       ].join("\n"),
       "info",
     );
     this.panel.webview.postMessage({ command: "requestStart" });
+
+    const controller = new AbortController();
+    this._activeController = controller;
 
     try {
       const netStart = Date.now();
@@ -977,6 +1063,7 @@ export class RestifyPanel {
           followRedirects: req.followRedirects !== false,
           maxRedirects: DEFAULT_MAX_REDIRECTS,
           timeout: timeoutMs,
+          signal: controller.signal,
         },
       );
       try {
@@ -1015,7 +1102,7 @@ export class RestifyPanel {
       const mtlsCerts = this._getCertificatesForHost(parsedUrl.hostname);
 
       // Build resolved headers array for display
-      const resolvedHeaders = (req.headers || []).map((h) => ({
+      const resolvedHeaders = (requestData.headers || []).map((h) => ({
         ...h,
         key: resolveVars(h.key),
         value: resolveVars(h.value),
@@ -1024,7 +1111,7 @@ export class RestifyPanel {
       // Build curl command
       let curlCommand = `curl -X ${method}`;
 
-      const isFormData = req.bodyType === "form" && Array.isArray(req.formData) && req.formData.length > 0;
+      const isFormData = requestData.bodyType === "form" && Array.isArray(requestData.formData) && requestData.formData.length > 0;
 
       // Add headers (omit Content-Type for multipart form-data so curl sets boundary)
       resolvedHeaders.forEach((h) => {
@@ -1182,6 +1269,46 @@ export class RestifyPanel {
         timings,
       });
     } catch (err: any) {
+      if (controller.signal.aborted) {
+        const duration = Date.now() - startTime;
+        try {
+          this.panel.webview.postMessage({
+            command: "debugLog",
+            data: {
+              stage: "requestCancelled",
+              info: { duration },
+            },
+          });
+        } catch {
+          /* empty */
+        }
+        this.activityProvider?.append(
+          "Request cancelled",
+          [
+            `Method: ${method}`,
+            `URL: ${finalUrl}`,
+            `Duration: ${duration}ms`,
+            "Cancelled by user.",
+          ].join("\n"),
+          "warning",
+        );
+        this.panel.webview.postMessage({
+          command: "requestCancelled",
+          duration,
+        });
+        this.storageManager.addToHistory({
+          method,
+          url: finalUrl,
+          name: historyReq.name || `${method} ${finalUrl}`,
+          status: 0,
+          error: "Cancelled",
+          duration,
+          request: historyReq,
+          activeEnvironmentId:
+            this.storageManager.getActiveEnvironment()?.id || null,
+        });
+        return;
+      }
       try {
         this.panel.webview.postMessage({
           command: "debugLog",
@@ -1221,6 +1348,10 @@ export class RestifyPanel {
         activeEnvironmentId:
           this.storageManager.getActiveEnvironment()?.id || null,
       });
+    } finally {
+      if (this._activeController === controller) {
+        this._activeController = null;
+      }
     }
   }
 
@@ -1235,6 +1366,7 @@ export class RestifyPanel {
       followRedirects?: boolean;
       maxRedirects?: number;
       timeout?: number;
+      signal?: AbortSignal;
     } = {},
   ): Promise<RequestResult> {
     const maxRedirects =
@@ -1257,6 +1389,7 @@ export class RestifyPanel {
         rejectUnauthorized,
         proxyOpts,
         timeoutMs,
+        options.signal,
       );
 
       // Capture Set-Cookie from every hop so redirects accumulate cookies too.
@@ -1331,10 +1464,11 @@ export class RestifyPanel {
       rejectUnauthorized,
       proxyOpts,
       timeoutMs,
+      options.signal,
     );
   }
 
-  private _doRequestOnce(
+  private async _doRequestOnce(
     method: string,
     url: string,
     headers: Record<string, string>,
@@ -1342,350 +1476,277 @@ export class RestifyPanel {
     rejectUnauthorized: boolean,
     proxyOpts: { proxy: string; auth?: string } | null,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<RequestResult> {
-    return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(url);
-      const isHttps = parsedUrl.protocol === "https:";
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === "https:";
+    const lib = isHttps ? https : http;
 
-      // Inject matching cookies from the jar unless the user supplied their own.
-      if (!hasHeader(headers, "cookie")) {
-        const cookieHeader = getCookieHeader(
-          this.storageManager.getCookies(),
-          url,
-        );
-        if (cookieHeader) setHeader(headers, "Cookie", cookieHeader);
+    // Inject matching cookies from the jar unless the user supplied their own.
+    if (!hasHeader(headers, "cookie")) {
+      const cookieHeader = getCookieHeader(
+        this.storageManager.getCookies(),
+        url,
+      );
+      if (cookieHeader) setHeader(headers, "Cookie", cookieHeader);
+    }
+
+    const rawProxyAuth = proxyOpts?.auth?.trim();
+    let proxyAuthToken: string | undefined;
+    let proxyAuthCredentials: string | undefined;
+    if (rawProxyAuth) {
+      if (/^Basic\s+/i.test(rawProxyAuth)) {
+        proxyAuthToken = rawProxyAuth.replace(/^Basic\s+/i, "").trim();
+      } else if (rawProxyAuth.includes(":")) {
+        proxyAuthCredentials = rawProxyAuth;
+        proxyAuthToken = Buffer.from(rawProxyAuth).toString("base64");
+      } else {
+        proxyAuthToken = rawProxyAuth;
       }
 
-      const rawProxyAuth = proxyOpts?.auth?.trim();
-      let proxyAuthToken: string | undefined;
-      let proxyAuthCredentials: string | undefined;
-      if (rawProxyAuth) {
-        if (/^Basic\s+/i.test(rawProxyAuth)) {
-          proxyAuthToken = rawProxyAuth.replace(/^Basic\s+/i, "").trim();
-        } else if (rawProxyAuth.includes(":")) {
-          proxyAuthCredentials = rawProxyAuth;
-          proxyAuthToken = Buffer.from(rawProxyAuth).toString("base64");
-        } else {
-          proxyAuthToken = rawProxyAuth;
-        }
-
-        if (!proxyAuthCredentials && proxyAuthToken) {
-          try {
-            const decoded = Buffer.from(proxyAuthToken, "base64").toString(
-              "utf8",
-            );
-            if (decoded.includes(":")) {
-              proxyAuthCredentials = decoded;
-            }
-          } catch {
-            /* empty */
-          }
-        }
-      }
-
-      const options: https.RequestOptions & http.RequestOptions = {
-        method,
-        headers,
-        rejectUnauthorized,
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port
-          ? parseInt(parsedUrl.port, 10)
-          : isHttps
-            ? 443
-            : 80,
-        path: parsedUrl.pathname + parsedUrl.search,
-      };
-
-      if (isHttps) {
-        const mtlsOptions = this._getCertificatesForHost(parsedUrl.hostname);
-        if (mtlsOptions) {
-          Object.assign(options, mtlsOptions);
-        }
-      }
-
-      if (proxyOpts && proxyOpts.proxy) {
+      if (!proxyAuthCredentials && proxyAuthToken) {
         try {
-          const normalizedProxyUrl = /^[a-z]+:\/\//i.test(proxyOpts.proxy)
-            ? proxyOpts.proxy
-            : `http://${proxyOpts.proxy}`;
-          const parsedProxyUrl = new URL(normalizedProxyUrl);
-          const isProxyHttps = parsedProxyUrl.protocol === "https:";
+          const decoded = Buffer.from(proxyAuthToken, "base64").toString(
+            "utf8",
+          );
+          if (decoded.includes(":")) {
+            proxyAuthCredentials = decoded;
+          }
+        } catch {
+          /* empty */
+        }
+      }
+    }
 
-          if (HttpProxyAgent) {
-            const proxyUrlForAgent = new URL(parsedProxyUrl.toString());
+    const options: https.RequestOptions & http.RequestOptions = {
+      method,
+      headers,
+      rejectUnauthorized,
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port
+        ? parseInt(parsedUrl.port, 10)
+        : isHttps
+          ? 443
+          : 80,
+      path: parsedUrl.pathname + parsedUrl.search,
+    };
 
-            // Allow auth from either proxy URL or separate proxyAuthorization field.
-            if (proxyAuthCredentials && !proxyUrlForAgent.username) {
-              const separator = proxyAuthCredentials.indexOf(":");
-              if (separator >= 0) {
-                proxyUrlForAgent.username = proxyAuthCredentials.slice(
-                  0,
-                  separator,
-                );
-                proxyUrlForAgent.password = proxyAuthCredentials.slice(
-                  separator + 1,
-                );
-              }
-            }
+    if (isHttps) {
+      const mtlsOptions = this._getCertificatesForHost(parsedUrl.hostname);
+      if (mtlsOptions) {
+        Object.assign(options, mtlsOptions);
+      }
+    }
 
-            try {
-              options.agent = new HttpProxyAgent(proxyUrlForAgent.toString());
-            } catch (agentErr) {
-              console.error("Failed to create proxy agent:", agentErr);
-              return reject(
-                new Error(
-                  `Failed to create proxy agent: ${agentErr instanceof Error ? agentErr.message : String(agentErr)}`,
-                ),
+    if (proxyOpts && proxyOpts.proxy) {
+      try {
+        const normalizedProxyUrl = /^[a-z]+:\/\//i.test(proxyOpts.proxy)
+          ? proxyOpts.proxy
+          : `http://${proxyOpts.proxy}`;
+        const parsedProxyUrl = new URL(normalizedProxyUrl);
+        const isProxyHttps = parsedProxyUrl.protocol === "https:";
+
+        if (HttpProxyAgent) {
+          const proxyUrlForAgent = new URL(parsedProxyUrl.toString());
+
+          // Allow auth from either proxy URL or separate proxyAuthorization field.
+          if (proxyAuthCredentials && !proxyUrlForAgent.username) {
+            const separator = proxyAuthCredentials.indexOf(":");
+            if (separator >= 0) {
+              proxyUrlForAgent.username = proxyAuthCredentials.slice(
+                0,
+                separator,
+              );
+              proxyUrlForAgent.password = proxyAuthCredentials.slice(
+                separator + 1,
               );
             }
-
-            if (proxyAuthToken) {
-              options.headers = { ...options.headers } as Record<
-                string,
-                string
-              >;
-              (options.headers as Record<string, string>)[
-                "Proxy-Authorization"
-              ] = `Basic ${proxyAuthToken}`;
-            }
-
-            // eslint-disable-next-line no-console
-            console.log("Using proxy agent:", {
-              proxyHost: parsedProxyUrl.hostname,
-              proxyPort: parsedProxyUrl.port || (isProxyHttps ? "443" : "80"),
-              hasProxyAuth: !!proxyAuthToken,
-              targetUrl: url,
-              rejectUnauthorized: options.rejectUnauthorized,
-            });
-
-            const lib = isHttps ? https : http;
-            return this._executeProxyRequest(
-              lib,
-              options,
-              body,
-              resolve,
-              reject,
-              timeoutMs,
-            );
           }
 
-          // Fallback when proxy agent is unavailable (supports plain HTTP target requests).
-          if (isHttps) {
-            return reject(
-              new Error(
-                "Proxy agent module is not available for HTTPS target requests",
-              ),
+          try {
+            options.agent = new HttpProxyAgent(proxyUrlForAgent.toString());
+          } catch (agentErr) {
+            console.error("Failed to create proxy agent:", agentErr);
+            throw new Error(
+              `Failed to create proxy agent: ${agentErr instanceof Error ? agentErr.message : String(agentErr)}`,
             );
           }
-
-          options.hostname = parsedProxyUrl.hostname;
-          options.port = parsedProxyUrl.port
-            ? parseInt(parsedProxyUrl.port, 10)
-            : isProxyHttps
-              ? 443
-              : 80;
-          options.path = url;
 
           if (proxyAuthToken) {
-            options.headers = { ...options.headers } as Record<string, string>;
-            (options.headers as Record<string, string>)["Proxy-Authorization"] =
-              `Basic ${proxyAuthToken}`;
+            options.headers = { ...options.headers } as Record<
+              string,
+              string
+            >;
+            (options.headers as Record<string, string>)[
+              "Proxy-Authorization"
+            ] = `Basic ${proxyAuthToken}`;
           }
 
-          const lib = isProxyHttps ? https : http;
-          return this._executeProxyRequest(lib, options, body, resolve, reject, timeoutMs);
-        } catch(e) {
-          console.error("Proxy URL parsing error:", e);
-          return reject(
-            new Error(
-              `Invalid Proxy URL configuration: ${e instanceof Error ? e.message : String(e)}`,
-            ),
-          );
-        }
-      }
+          // eslint-disable-next-line no-console
+          console.log("Using proxy agent:", {
+            proxyHost: parsedProxyUrl.hostname,
+            proxyPort: parsedProxyUrl.port || (isProxyHttps ? "443" : "80"),
+            hasProxyAuth: !!proxyAuthToken,
+            targetUrl: url,
+            rejectUnauthorized: options.rejectUnauthorized,
+          });
 
-      // IMPORTANT: If no proxy is configured, explicitly set agent to disable system proxy detection
-      // This prevents Node.js from using environment variables or system-wide proxy settings
-      if (!proxyOpts || !proxyOpts.proxy) {
-        // eslint-disable-next-line no-console
-        console.log(
-          "🔒 CRITICAL: Disabling system proxy - using direct connection ONLY",
-        );
-        options.agent = isHttps ? noProxyAgentHttps : noProxyAgentHttp;
-      }
-      try {
-        this.panel.webview.postMessage({
-          command: "debugLog",
-          data: {
-            stage: "doRequest-start",
-            info: { hostname: parsedUrl.hostname, port: options.port, isHttps },
-          },
-        });
-      } catch {
-        /* empty */
-      }
-
-      const lib = isHttps ? https : http;
-      const req = lib.request(options, (res) => {
-        const chunks: Buffer[] = [];
-        let totalSize = 0;
-        let aborted = false;
-        res.on("data", (chunk) => {
-          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          totalSize += buf.length;
-          if (totalSize > MAX_RESPONSE_SIZE) {
-            aborted = true;
-            req.destroy(new Error("Response exceeded maximum allowed size of 100MB"));
-            return;
-          }
-          chunks.push(buf);
-        });
-        res.on("end", () => {
-          if (aborted) return;
-          const rawData = Buffer.concat(chunks);
-          const result = this._buildRequestResult(
-            res.statusCode || 0,
-            res.statusMessage || "",
-            res.headers,
-            rawData,
-            url,
-          );
           try {
             this.panel.webview.postMessage({
               command: "debugLog",
               data: {
-                stage: "doRequest-end",
-                info: {
-                  status: res.statusCode,
-                  size: rawData.length,
-                },
+                stage: "proxyRequest-start",
+                info: { proxyOpts: !!options.agent, path: options.path },
               },
             });
           } catch {
             /* empty */
           }
-          resolve(result);
-        });
-      });
-      req.on("error", (err) => {
+
+          const raw = await performHttpRequest(
+            lib,
+            options,
+            body,
+            timeoutMs,
+            signal,
+            (stage, info) => {
+              try {
+                this.panel.webview.postMessage({
+                  command: "debugLog",
+                  data: { stage: `proxyRequest-${stage}`, info },
+                });
+              } catch {
+                /* empty */
+              }
+            },
+          );
+          return this._buildRequestResult(
+            raw.status,
+            raw.statusText,
+            raw.headers,
+            raw.data,
+            typeof options.path === "string" ? options.path : "",
+          );
+        }
+
+        // Fallback when proxy agent is unavailable (supports plain HTTP target requests).
+        if (isHttps) {
+          throw new Error(
+            "Proxy agent module is not available for HTTPS target requests",
+          );
+        }
+
+        options.hostname = parsedProxyUrl.hostname;
+        options.port = parsedProxyUrl.port
+          ? parseInt(parsedProxyUrl.port, 10)
+          : isProxyHttps
+            ? 443
+            : 80;
+        options.path = url;
+
+        if (proxyAuthToken) {
+          options.headers = { ...options.headers } as Record<string, string>;
+          (options.headers as Record<string, string>)["Proxy-Authorization"] =
+            `Basic ${proxyAuthToken}`;
+        }
+
         try {
           this.panel.webview.postMessage({
             command: "debugLog",
             data: {
-              stage: "doRequest-error",
-              info: { message: err?.message || String(err) },
+              stage: "proxyRequest-start",
+              info: { proxyOpts: !!options.agent, path: options.path },
             },
           });
         } catch {
           /* empty */
         }
-        reject(err);
-      });
-      req.setTimeout(timeoutMs, () => {
-        req.destroy();
-        reject(new Error(`Request timed out after ${timeoutMs}ms`));
-      });
 
-      if (body) req.write(body);
-      req.end();
-    });
-  }
+        const raw = await performHttpRequest(
+          isProxyHttps ? https : http,
+          options,
+          body,
+          timeoutMs,
+          signal,
+          (stage, info) => {
+            try {
+              this.panel.webview.postMessage({
+                command: "debugLog",
+                data: { stage: `proxyRequest-${stage}`, info },
+              });
+            } catch {
+              /* empty */
+            }
+          },
+        );
+        return this._buildRequestResult(
+          raw.status,
+          raw.statusText,
+          raw.headers,
+          raw.data,
+          typeof options.path === "string" ? options.path : "",
+        );
+      } catch (e) {
+        console.error("Proxy URL parsing error:", e);
+        if (
+          e instanceof Error &&
+          (e.message.startsWith("Failed to create proxy agent") ||
+            e.message ===
+              "Proxy agent module is not available for HTTPS target requests")
+        ) {
+          throw e;
+        }
+        throw new Error(
+          `Invalid Proxy URL configuration: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
 
-  private _executeProxyRequest(
-    lib: typeof http | typeof https,
-    options: any,
-    body: string | Buffer | undefined,
-    resolve: (value: RequestResult) => void,
-    reject: (reason?: any) => void,
-    timeoutMs: number,
-  ): void {
+    // IMPORTANT: If no proxy is configured, explicitly set agent to disable system proxy detection
+    // This prevents Node.js from using environment variables or system-wide proxy settings
+    if (!proxyOpts || !proxyOpts.proxy) {
+      // eslint-disable-next-line no-console
+      console.log(
+        "🔒 CRITICAL: Disabling system proxy - using direct connection ONLY",
+      );
+      options.agent = isHttps ? noProxyAgentHttps : noProxyAgentHttp;
+    }
     try {
       this.panel.webview.postMessage({
         command: "debugLog",
         data: {
-          stage: "proxyRequest-start",
-          info: { proxyOpts: !!options.agent, path: options.path },
+          stage: "doRequest-start",
+          info: { hostname: parsedUrl.hostname, port: options.port, isHttps },
         },
       });
     } catch {
       /* empty */
     }
 
-    const req = lib.request(options, (res) => {
-      const chunks: Buffer[] = [];
-      let totalSize = 0;
-      let aborted = false;
-      res.on("data", (chunk: Buffer) => {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        totalSize += buf.length;
-        if (totalSize > MAX_RESPONSE_SIZE) {
-          aborted = true;
-          req.destroy(
-            new Error("Response exceeded maximum allowed size of 100MB"),
-          );
-          return;
-        }
-        chunks.push(buf);
-      });
-      res.on("end", () => {
-        if (aborted) return;
-        const rawData = Buffer.concat(chunks);
-        const requestPathOrUrl =
-          typeof options.path === "string" ? options.path : "";
-        const result = this._buildRequestResult(
-          res.statusCode || 0,
-          res.statusMessage || "Unknown",
-          res.headers,
-          rawData,
-          requestPathOrUrl,
-        );
+    const raw = await performHttpRequest(
+      lib,
+      options,
+      body,
+      timeoutMs,
+      signal,
+      (stage, info) => {
         try {
           this.panel.webview.postMessage({
             command: "debugLog",
-            data: {
-              stage: "proxyRequest-end",
-              info: {
-                status: res.statusCode,
-                size: rawData.length,
-              },
-            },
+            data: { stage: `doRequest-${stage}`, info },
           });
         } catch {
           /* empty */
         }
-        resolve(result);
-      });
-    });
-
-    req.on("error", (err) => {
-      try {
-        this.panel.webview.postMessage({
-          command: "debugLog",
-          data: {
-            stage: "proxyRequest-error",
-            info: { message: err?.message || String(err) },
-          },
-        });
-      } catch {
-        /* empty */
-      }
-      reject(err);
-    });
-    req.setTimeout(timeoutMs, () => {
-      req.destroy();
-      try {
-        this.panel.webview.postMessage({
-          command: "debugLog",
-          data: { stage: "proxyRequest-timeout", info: { timeoutMs } },
-        });
-      } catch {
-        /* empty */
-      }
-      reject(new Error(`Request timed out after ${timeoutMs}ms`));
-    });
-
-    if (body) req.write(body);
-    req.end();
+      },
+    );
+    return this._buildRequestResult(
+      raw.status,
+      raw.statusText,
+      raw.headers,
+      raw.data,
+      url,
+    );
   }
 
   private _saveToCollection(

@@ -35,6 +35,7 @@ export interface RequestState {
   rejectUnauthorized: boolean;
   followRedirects?: boolean;
   timeout?: number; // per-request timeout in ms; falls back to settings default
+  preScript?: string; // JavaScript to run before the request is sent
   script?: string; // JavaScript to extract variables from response
   urlencoded?: KVItem[]; // URL-encoded form parameters (application/x-www-form-urlencoded)
 }
@@ -125,6 +126,7 @@ export const DEFAULT_REQUEST: RequestState = {
   authData: {},
   rejectUnauthorized: true,
   followRedirects: true,
+  preScript: '',
   script: '',
   urlencoded: [],
 };

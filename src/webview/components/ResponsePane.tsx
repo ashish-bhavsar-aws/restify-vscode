@@ -6,7 +6,7 @@ import { PdfViewer } from './PdfViewer';
 import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList, faXmark, faChevronRight,
-  faArrowUp, faList, faLink, faFileCode, faDownload, faCode,
+  faArrowUp, faList, faLink, faFileCode, faFileLines, faDownload, faCode, faCookieBite,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
@@ -35,6 +35,42 @@ function flattenHeaders(headers: Record<string, string | string[]> | undefined):
     rows.push({ key, value: String(value) });
   });
   return rows;
+}
+
+interface ResponseCookie {
+  name: string;
+  value: string;
+  attributes: Array<{ key: string; value: string }>;
+}
+
+function parseResponseCookies(
+  headers: Record<string, string | string[]> | undefined,
+): ResponseCookie[] {
+  if (!headers) return [];
+  const entry = Object.entries(headers).find(
+    ([k]) => k.toLowerCase() === 'set-cookie',
+  );
+  const setCookie = entry?.[1];
+  const rawList = Array.isArray(setCookie)
+    ? setCookie
+    : setCookie
+      ? [setCookie]
+      : [];
+  return rawList.map((raw) => {
+    const [first, ...rest] = raw.split(';');
+    const eq = first.indexOf('=');
+    const name = eq === -1 ? first.trim() : first.slice(0, eq).trim();
+    const value = eq === -1 ? '' : first.slice(eq + 1).trim();
+    const attributes: Array<{ key: string; value: string }> = [];
+    rest.forEach((part) => {
+      const p = part.trim();
+      if (!p) return;
+      const e = p.indexOf('=');
+      if (e === -1) attributes.push({ key: p, value: 'true' });
+      else attributes.push({ key: p.slice(0, e).trim(), value: p.slice(e + 1).trim() });
+    });
+    return { name, value, attributes };
+  });
 }
 
 function decodeBase64ToText(base64: string): string {
@@ -126,7 +162,7 @@ interface ResponsePaneProps {
   post?: (msg: any) => void;
 }
 
-type ResTab = 'body' | 'headers' | 'logs' | 'raw';
+type ResTab = 'body' | 'headers' | 'cookies' | 'logs' | 'raw';
 
 /* ─── Styled Components ──────────────────────────────────── */
 
@@ -294,6 +330,7 @@ const TabBadge = styled.span`
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   background: ${({ theme }) => theme.accent};
   color: ${({ theme }) => theme.accentFg};
   font-size: 9px;
@@ -303,6 +340,8 @@ const TabBadge = styled.span`
   border-radius: 9px;
   margin-left: 4px;
   font-weight: 700;
+  vertical-align: middle;
+  line-height: 1;
 `;
 
 const ScrollArea = styled.div`
@@ -466,6 +505,24 @@ const ValueCell = styled.td`
   padding: 6px 12px;
   font-family: monospace;
   word-break: break-all;
+`;
+
+const AttrChip = styled.span`
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-family: monospace;
+  color: ${({ theme }) => theme.muted};
+  background: color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+`;
+
+const EmptyHint = styled.div`
+  padding: 24px 16px;
+  color: ${({ theme }) => theme.muted};
+  font-size: 12px;
+  text-align: center;
 `;
 
 /* ─── Tab Content ─────────────────────────────────────── */
@@ -1318,6 +1375,11 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     [response?.headers],
   );
 
+  const cookieRows = React.useMemo(
+    () => parseResponseCookies(response?.headers),
+    [response?.headers],
+  );
+
   const handleCopy = () => {
     if (response?.body) {
       navigator.clipboard.writeText(response.body);
@@ -1443,7 +1505,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
 
       {/* Tab bar */}
       <TabBar id="res-tabs">
-        {(['body', 'headers', 'logs', 'raw'] as ResTab[]).map((tab) => (
+        {(['body', 'headers', 'cookies', 'logs', 'raw'] as ResTab[]).map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}
@@ -1453,8 +1515,9 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           >
             <Icon
               icon={
-                tab === 'body' ? faCode
-                : tab === 'headers' ? faList
+                tab === 'body' ? faFileLines
+                : tab === 'headers' ? faLink
+                : tab === 'cookies' ? faCookieBite
                 : tab === 'logs' ? faClipboardList
                 : faFileCode
               }
@@ -1463,6 +1526,9 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'headers' && (
               <TabBadge>{headerRows.length}</TabBadge>
+            )}
+            {tab === 'cookies' && cookieRows.length > 0 && (
+              <TabBadge>{cookieRows.length}</TabBadge>
             )}
             {tab === 'logs' && ((request?.networkLogs?.length || 0) > 0 || (request?.scriptLogs?.length || 0) > 0) && (
               <TabBadge style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: 'var(--accent-fg, #fff)' }}>
@@ -1537,6 +1603,43 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 ))}
               </tbody>
             </HeadersTable>
+          </ScrollArea>
+        </TabContent>
+      )}
+
+      {/* Cookies tab */}
+      {activeTab === 'cookies' && (
+        <TabContent>
+          <ScrollArea>
+            {cookieRows.length === 0 ? (
+              <EmptyHint>No cookies in this response (no Set-Cookie headers).</EmptyHint>
+            ) : (
+              <HeadersTable>
+                <thead>
+                  <HeadersRow>
+                    <HeaderCell>Name</HeaderCell>
+                    <HeaderCell>Value</HeaderCell>
+                    <HeaderCell>Attributes</HeaderCell>
+                  </HeadersRow>
+                </thead>
+                <tbody>
+                  {cookieRows.map(({ name, value, attributes }, idx) => (
+                    <DataRowsTr key={`${name}-${idx}`}>
+                      <KeyCell>{name}</KeyCell>
+                      <ValueCell>{value}</ValueCell>
+                      <ValueCell>
+                        {attributes.map((attr) => (
+                          <AttrChip key={`${attr.key}-${attr.value}`}>
+                            {attr.key}
+                            {attr.value !== 'true' ? `=${attr.value}` : ''}
+                          </AttrChip>
+                        ))}
+                      </ValueCell>
+                    </DataRowsTr>
+                  ))}
+                </tbody>
+              </HeadersTable>
+            )}
           </ScrollArea>
         </TabContent>
       )}

@@ -5,7 +5,7 @@ import { KeyValueTable } from './KeyValueTable';
 import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
-import { Icon, faEye, faEyeSlash, faTrash, faList, faLink, faCode, faTerminal, faKey } from './FaIcon';
+import { Icon, faEye, faEyeSlash, faTrash, faList, faLink, faFileLines, faTerminal, faKey } from './FaIcon';
 import { getSuggestedContentType } from '../utils/formDataTypeDetector';
 
 interface RequestPaneProps {
@@ -983,7 +983,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               icon={
                 tab === 'params' ? faList
                 : tab === 'headers' ? faLink
-                : tab === 'body' ? faCode
+                : tab === 'body' ? faFileLines
                 : tab === 'script' ? faTerminal
                 : faKey
               }
@@ -1246,6 +1246,33 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
       {/* Script Tab */}
       {activeTab === 'script' && (
         <TabPanel style={{ padding: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <ScriptTitle>Pre-request Script (optional)</ScriptTitle>
+            <div>
+              <FormAddBtn
+                onClick={() => onUpdate({ preScript: "// Example: vars['authToken'] = 'abc123';" })}
+              >
+                Insert Example
+              </FormAddBtn>
+            </div>
+          </div>
+
+          <ScriptDesc>
+            Write JavaScript that runs before the request is sent. Use{' '}
+            <Mono>set(key, value)</Mono> to store environment variables and{' '}
+            <Mono>log()</Mono> to add debug logs.
+          </ScriptDesc>
+
+          <div style={{ flex: 1, overflow: 'hidden', marginBottom: 16 }}>
+            <CodeEditor
+              value={request.preScript || ''}
+              onChange={(preScript) => onUpdate({ preScript })}
+              language={'javascript'}
+              themeKind={themeKind}
+              placeholder={'// Example: vars[\'authToken\'] = \'abc123\';'}
+            />
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <ScriptTitle>Post-response Script (optional)</ScriptTitle>
             <div>

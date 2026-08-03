@@ -117,6 +117,8 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 
 Phases are ordered by (bug/security first) → (high user impact) → (ecosystem integration) → (experimental). Each phase ends green: build + lint + existing E2E pass.
 
+> **UI polish status** (tracked in `UI_IMPRPVE.md`): initial slice shipped in `7f88c4e` — options row icons + grouped/aligned labels, request & response tab icons with active-state tint, sidebar hover actions revealed on `:focus-within` (covers P0#3, P0#4, P1#6, P1#7, partial P1#9). Remaining P0/P1/P2 items (responsive layout, empty/loading states, top-bar hierarchy, form ergonomics, modal consistency, response viewer emphasis, accessibility/contrast, micro-interactions, onboarding) are not yet implemented.
+
 ### Phase 0 — Foundation & Hygiene
 > Short, cheap, high-confidence changes. Do first; everything builds on this.
 

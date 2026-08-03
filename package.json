@@ -1,6 +1,6 @@
 {
   "name": "restify-client",
-  "displayName": "Restify — API Client",
+  "displayName": "Restify \u2014 API Client",
   "description": "A powerful REST API client for VS Code with collections, history, and environment support",
   "keywords": [
     "api",
@@ -227,5 +227,8 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "lint:unused": "eslint . --ext .ts,.tsx --rule 'unused-imports/no-unused-imports: error' --rule '@typescript-eslint/no-unused-vars: error'",
     "test:unit": "vitest run"
-  }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ]
 }

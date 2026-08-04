@@ -271,18 +271,13 @@ export async function addHeader(
   await clickRequestTab(frame, 'headers');
   await frame.waitForTimeout(200);
 
-  const addBtn = frame.locator('button').filter({ hasText: '+ Add' });
-  if (await addBtn.count() > 0) {
-    await clickInFrame(frame, 'button:has-text("+ Add")');
-    await frame.waitForTimeout(200);
-  }
+  await clickInFrame(frame, '[data-testid="kv-add-row"]');
+  await frame.waitForTimeout(300);
 
-  const inputs = frame.locator('[id="req-pane"] input[type="text"]');
-  const count = await inputs.count();
-  if (count >= 2) {
-    await inputs.nth(count - 2).fill(key);
-    await inputs.nth(count - 1).fill(value);
-  }
+  const keyInput = frame.locator('[data-testid="kv-key-input"]').first();
+  await keyInput.fill(key);
+  await frame.waitForTimeout(100);
+  await fillVariableInput(frame, '[data-testid="kv-value-wrapper"]', value);
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────

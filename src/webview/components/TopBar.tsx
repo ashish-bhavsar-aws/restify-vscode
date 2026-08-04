@@ -16,6 +16,7 @@ interface TopBarProps {
   onDeleteEnv: (id: string) => void;
   onAddEnv: () => void;
   onOpenSettings: () => void;
+  onOpenVarsHelp: () => void;
   onGenerateCode: () => void;
   codegenEnabled?: boolean;
 }
@@ -269,6 +270,29 @@ const GearBtn = styled.button`
   }
 `;
 
+const VarsHelpBtn = styled.button`
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.info};
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: ${({ theme }) => theme.radius};
+  opacity: 0.8;
+  flex-shrink: 0;
+  font-family: ${({ theme }) => theme.monoFamily};
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.15s;
+
+  &:hover {
+    background: ${({ theme }) => theme.surface2};
+    opacity: 1;
+  }
+`;
+
 const CodegenBtn = styled.button<{ $enabled: boolean }>`
   background: transparent;
   border: none;
@@ -447,6 +471,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onDeleteEnv,
   onAddEnv,
   onOpenSettings,
+  onOpenVarsHelp,
   onGenerateCode,
   codegenEnabled = false,
 }) => (
@@ -480,6 +505,10 @@ export const TopBar: React.FC<TopBarProps> = ({
         <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
       </svg>
     </ManageEnvBtn>
+
+    <VarsHelpBtn data-testid="vars-help-btn" title="Dynamic Variables" onClick={onOpenVarsHelp}>
+      {'{ }'}
+    </VarsHelpBtn>
 
     <GearBtn data-testid="gear-btn" title="Open Settings" onClick={onOpenSettings}>
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

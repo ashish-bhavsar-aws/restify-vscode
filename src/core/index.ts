@@ -2,6 +2,8 @@ export * from "./body";
 export * from "./constants";
 export * from "./cookies";
 export * from "./decompress";
+export * from "./defaultHeaders";
+export * from "./dynamicVarTokens";
 export * from "./dynamicVars";
 export * from "./headers";
 export * from "./http";

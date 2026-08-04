@@ -52,6 +52,12 @@ export interface SettingsState {
   certificates: CertEntry[];
   showActivityLog: boolean;
   defaultTimeout: number;
+  defaultHeaders: {
+    userAgent: boolean;
+    requestId: boolean;
+    correlationId: boolean;
+    date: boolean;
+  };
 }
 
 export class StorageManager {
@@ -876,14 +882,24 @@ export class StorageManager {
 
   // ─── Settings ─────────────────────────────────────────────
   getSettings(): SettingsState {
-    return this.globalState.get("restify.settings", {
-      proxy: "",
-      proxyAuthorization: "",
-      noProxy: "",
-      certificates: [],
-      showActivityLog: true,
-      defaultTimeout: 30000,
-    });
+    const saved = this.globalState.get<Partial<SettingsState>>(
+      "restify.settings",
+      {},
+    );
+    return {
+      proxy: saved.proxy ?? "",
+      proxyAuthorization: saved.proxyAuthorization ?? "",
+      noProxy: saved.noProxy ?? "",
+      certificates: saved.certificates ?? [],
+      showActivityLog: saved.showActivityLog ?? true,
+      defaultTimeout: saved.defaultTimeout ?? 30000,
+      defaultHeaders: {
+        userAgent: saved.defaultHeaders?.userAgent ?? false,
+        requestId: saved.defaultHeaders?.requestId ?? false,
+        correlationId: saved.defaultHeaders?.correlationId ?? false,
+        date: saved.defaultHeaders?.date ?? false,
+      },
+    };
   }
 
   saveSettings(settings: SettingsState): void {

@@ -14,22 +14,7 @@
     "websocket",
     "client",
     "curl",
-    "postman",
-    "request",
-    "response",
-    "collections",
-    "environment",
-    "environment variables",
-    "cookies",
-    "redirect",
-    "swagger",
-    "openapi",
-    "import",
-    "export",
-    "code generation",
-    "testing",
-    "developer tools",
-    "vscode"
+    "testing"
   ],
   "version": "1.0.26",
   "license": "MIT",
@@ -43,7 +28,7 @@
   },
   "categories": [
     "Testing",
-    "Other"
+    "REST Client"
   ],
   "main": "./dist/extension.js",
   "icon": "media/icon.png",

@@ -11,6 +11,7 @@ import { ActivityProvider } from "./ActivityProvider";
 import {
   DEFAULT_MAX_REDIRECTS,
   DEFAULT_TIMEOUT_MS,
+  applyDefaultHeaders,
   applyHeadersToRequest,
   applyQueryParams,
   decompressBody,
@@ -126,6 +127,7 @@ export class RestifyPanel {
   private pendingRequest: RequestData | null = null;
   private webviewReady: boolean = false;
   private _activeController: AbortController | null = null;
+  private readonly extensionVersion: string;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -137,6 +139,8 @@ export class RestifyPanel {
     this.storageManager = storageManager;
     this.onDispose = onDispose;
     this.activityProvider = activityProvider;
+    this.extensionVersion =
+      this.context.extension.packageJSON?.version || "dev";
 
     this.panel = vscode.window.createWebviewPanel(
       "restify-main",
@@ -969,6 +973,7 @@ export class RestifyPanel {
     const parsedUrl = new URL(finalUrl);
 
     const settings = this.storageManager.getSettings();
+    applyDefaultHeaders(headers, settings.defaultHeaders, this.extensionVersion);
     let proxyOpts: { proxy: string; auth?: string } | null = null;
 
     if (settings.proxy) {

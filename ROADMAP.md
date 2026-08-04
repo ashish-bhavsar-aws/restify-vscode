@@ -1,6 +1,6 @@
 # Restify — Missing Features & Implementation Roadmap
 
-**Status**: Living document · **Last reviewed**: 2026-08-02 · **Extension version**: 1.0.26
+**Status**: Living document · **Last reviewed**: 2026-08-04 · **Extension version**: 1.0.26
 
 This document inventories the gaps between Restify's current feature set and what a mature REST API client (Postman, Thunder Client, Bruno, HTTPie, REST Client) offers, then sequences them into an implementation roadmap for features that belong inside the VS Code extension itself.
 
@@ -20,7 +20,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| F1 | **GraphQL body never sent** | 🔴 P0 | `RequestState.bodyType='graphql'` + `gqlQuery`/`gqlVars` exist in the model, UI, and codegen — but `buildRequestData` in `RestifyPanel.ts` has no `graphql` branch, so no body is produced. Only affects generated code. |
+| F1 | **GraphQL body never sent** | 🔴 P0 | `RequestState.bodyType='graphql'` + `gqlQuery`/`gqlVars` exist in the model, UI, and codegen — but `buildRequestData` in `RestifyPanel.ts` has no `graphql` branch, so no body is produced. *(fixed in `src/core/body.ts`; codegen side also fixed — see Phase 2 note)* |
 | F2 | **SSL verification off by default** | 🔴 P0 | `DEFAULT_REQUEST.rejectUnauthorized = false` (types.ts:122). Should default to `true` and be exposed as an opt-out "verify SSL" per request. |
 | F3 | **No redirect following** | 🔴 P0 | 3xx responses returned as-is. Need follow-redirect with max-hop limit + "follow / don't follow" toggle + manual redirect UI. |
 | F4 | **No response decompression** | 🔴 P0 | `Accept-Encoding: gzip, deflate, br` is only a suggestion; compressed bytes render raw because no `zlib` inflate is applied. |
@@ -41,10 +41,11 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F14 | **Bulk editor for headers/params** | 🟡 P2 | Postman-style raw key-value text editor with parse-on-change. |
 | F15 | **Clipboard paste into KV tables** | 🟡 P2 | Paste tab/newline-delimited rows from Excel/CSV into Params/Headers/Form tables. |
 | F16 | **Dynamic variables** | 🟠 P1 | `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$processEnv}}`, `{{$localDateTime}}` like Postman. |
-| F17 | **Variable autocomplete** | 🟡 P2 | Suggest `{{envVar}}` names in URL/headers/body inputs (currently only highlight + unresolved coloring). |
-| F18 | **Basic Auth via URL** | 🟡 P2 | Support `https://user:pass@host/` URL form and carry it into Authorization header. |
-| F19 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
-| F20 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
+| F17 | **Default dynamic headers** | 🟡 P2 | Add switchable default headers like `User-Agent`, `X-Request-Id`, `X-Correlation-Id`, or `Date` that can be injected automatically. *(done — settings toggles in Settings modal; injected at request time via `src/core/defaultHeaders.ts`, only when not already set explicitly; unit + E2E covered)* |
+| F18 | **Variable autocomplete** | 🟡 P2 | Suggest `{{envVar}}` names in URL/headers/body inputs (currently only highlight + unresolved coloring). |
+| F19 | **Basic Auth via URL** | 🟡 P2 | Support `https://user:pass@host/` URL form and carry it into Authorization header. |
+| F20 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
+| F61 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
 | F21 | **Request chaining** | 🟠 P1 | Reference previous response values in the next request (`{{previousResponse.$.token}}`) with a selector UI. |
 
 ### 1.3 Response Viewer
@@ -95,6 +96,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F48 | **HTTP/2 support** | ⚪ P3 | `http2` module for h2 endpoints. |
 | F49 | **Request compression** | ⚪ P3 | Compress request body (gzip/deflate) with `Content-Encoding`. |
 | F50 | **Interceptors / middleware** | ⚪ P3 | Pipeline hooks around request/response lifecycle. |
+| F61 | **SOAP/WSDL import and SOAP body generation** | 🟡 P2 | Import a SOAP service definition (WSDL), generate method-specific SOAP request envelopes, set proper SOAP headers, and prefill body templates for each operation. |
 
 ### 1.7 Editor Integration & UX
 
@@ -110,6 +112,48 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F58 | **Screenshots/theme polish** | 🟡 P2 | Icon themes, method color on request rows, empty-state CTAs. |
 | F59 | **VS Code discoverability / marketplace metadata** | 🟡 P2 | Improve extension keywords, tags, descriptions, and category metadata so Restify is easier to find in the VS Code marketplace and command palette. |
 | F60 | **Code size and maintainability guardrails** | 🟠 P1 | Keep the extension maintainable by enforcing file-size limits, component boundaries, shared utilities, and a clear rule for when to extract logic into core modules. |
+
+---
+
+## Must-have / Nice-to-have Summary
+
+This section separates the highest-priority features from the broader roadmap inventory so it is easy to see what should be targeted first versus what can be deferred for later polish.
+
+### Must-have
+- F1 — GraphQL body fix
+- F2 — SSL verification default on
+- F3 — Redirect following
+- F4 — Response decompression
+- F5 — Cookie jar and persistence
+- F6 — Request cancellation
+- F8 — Configurable timeout
+- F9 — Core unit tests
+- F10 — Pre-request scripts
+- F31 — Collection runner
+- F33 — Test/assertion scripts
+- F41 — Secret variables
+- F51 — .http file support
+- F54 — Command palette actions
+- F60 — Code size and maintainability guardrails
+
+### Nice-to-have
+- F13 — cURL command import
+- F14 — Bulk editor for headers/params
+- F15 — Clipboard paste into KV tables
+- F16 — Dynamic variables
+- F17 — Default dynamic headers
+- F18 — Variable autocomplete
+- F19 — Header presets / groups
+- F22 — JSON schema validation
+- F23 — JSONPath / XPath query
+- F24 — Response beautify options
+- F25 — Save response to file
+- F30 — Notification on long request
+- F44 — Environment import/export
+- F46 — WebSocket client
+- F52 — Multi-tab / multiple panels
+- F53 — Additional codegen languages
+- F59 — Marketplace discoverability metadata
 
 ---
 
@@ -144,7 +188,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 - [x] F10 **Pre-request scripts**: extend `scriptExecutor.ts` to a generic pipeline (pre → request → post); API parity (`vars`, `request`, `log`). *(done — `preScript` on RequestState, run host-side via `src/core/script.ts` before the request; `src/core/http.ts` shared engine)*
 - [ ] F33 **Test/assertion scripts**: post-request `tests` object (`tests["status is 200"] = response.status === 200`); render pass/fail badges in response pane; store results in history.
-- [x] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$processEnv:NAME}}`, `{{$localDateTime}}` resolved host-side before request. *(done — `src/core/dynamicVars.ts`, wired into `StorageManager.resolveVariables`, unit-tested)*
+- [x] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$processEnv:NAME}}`, `{{$localDateTime}}` resolved host-side before request. *(done — `src/core/dynamicVars.ts`, wired into `StorageManager.resolveVariables`, unit-tested; codegen substitutes dynamic tokens with samples/placeholders — see F53 correctness pass below)*
 - [ ] F21 **Request chaining**: after each run, expose response as `{{response.<method>.<jsonpath>}}` style or via script `set()`; picker UI in Save/history flow.
 - [ ] F41 **Secret variables**: add `secret` flag to `KVItem`; store secret values in `context.secrets`/`SecretStorage`; mask in UI (dot display + reveal).
 - [ ] F31 **Collection runner** (first slice): run a folder/collection sequentially, reusing the single-request engine; results grid with status/time/test badges; cancel support.
@@ -157,8 +201,18 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 - [ ] F13 **cURL import**: robust `curl` → RequestState parser (flags, quoted args, `--data-raw`, `-H 'Header: value'`, `-u`, `-F`).
 - [ ] F34 **Export to OpenAPI / HAR / .http**; F35 **Import HAR / Insomnia / .http** — mirror existing Postman/OpenAPI importers.
-- [ ] F17 **Variable autocomplete** in URL/headers/body inputs (debounced suggestions from active env + globals).
+- [ ] F61 **SOAP/WSDL import and SOAP body generation**: parse WSDL, list operations, generate SOAP envelopes, populate request bodies, and auto-add SOAP headers.
+  - Implementation steps:
+    1. Add a WSDL importer that reads local/remote WSDL files and extracts services, ports, bindings, operations, and message schemas.
+    2. Normalize SOAP namespaces, operation names, input/output message definitions, and default bodies into `RequestState` metadata.
+    3. Populate the request UI with a SOAP operation picker when a WSDL import is active.
+    4. Generate a SOAP envelope template per operation, including required XML elements and sample values for primitive types.
+    5. Set appropriate headers: `Content-Type: text/xml; charset=utf-8` and `SOAPAction` when applicable.
+    6. Allow overriding generated XML body and keep the original template in the body editor for easy modification.
+    7. Add tests covering WSDL parsing, operation selection, envelope generation, and SOAP header injection.
+- [ ] F18 **Variable autocomplete** in URL/headers/body inputs (debounced suggestions from active env + globals).
 - [ ] F15 **Clipboard paste** into KV tables; F14 **bulk editor** for Params/Headers.
+- [x] F53 **Codegen correctness pass** *(done — GraphQL body serialization, `urlencoded` + text-only-form fields, disabled header/param filtering, API-key-in-query, dynamic-var substitution incl. `{{$processEnv:NAME}}`, Python/Go/Swift multipart fixes; 27 codegen unit tests)*
 - [ ] F53 **Codegen additions** (TypeScript fetch, Dart, Ruby, Rust, Kotlin) — low risk, mostly templates.
 - [ ] F51 **.http files**: open + parse + send; export request → `.http`.
 - [ ] F44 **Environment import/export** incl. Postman env JSON.
@@ -174,6 +228,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [ ] F46 **WebSocket client** (read-only connection viewer first).
 - [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
+- [ ] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. 
 
 ### Phase 5 — Experimental / Long-term (P3)
 - [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.
@@ -220,8 +275,9 @@ Focus: move from basic request sending to practical daily workflows while keepin
 **Nice-to-have**
 - F14 — Bulk editor for headers/params
 - F15 — Clipboard paste into KV tables
-- F17 — Variable autocomplete
-- F19 — Header presets/groups
+- F17 — Default dynamic headers ✅
+- F18 — Variable autocomplete
+- F20 — Header presets/groups
 - F44 — Environment import/export
 
 ### Release 3 — Ecosystem and editor integration (target: 4+ weeks)

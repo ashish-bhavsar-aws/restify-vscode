@@ -1,4 +1,5 @@
-import { Environment, RequestState } from '../types';
+import { Environment, RequestState, DefaultHeadersConfig, KVItem } from '../types';
+import { previewDynamicVariable } from '../../core/dynamicVarTokens';
 
 export const SUPPORTED_LANGS: Array<{ id: string; label: string }> = [
   { id: 'curl', label: 'cURL' },
@@ -14,10 +15,10 @@ export const SUPPORTED_LANGS: Array<{ id: string; label: string }> = [
   { id: 'csharp-httpclient', label: 'C# (HttpClient)' },
 ];
 
-function headerObj(headers: Array<{ key?: string; value?: string }>) {
+function headerObj(headers: Array<{ key?: string; value?: string; enabled?: boolean }>) {
   const obj: Record<string, string> = {};
   (headers || []).forEach((h) => {
-    if (h.key) obj[h.key] = h.value || '';
+    if (h.key && h.enabled !== false) obj[h.key] = h.value || '';
   });
   return obj;
 }
@@ -31,44 +32,124 @@ function resolveVariables(text: string | undefined, environment?: Environment | 
   });
 }
 
-function resolveRequest(req: RequestState, environment?: Environment | null): RequestState {
+const DYNAMIC_SAMPLE_PATTERN =
+  /\{\{\$(processEnv(?::[^}]*)?|guid|timestamp|randomInt|randomAlpha|randomHex|localDateTime)\}\}/g;
+
+function substituteDynamicVars(
+  text: string | undefined,
+  substitutions: Array<{ token: string; sample: string }>,
+): string {
+  if (!text) return text || '';
+  return text.replace(DYNAMIC_SAMPLE_PATTERN, (match, name: string) => {
+    const sample = previewDynamicVariable(name);
+    if (sample !== match) substitutions.push({ token: match, sample });
+    return sample;
+  });
+}
+
+function resolveRequest(
+  req: RequestState,
+  environment?: Environment | null,
+): { req: RequestState; substitutions: Array<{ token: string; sample: string }> } {
+  const substitutions: Array<{ token: string; sample: string }> = [];
+  const resolve = (text?: string) =>
+    substituteDynamicVars(resolveVariables(text, environment), substitutions);
+
   return {
-    ...req,
-    url: resolveVariables(req.url, environment),
-    body: resolveVariables(req.body, environment),
-    gqlQuery: resolveVariables(req.gqlQuery, environment),
-    gqlVars: resolveVariables(req.gqlVars, environment),
-    headers: (req.headers || []).map((item) => ({
-      ...item,
-      key: resolveVariables(item.key, environment),
-      value: resolveVariables(item.value, environment),
-    })),
-    queryParams: (req.queryParams || []).map((item) => ({
-      ...item,
-      key: resolveVariables(item.key, environment),
-      value: resolveVariables(item.value, environment),
-    })),
-    formData: (req.formData || []).map((item) => ({
-      ...item,
-      key: resolveVariables(item.key, environment),
-      value: resolveVariables(item.value, environment),
-      fileName: resolveVariables(item.fileName, environment),
-      contentType: resolveVariables(item.contentType, environment),
-    })),
-    urlencoded: (req.urlencoded || []).map((item) => ({
-      ...item,
-      key: resolveVariables(item.key, environment),
-      value: resolveVariables(item.value, environment),
-    })),
-    authData: {
-      ...req.authData,
-      token: resolveVariables(req.authData.token, environment),
-      username: resolveVariables(req.authData.username, environment),
-      password: resolveVariables(req.authData.password, environment),
-      keyName: resolveVariables(req.authData.keyName, environment),
-      keyValue: resolveVariables(req.authData.keyValue, environment),
+    substitutions,
+    req: {
+      ...req,
+      url: resolve(req.url),
+      body: resolve(req.body),
+      gqlQuery: resolve(req.gqlQuery),
+      gqlVars: resolve(req.gqlVars),
+      headers: (req.headers || []).map((item) => ({
+        ...item,
+        key: resolve(item.key),
+        value: resolve(item.value),
+      })),
+      queryParams: (req.queryParams || []).map((item) => ({
+        ...item,
+        key: resolve(item.key),
+        value: resolve(item.value),
+      })),
+      formData: (req.formData || []).map((item) => ({
+        ...item,
+        key: resolve(item.key),
+        value: resolve(item.value),
+        fileName: resolve(item.fileName),
+        contentType: resolve(item.contentType),
+      })),
+      urlencoded: (req.urlencoded || []).map((item) => ({
+        ...item,
+        key: resolve(item.key),
+        value: resolve(item.value),
+      })),
+      authData: {
+        ...req.authData,
+        token: resolve(req.authData.token),
+        username: resolve(req.authData.username),
+        password: resolve(req.authData.password),
+        keyName: resolve(req.authData.keyName),
+        keyValue: resolve(req.authData.keyValue),
+      },
     },
   };
+}
+
+function buildDefaultHeaders(
+  defaultHeaders?: DefaultHeadersConfig,
+): Record<string, string> {
+  if (!defaultHeaders) return {};
+  const out: Record<string, string> = {};
+  if (defaultHeaders.userAgent) out['User-Agent'] = 'Restify';
+  if (defaultHeaders.requestId) out['X-Request-Id'] = previewDynamicVariable('guid');
+  if (defaultHeaders.correlationId) out['X-Correlation-Id'] = previewDynamicVariable('guid');
+  if (defaultHeaders.date) out['Date'] = new Date().toUTCString();
+  return out;
+}
+
+/** Merges default headers (lowest precedence) into the explicit header list. */
+function mergeDefaultHeaders(
+  headers: RequestState['headers'],
+  defaultHeaders?: DefaultHeadersConfig,
+): RequestState['headers'] {
+  const defaults = buildDefaultHeaders(defaultHeaders);
+  if (Object.keys(defaults).length === 0) return headers;
+  const present = new Set((headers || []).map((h) => h.key?.toLowerCase()));
+  const toAdd: RequestState['headers'] = Object.entries(defaults)
+    .filter(([k]) => !present.has(k.toLowerCase()))
+    .map(([key, value]) => ({ key, value, enabled: true }));
+  return [...headers, ...toAdd];
+}
+
+const COMMENT_PREFIX: Record<string, string> = {
+  curl: '#',
+  'javascript-fetch': '//',
+  'javascript-axios': '//',
+  'node-fetch': '//',
+  'python-requests': '#',
+  'java-okhttp': '//',
+  'swift-urlsession': '//',
+  'go-http': '//',
+  powershell: '#',
+  'php-curl': '//',
+  'csharp-httpclient': '//',
+};
+
+function buildSubstitutionNote(
+  lang: string,
+  substitutions: Array<{ token: string; sample: string }>,
+): string {
+  if (substitutions.length === 0) return '';
+  const prefix = COMMENT_PREFIX[lang] || '//';
+  const lines = substitutions.map((s) => `${prefix}   ${s.token}  ->  ${s.sample}`);
+  return [
+    `${prefix} Dynamic variables were substituted with sample values at generation time:`,
+    ...lines,
+    `${prefix} Replace them with runtime-generated values to get a fresh value per request.`,
+    '',
+  ].join('\n');
 }
 
 function getEnabledFormFields(req: RequestState) {
@@ -133,22 +214,74 @@ function buildHeaders(req: RequestState, isMultipart: boolean): Record<string, s
   return merged;
 }
 
-export function generateCode(lang: string, request: RequestState, environment?: Environment | null): string {
-  const req = resolveRequest(request, environment);
+function serializeUrlEncodedFields(
+  items: Array<KVItem> | undefined,
+): string {
+  return (items || [])
+    .filter((item) => item.key && item.enabled !== false)
+    .map(
+      (item) =>
+        `${encodeURIComponent(item.key)}=${encodeURIComponent(item.value || '')}`,
+    )
+    .join('&');
+}
+
+function buildGraphqlBody(req: RequestState): string {
+  const query = (req.gqlQuery || '').trim();
+  if (!query) return '';
+  const payload: Record<string, unknown> = { query };
+  const vars = (req.gqlVars || '').trim();
+  if (vars) {
+    try {
+      payload.variables = JSON.parse(vars);
+    } catch {
+      payload.variables = vars;
+    }
+  }
+  return JSON.stringify(payload);
+}
+
+export function generateCode(
+  lang: string,
+  request: RequestState,
+  environment?: Environment | null,
+  defaultHeaders?: DefaultHeadersConfig,
+): string {
+  const { req, substitutions } = resolveRequest(request, environment);
+  req.headers = mergeDefaultHeaders(req.headers, defaultHeaders);
+  const code = generateCodeBody(lang, req);
+  const note = buildSubstitutionNote(lang, substitutions);
+  return note ? `${note}${code}` : code;
+}
+
+function generateCodeBody(lang: string, req: RequestState): string {
   const method = req.method || 'GET';
   const enabledParams = (req.queryParams || []).filter((p) => p.key && p.enabled !== false);
+  const authQueryParam =
+    req.authType === 'apikey' && req.authData.addTo === 'query' && req.authData.keyName
+      ? { key: req.authData.keyName, value: req.authData.keyValue ?? '' }
+      : null;
+  const urlParams = authQueryParam ? [...enabledParams, authQueryParam] : enabledParams;
   let url = req.url || '';
-  if (enabledParams.length > 0) {
-    const queryString = enabledParams
+  if (urlParams.length > 0) {
+    const queryString = urlParams
       .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
       .join('&');
     url += (url.includes('?') ? '&' : '?') + queryString;
   }
-  const body = req.body || '';
   const enabledFormFields = getEnabledFormFields(req);
   const isMultipart = isMultipartFormRequest(req);
   const headers = buildHeaders(req, isMultipart);
   const relevantHeaders = filterContentTypeHeader(headers, isMultipart);
+
+  let body = req.body || '';
+  if (req.bodyType === 'graphql') {
+    body = buildGraphqlBody(req);
+  } else if (req.bodyType === 'urlencoded') {
+    body = serializeUrlEncodedFields(req.urlencoded);
+  } else if (req.bodyType === 'form' && !isMultipart && enabledFormFields.length > 0) {
+    body = serializeUrlEncodedFields(enabledFormFields);
+  }
 
   switch (lang) {
     case 'curl': {
@@ -156,7 +289,7 @@ export function generateCode(lang: string, request: RequestState, environment?: 
       Object.entries(relevantHeaders).forEach(([k, v]) => {
         cmd += ` -H "${k}: ${v.replace(/"/g, '\\"')}"`;
       });
-      if (req.bodyType === 'form' && enabledFormFields.length > 0) {
+      if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
         enabledFormFields.forEach((field) => {
           const key = field.key || 'field';
           if ((field.formType || 'text') === 'file') {
@@ -353,7 +486,8 @@ ${bodyLine}  });
           }).join('\n');
           const fileLines = enabledFormFields.filter((field) => (field.formType || 'text') === 'file').map((field) => {
             const comment = field.contentType ? ` # type=${field.contentType}` : '';
-            return `    ${JSON.stringify(field.key || 'field')}: (${JSON.stringify(field.fileName || 'file'), JSON.stringify(field.fileName || 'file')}),${comment}`;
+            const fileName = field.fileName || 'file';
+            return `    ${JSON.stringify(field.key || 'field')}: (${JSON.stringify(fileName)}, open(${JSON.stringify(fileName)}, 'rb')),${comment}`;
           }).join('\n');
           const toolbeltNote = hasCustomContentTypes ? `\n# Note: For custom content types per field, install requests-toolbelt:\n# pip install requests-toolbelt\n# Then use MultipartEncoder instead of the simple approach below\n` : '';
           return `import requests${toolbeltNote}
@@ -396,7 +530,7 @@ print(resp.text)
     }
 
     case 'java-okhttp': {
-      if (req.bodyType === 'form' && enabledFormFields.length > 0) {
+      if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
         const multipartLines = enabledFormFields.map((field) => {
           const key = JSON.stringify(field.key || 'field');
           if ((field.formType || 'text') === 'file') {
@@ -454,7 +588,7 @@ try (Response response = client.newCall(request).execute()) {
           const key = JSON.stringify(field.key || 'field');
           if ((field.formType || 'text') === 'file') {
             return `multipart.append("--${boundaryMarker}\r\n".data(using: .utf8)!)
-multipart.append("Content-Disposition: form-data; name=${key}; filename="${field.fileName || 'upload.bin'}"\r\n".data(using: .utf8)!)
+multipart.append("Content-Disposition: form-data; name=${key}; filename=${JSON.stringify(field.fileName || 'upload.bin')}\r\n".data(using: .utf8)!)
 multipart.append("Content-Type: ${field.contentType || 'application/octet-stream'}\r\n\r\n".data(using: .utf8)!)
 multipart.append(Data())
 multipart.append("\r\n".data(using: .utf8)!)`;
@@ -523,22 +657,22 @@ task.resume()
             return `writer.CreateFormFile(${key}, ${JSON.stringify(field.fileName || 'upload.bin')})`;
           }
           if (field.contentType && hasCustomTypes) {
-            return `part, err := writer.CreatePart(textproto.MIMEHeader{"Content-Disposition": {"form-data; name=" + ${key}}, "Content-Type": {${JSON.stringify(field.contentType)}}})
+            return `part, err := writer.CreatePart(textproto.MIMEHeader{"Content-Disposition": {"form-data; name=\\" + ${key} + "\\""}, "Content-Type": {${JSON.stringify(field.contentType)}}})
   if err != nil { panic(err) }
   part.Write([]byte(${JSON.stringify(field.value || '')}))`;
           }
           return `writer.WriteField(${key}, ${JSON.stringify(field.value || '')})`;
         }).join('\n  ');
         const headerLines = Object.entries(relevantHeaders).map(([k, v]) => `req.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join('\n  ');
-        const imports = hasCustomTypes ? `  "net/textproto"` : '';
+        const textprotoImport = hasCustomTypes ? `\n  "net/textproto"` : '';
         return `package main
 
 import (
   "bytes"
   "fmt"
+  "io"
   "mime/multipart"
-  "net/http"
-  "strings"${imports}
+  "net/http"${textprotoImport}
 )
 
 func main() {

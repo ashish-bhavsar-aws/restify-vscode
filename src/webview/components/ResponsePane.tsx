@@ -870,6 +870,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
 
   const enabledRequestHeaders = (request?.headers || []).filter((h: any) => h.enabled !== false);
   const enabledQueryParams = (request?.queryParams || []).filter((p: any) => p.enabled !== false);
+  const responseCookies = parseResponseCookies(response?.headers);
 
   return (
     <RequestLogContainer>
@@ -934,6 +935,25 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
           <LogEntry key={key} label={key} value={String(val)} monospace small />
         ))}
       </CollapsibleSection>
+
+      {responseCookies.length > 0 && (
+        <CollapsibleSection title={<><Icon icon={faCookieBite} size={11} style={{ marginRight: 5 }} />Response Cookies</>} defaultOpen={false} badge={responseCookies.length}>
+          {responseCookies.map((cookie, idx) => (
+            <div key={idx}>
+              <LogEntry label={cookie.name} value={cookie.value} monospace small />
+              {cookie.attributes.length > 0 && (
+                <LogEntry
+                  label="attributes"
+                  value={cookie.attributes.map((attr) =>
+                    attr.value !== 'true' ? `${attr.key}=${attr.value}` : attr.key,
+                  ).join(', ')}
+                  monospace small indent
+                />
+              )}
+            </div>
+          ))}
+        </CollapsibleSection>
+      )}
 
       {request?.scriptLogs && request.scriptLogs.length > 0 && (
         <CollapsibleSection title={<><Icon icon={faCode} size={11} style={{ marginRight: 5 }} />Script Logs</>} defaultOpen={true} badge={request.scriptLogs.length}>

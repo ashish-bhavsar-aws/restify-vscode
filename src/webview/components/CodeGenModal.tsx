@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { Environment, RequestState } from '../types';
+import { Environment, RequestState, DefaultHeadersConfig } from '../types';
 import { generateCode, SUPPORTED_LANGS } from '../utils/codegen';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
@@ -8,6 +8,7 @@ interface CodeGenModalProps {
   open: boolean;
   request: RequestState;
   environment?: Environment | null;
+  defaultHeaders?: DefaultHeadersConfig;
   onClose: () => void;
 }
 
@@ -164,15 +165,15 @@ const PrettyViewer = styled.div`
   }
 `;
 
-export const CodeGenModal: React.FC<CodeGenModalProps> = ({ open, request, environment, onClose }) => {
+export const CodeGenModal: React.FC<CodeGenModalProps> = ({ open, request, environment, defaultHeaders, onClose }) => {
   const [lang, setLang] = useState<string>(SUPPORTED_LANGS[0].id);
   const [code, setCode] = useState<string>('');
 
   useEffect(() => {
     if (!open) return;
-    const out = generateCode(lang, request, environment);
+    const out = generateCode(lang, request, environment, defaultHeaders);
     setCode(out);
-  }, [open, lang, request, environment]);
+  }, [open, lang, request, environment, defaultHeaders]);
 
   if (!open) return null;
 

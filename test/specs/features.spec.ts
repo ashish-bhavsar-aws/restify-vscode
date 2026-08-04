@@ -8,6 +8,7 @@ import {
   resetLog,
   log,
   logCheck,
+  waitForElement,
   type VSCodeApp,
 } from '../utils/vscode';
 import {
@@ -15,13 +16,18 @@ import {
   mockUrl,
   setupMainPanel,
   setMethod,
+  setUrl,
+  sendRequest,
   setUrlAndSend,
   waitForResponse,
   getStatusCode,
   getResponseText,
   setBodyType,
   fillBody,
+  addHeader,
   clickResponseTab,
+  openSettings,
+  closeSettings,
 } from '../utils/helpers';
 import type { Frame } from '@playwright/test';
 
@@ -30,7 +36,7 @@ const HTTPS_URL = 'https://localhost:3443/api/echo';
 let app: VSCodeApp;
 let mainFrame: Frame | null = null;
 
-test.describe('Roadmap Features (F1-F6)', () => {
+test.describe('Roadmap Features (F1-F6, F8, F16, F17)', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async () => {
@@ -228,5 +234,259 @@ test.describe('Roadmap Features (F1-F6)', () => {
     logCheck('Echo reached', body.includes('GET'));
     await screenshot(app.window, 'features-f2-ssl-off');
     await clickInFrame(mainFrame!, '[data-testid="verify-ssl-toggle"]');
+  });
+
+  // ── F16: Dynamic variables ────────────────────────────────────────
+
+  test('F16 - dynamic variables resolve in the URL query string', async () => {
+    log('--- F16: dynamic vars in URL ---');
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    const url = mockUrl(
+      '/api/echo?ts={{$timestamp}}&guid={{$guid}}&rand={{$randomInt}}&alpha={{$randomAlpha}}' +
+        '&hex={{$randomHex}}&dt={{$localDateTime}}&user={{$processEnv:USER}}' +
+        '&missing={{$processEnv:NO_SUCH_ENV_VAR_XYZ}}',
+    );
+    await setUrlAndSend(mainFrame!, url);
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    const status = await getStatusCode(mainFrame!);
+    logCheck('Status 200', status);
+    expect(status).toBe('200');
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"ts":/);
+
+    const tsMatch = body.match(/"ts":\s*"(\d{13})"/);
+    logCheck('$timestamp resolved to epoch millis', !!tsMatch);
+    expect(tsMatch).not.toBeNull();
+
+    const guidMatch = body.match(/"guid":\s*"([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"/i);
+    logCheck('$guid resolved to v4 UUID', !!guidMatch);
+    expect(guidMatch).not.toBeNull();
+
+    const randMatch = body.match(/"rand":\s*"(\d{1,4})"/);
+    logCheck('$randomInt resolved', !!randMatch);
+    expect(randMatch).not.toBeNull();
+    if (randMatch) {
+      const n = parseInt(randMatch[1], 10);
+      logCheck('$randomInt in range 0..1000', n >= 0 && n <= 1000);
+      expect(n).toBeGreaterThanOrEqual(0);
+      expect(n).toBeLessThanOrEqual(1000);
+    }
+
+    const alphaMatch = body.match(/"alpha":\s*"([a-z]{5})"/);
+    logCheck('$randomAlpha resolved to 5 lowercase letters', !!alphaMatch);
+    expect(alphaMatch).not.toBeNull();
+
+    const hexMatch = body.match(/"hex":\s*"([0-9a-f]{24})"/i);
+    logCheck('$randomHex resolved to 24 hex chars', !!hexMatch);
+    expect(hexMatch).not.toBeNull();
+
+    const dtMatch = body.match(/"dt":\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"/);
+    logCheck('$localDateTime resolved to YYYY-MM-DD HH:MM:SS', !!dtMatch);
+    expect(dtMatch).not.toBeNull();
+
+    const userMatch = body.match(/"user":\s*"([^"]*)"/);
+    logCheck('$processEnv resolved to non-empty value', !!userMatch && userMatch[1].length > 0 && !userMatch[1].includes('{{'));
+    expect(userMatch).not.toBeNull();
+    if (userMatch) {
+      expect(userMatch[1].length).toBeGreaterThan(0);
+      expect(userMatch[1]).not.toContain('{{');
+    }
+
+    logCheck('Unset $processEnv left as-is', body.includes('NO_SUCH_ENV_VAR_XYZ'));
+    expect(body).toContain('NO_SUCH_ENV_VAR_XYZ');
+    await screenshot(app.window, 'features-f16-dynamic-vars-url');
+  });
+
+  test('F16 - dynamic variables in headers resolve fresh on each request', async () => {
+    log('--- F16: dynamic vars in headers ---');
+    await addHeader(mainFrame!, 'X-Trace-Id', '{{$guid}}');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /x-trace-id/i);
+    const first = body.match(/"x-trace-id":\s*"([0-9a-f-]{36})"/i);
+    logCheck('$guid resolved in header (1st request)', !!first);
+    expect(first).not.toBeNull();
+    const firstUuid = first![1];
+
+    // Re-send — dynamic vars must re-resolve to a fresh value on every request
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const start = Date.now();
+    let secondUuid: string | null = null;
+    while (Date.now() - start < 15_000) {
+      await mainFrame!.waitForTimeout(500);
+      const text = await getResponseText(mainFrame!);
+      const m = text.match(/"x-trace-id":\s*"([0-9a-f-]{36})"/i);
+      if (m && m[1] !== firstUuid) {
+        secondUuid = m[1];
+        break;
+      }
+    }
+    logCheck('$guid re-resolved on 2nd request', !!secondUuid);
+    expect(secondUuid).not.toBeNull();
+    if (secondUuid) {
+      logCheck('New value differs from 1st request', secondUuid !== firstUuid);
+      expect(secondUuid).not.toBe(firstUuid);
+    }
+    await screenshot(app.window, 'features-f16-dynamic-vars-header');
+  });
+
+  test('F16 - dynamic variables resolve in JSON body', async () => {
+    log('--- F16: dynamic vars in body ---');
+    await setMethod(mainFrame!, 'POST');
+    await setBodyType(mainFrame!, 'json');
+    await fillBody(mainFrame!, JSON.stringify({ id: '{{$guid}}', ts: '{{$timestamp}}', n: '{{$randomInt}}' }));
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"ts":/);
+
+    logCheck('$guid resolved in body', /"id":\s*"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/i.test(body));
+    expect(body).toMatch(/"id":\s*"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/i);
+    logCheck('$timestamp resolved in body', /"ts":\s*"\d{13}"/.test(body));
+    expect(body).toMatch(/"ts":\s*"\d{13}"/);
+    logCheck('$randomInt resolved in body', /"n":\s*"\d{1,4}"/.test(body));
+    expect(body).toMatch(/"n":\s*"\d{1,4}"/);
+    await screenshot(app.window, 'features-f16-dynamic-vars-body');
+  });
+
+  // ── F17: Default dynamic headers ──────────────────────────────────
+
+  async function setDefaultHeader(
+    frame: Frame,
+    testid: string,
+    enabled: boolean,
+  ): Promise<void> {
+    const toggle = frame.locator(`[data-testid="${testid}"]`);
+    if (await toggle.count() === 0) return;
+    const checkbox = toggle.locator('input[type="checkbox"]');
+    const isChecked = await checkbox.isChecked();
+    if (isChecked !== enabled) {
+      await clickInFrame(frame, `[data-testid="${testid}"]`);
+      await frame.waitForTimeout(300);
+    }
+  }
+
+  async function saveAndCloseSettings(frame: Frame): Promise<void> {
+    await clickInFrame(frame, '[data-testid="settings-save-btn"]');
+    await frame.waitForTimeout(600);
+    await closeSettings(frame);
+  }
+
+  test('F17 - default headers are injected into requests', async () => {
+    log('--- F17: default headers injected ---');
+    await openSettings(mainFrame!);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-user-agent', true);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-request-id', true);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-correlation-id', true);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-date', true);
+    await saveAndCloseSettings(mainFrame!);
+
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"user-agent":\s*"Restify\//i);
+
+    logCheck('User-Agent injected', /"user-agent":\s*"Restify\//i.test(body));
+    expect(body).toMatch(/"user-agent":\s*"Restify\//i);
+    logCheck('X-Request-Id injected', /"x-request-id":\s*"[0-9a-f-]{36}"/i.test(body));
+    expect(body).toMatch(/"x-request-id":\s*"[0-9a-f-]{36}"/i);
+    logCheck('X-Correlation-Id injected', /"x-correlation-id":\s*"[0-9a-f-]{36}"/i.test(body));
+    expect(body).toMatch(/"x-correlation-id":\s*"[0-9a-f-]{36}"/i);
+    logCheck('Date injected', /"date":\s*"[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT"/.test(body));
+    expect(body).toMatch(/"date":\s*"[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT"/);
+    await screenshot(app.window, 'features-f17-default-headers');
+  });
+
+  test('F17 - default headers refresh per request and respect explicit headers', async () => {
+    log('--- F17: fresh per request + explicit override ---');
+    // Capture the request id from the response already on screen (previous test)
+    const firstBody = await waitForResponseText(mainFrame!, /x-request-id/i, 15_000);
+    const firstUuid = firstBody.match(/"x-request-id":\s*"([0-9a-f-]{36})"/i);
+    expect(firstUuid).not.toBeNull();
+
+    // Re-send — X-Request-Id must be a fresh value
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const start = Date.now();
+    let secondUuid: string | null = null;
+    while (Date.now() - start < 15_000) {
+      await mainFrame!.waitForTimeout(500);
+      const text = await getResponseText(mainFrame!);
+      const m = text.match(/"x-request-id":\s*"([0-9a-f-]{36})"/i);
+      if (m && m[1] !== firstUuid![1]) {
+        secondUuid = m[1];
+        break;
+      }
+    }
+    logCheck('X-Request-Id refreshed on next request', !!secondUuid);
+    expect(secondUuid).not.toBeNull();
+    if (secondUuid) expect(secondUuid).not.toBe(firstUuid![1]);
+
+    // An explicitly-set header must not be overridden by the default
+    await addHeader(mainFrame!, 'X-Request-Id', 'my-explicit-id');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"x-request-id":\s*"my-explicit-id"/i);
+    logCheck('Explicit header not overridden', /"x-request-id":\s*"my-explicit-id"/i.test(body));
+    expect(body).toMatch(/"x-request-id":\s*"my-explicit-id"/i);
+    await screenshot(app.window, 'features-f17-default-headers-override');
+
+    // Cleanup: disable default headers again to leave a clean state
+    await openSettings(mainFrame!);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-user-agent', false);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-request-id', false);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-correlation-id', false);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-date', false);
+    await saveAndCloseSettings(mainFrame!);
+  });
+
+  // ── F16: Dynamic variable discoverability ────────────────────────
+
+  test('F16 - {{$ autocomplete inserts a dynamic variable in the URL', async () => {
+    log('--- F16: {{$ autocomplete in URL ---');
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    await setUrl(mainFrame!, mockUrl('/api/echo?x={{$gui'));
+
+    const suggestion = mainFrame!.locator('[data-testid="url-suggestion-item"]').filter({ hasText: '{{$guid}}' });
+    await suggestion.first().waitFor({ state: 'visible', timeout: 5_000 });
+    logCheck('{{$guid}} suggested', true);
+    await suggestion.first().click();
+    await mainFrame!.waitForTimeout(300);
+
+    await sendRequest(mainFrame!);
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"x":/);
+    logCheck('Inserted {{$guid}} resolved in query', /"x":\s*"[0-9a-f-]{36}"/i.test(body));
+    expect(body).toMatch(/"x":\s*"[0-9a-f-]{36}"/i);
+    await screenshot(app.window, 'features-f16-autocomplete-url');
+  });
+
+  test('F16 - Variables help modal lists dynamic variables', async () => {
+    log('--- F16: variables help modal ---');
+    await clickInFrame(mainFrame!, '[data-testid="vars-help-btn"]');
+    await waitForElement(mainFrame!, '[data-testid="vars-help-modal"]', 5_000);
+    const modalText = (await mainFrame!.locator('[data-testid="vars-help-modal"]').textContent()) || '';
+    logCheck('$guid listed', modalText.includes('{{$guid}}'));
+    expect(modalText).toContain('{{$guid}}');
+    expect(modalText).toContain('{{$localDateTime}}');
+    expect(modalText).toContain('{{$processEnv:NAME}}');
+    await clickInFrame(mainFrame!, '[data-testid="vars-help-close"]');
+    await mainFrame!.waitForTimeout(200);
+    const stillOpen = await mainFrame!.locator('[data-testid="vars-help-modal"]').count();
+    logCheck('Modal closed', stillOpen === 0);
+    expect(stillOpen).toBe(0);
+    await screenshot(app.window, 'features-f16-vars-help');
   });
 });

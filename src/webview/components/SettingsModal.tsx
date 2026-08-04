@@ -363,6 +363,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
   const [showActivityLog, setShowActivityLog] = useState(true);
   const [defaultTimeout, setDefaultTimeout] = useState(30000);
+  const [defaultHeaders, setDefaultHeaders] = useState<SettingsState['defaultHeaders']>({
+    userAgent: false,
+    requestId: false,
+    correlationId: false,
+    date: false,
+  });
 
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -410,6 +416,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setCertificates(initialSettings.certificates || []);
       setShowActivityLog(initialSettings.showActivityLog !== false);
       setDefaultTimeout(initialSettings.defaultTimeout ?? 30000);
+      setDefaultHeaders(
+        initialSettings.defaultHeaders || {
+          userAgent: false,
+          requestId: false,
+          correlationId: false,
+          date: false,
+        },
+      );
     }
 
     if (!open) {
@@ -452,6 +466,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         typeof defaultTimeout === 'number' && defaultTimeout > 0
           ? defaultTimeout
           : 30000,
+      defaultHeaders,
     });
   };
 
@@ -522,6 +537,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <HelperText>
             Default timeout applied to requests that don&apos;t specify one.
           </HelperText>
+        </Section>
+
+        <Section>
+          <h4>Default Headers</h4>
+          <HelperText>
+            Automatically inject these headers into every request, unless you
+            already set the same header explicitly.
+          </HelperText>
+          <CheckboxLabel data-testid="default-header-toggle-user-agent">
+            <input
+              type="checkbox"
+              checked={defaultHeaders.userAgent}
+              onChange={(e) =>
+                setDefaultHeaders({ ...defaultHeaders, userAgent: e.target.checked })
+              }
+            />
+            User-Agent: Restify/&lt;version&gt;
+          </CheckboxLabel>
+          <CheckboxLabel data-testid="default-header-toggle-request-id">
+            <input
+              type="checkbox"
+              checked={defaultHeaders.requestId}
+              onChange={(e) =>
+                setDefaultHeaders({ ...defaultHeaders, requestId: e.target.checked })
+              }
+            />
+            X-Request-Id (fresh value per request)
+          </CheckboxLabel>
+          <CheckboxLabel data-testid="default-header-toggle-correlation-id">
+            <input
+              type="checkbox"
+              checked={defaultHeaders.correlationId}
+              onChange={(e) =>
+                setDefaultHeaders({ ...defaultHeaders, correlationId: e.target.checked })
+              }
+            />
+            X-Correlation-Id (fresh value per request)
+          </CheckboxLabel>
+          <CheckboxLabel data-testid="default-header-toggle-date">
+            <input
+              type="checkbox"
+              checked={defaultHeaders.date}
+              onChange={(e) =>
+                setDefaultHeaders({ ...defaultHeaders, date: e.target.checked })
+              }
+            />
+            Date (current HTTP date)
+          </CheckboxLabel>
         </Section>
 
         <Section>
@@ -696,7 +759,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <Actions>
           <GhostButton onClick={onClose}>Cancel</GhostButton>
-          <PrimaryButton onClick={handleSave}>Save Settings</PrimaryButton>
+          <PrimaryButton onClick={handleSave} data-testid="settings-save-btn">Save Settings</PrimaryButton>
         </Actions>
       </Modal>
     </Overlay>

@@ -4,91 +4,112 @@ import {
   closeVSCode,
   screenshot,
   injectCursorOverlay,
-  resetLog,
-  log,
+  clickRestifyIcon,
+  findCollectionsFrame,
+  clickWithCursor,
+  selectQuickPick,
+  typeInQuickInput,
+  confirmQuickInput,
+  dismissNotification,
   logCheck,
+  logError,
   type VSCodeApp,
 } from '../utils/vscode';
-import {
-  setupMainPanel,
-  waitForResponse,
-} from '../utils/helpers';
 import type { Frame } from '@playwright/test';
 
 let app: VSCodeApp;
-let mainFrame: Frame | null = null;
+let collectionsFrame: Frame | null = null;
 
 test.describe('Import / Export', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async () => {
-    resetLog();
-    log('=== [ImportExport] beforeAll ===');
     app = await launchVSCode();
     await injectCursorOverlay(app.window);
-    mainFrame = await setupMainPanel(app);
-    log('=== [ImportExport] setup complete ===');
+    await clickRestifyIcon(app.window);
+    await app.window.waitForTimeout(3000);
+    collectionsFrame = await findCollectionsFrame(app.window);
+    expect(collectionsFrame).not.toBeNull();
   });
 
   test.afterAll(async () => {
-    log('=== [ImportExport] afterAll ===');
     await closeVSCode(app);
   });
 
-  test('Import Swagger via command palette', async () => {
-    log('--- Import Swagger URL ---');
+  test('Import Swagger Petstore collection via URL', async () => {
     const { window } = app;
 
-    // Open command palette
-    await window.keyboard.press('Meta+Shift+P');
-    await window.waitForTimeout(1000);
+    const sidebar = window.locator('.part.sidebar');
+    const importBtn = sidebar.locator('.codicon-cloud-download, button[title*="Import"]').first();
+    const impCount = await importBtn.count().catch(() => 0);
+    logCheck('Import button in sidebar', impCount);
+    expect(impCount).toBeGreaterThan(0);
 
-    // Type the import command
-    await window.keyboard.type('Restify: Import from URL', { delay: 10 });
-    await window.waitForTimeout(500);
-    await window.keyboard.press('Enter');
-    await window.waitForTimeout(1000);
+    await clickWithCursor(importBtn, { force: true });
+    await window.waitForTimeout(800);
+    await selectQuickPick(window, 'Swagger URL');
+    await typeInQuickInput(window, 'https://petstore.swagger.io/v2/swagger.json');
+    await confirmQuickInput(window);
 
-    // If a URL input appears, type the swagger URL
-    const inputBox = window.locator('.quick-input-widget input, .quick-input-box input');
-    if (await inputBox.count() > 0) {
-      await inputBox.first().fill('http://localhost:3000/swagger.json');
-      await window.waitForTimeout(500);
-      await window.keyboard.press('Enter');
-      await window.waitForTimeout(3000);
+    try {
+      await window.waitForFunction(() => {
+        const toasts = document.querySelectorAll('.notifications-toasts .notification-toast, .notification-toast');
+        for (const toast of toasts) {
+          if (toast.textContent?.includes('Imported')) return true;
+        }
+        return false;
+      }, { timeout: 30_000 });
+      logCheck('Import success notification', true);
+    } catch {
+      logError('Timed out waiting for import success notification');
+      throw new Error('Import success notification did not appear');
     }
-
-    await screenshot(window, 'import-swagger');
-    log('Swagger import attempted');
+    await dismissNotification(window);
+    await screenshot(window, 'import-swagger-imported');
   });
 
-  test('Verify import produced collections in sidebar', async () => {
-    log('--- Verify collections ---');
-    // Check if collections frame has any requests
-    const frames = app.window.frames();
-    for (const frame of frames) {
-      if (!frame.url().includes('vscode-webview://')) continue;
-      const text = (await frame.locator('body').textContent().catch(() => '')) ?? '';
-      if (text.includes('collection') || text.includes('Collection') || text.includes('pet')) {
-        logCheck('Collections found in sidebar', true);
-        break;
-      }
-    }
+  test('Verify imported collection appears in sidebar', async () => {
+    const frame = collectionsFrame;
+    if (!frame) throw new Error('No collections frame');
+    const text = (await frame.locator('body').textContent().catch(() => '')) || '';
+    logCheck('Collection visible in sidebar', /Petstore|Swagger/i.test(text));
+    expect(text).toMatch(/Petstore|Swagger/i);
     await screenshot(app.window, 'import-verified');
   });
 
-  test('Export collection via command palette', async () => {
-    log('--- Export collection ---');
+  test('Export all collections via sidebar toolbar', async () => {
     const { window } = app;
+    const frame = collectionsFrame;
+    if (!frame) throw new Error('No collections frame');
 
-    await window.keyboard.press('Meta+Shift+P');
-    await window.waitForTimeout(1000);
-    await window.keyboard.type('Restify: Export', { delay: 10 });
-    await window.waitForTimeout(500);
-    await window.keyboard.press('Enter');
-    await window.waitForTimeout(2000);
+    const exportAll = frame.locator('button[title="Export all collections"]');
+    const eaCount = await exportAll.count().catch(() => 0);
+    logCheck('Export-all toolbar button', eaCount);
+    expect(eaCount).toBeGreaterThan(0);
 
+    await clickWithCursor(exportAll.first(), { force: true });
+
+    const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
+    await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
+    logCheck('Filename input box visible', true);
+
+    await typeInQuickInput(window, 'export-test.json');
+    await confirmQuickInput(window);
+
+    try {
+      await window.waitForFunction(() => {
+        const toasts = document.querySelectorAll('.notifications-toasts .notification-toast, .notification-toast');
+        for (const toast of toasts) {
+          if (toast.textContent?.includes('Exported')) return true;
+        }
+        return false;
+      }, { timeout: 15_000 });
+      logCheck('Export success notification', true);
+    } catch {
+      logError('Timed out waiting for export success notification');
+      throw new Error('Export success notification did not appear');
+    }
+    await dismissNotification(window);
     await screenshot(window, 'export-triggered');
-    log('Export attempted via command palette');
   });
 });

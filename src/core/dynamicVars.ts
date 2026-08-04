@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "crypto";
+import { DYNAMIC_VARIABLES } from "./dynamicVarTokens";
 
 const MAX_RANDOM_INT = 1000;
 
@@ -26,6 +27,13 @@ function randomHex(length: number): string {
     .slice(0, length);
 }
 
+const DYNAMIC_VAR_PATTERN = new RegExp(
+  `\\{\\{\\$(${DYNAMIC_VARIABLES.map((d) =>
+    d.name === "processEnv" ? "processEnv(?::[^}]+)?" : d.name,
+  ).join("|")})\\}\\}`,
+  "g",
+);
+
 /**
  * Resolve Postman-style dynamic variables ({{$guid}}, {{$timestamp}},
  * {{$randomInt}}, {{$randomAlpha}}, {{$randomHex}}, {{$processEnv:NAME}},
@@ -36,7 +44,7 @@ export function resolveDynamicVariables(text: string): string {
   if (!text || !text.includes("$")) return text;
 
   return text.replace(
-    /\{\{\$(guid|timestamp|randomInt|randomAlpha|randomHex|processEnv(?::[^}]+)?|localDateTime)\}\}/g,
+    DYNAMIC_VAR_PATTERN,
     (match, name: string) => {
       switch (name) {
         case "guid":

@@ -5,6 +5,7 @@ import VariableTextInput from './VariableTextInput';
 import { Icon } from './FaIcon';
 import { faFloppyDisk, faStop } from '@fortawesome/free-solid-svg-icons';
 import { getMethodColor } from '../theme/methodColors';
+import { getDynamicVarSuggestions, applyDynamicVarSuggestion } from '../utils/dynamicVarSuggestions';
 
 interface UrlBarProps {
   method: string;
@@ -135,6 +136,32 @@ const UrlInputWrapper = styled.div`
   display: flex;
   align-items: center;
   min-width: 0;
+`;
+
+const UrlSuggestionDropdown = styled.div`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  box-shadow: 0 4px 16px ${({ theme }) => theme.shadowSm};
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 4px;
+  min-width: 160px;
+`;
+
+const UrlSuggestionItem = styled.div<{ $active?: boolean }>`
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.info};
+  background: ${({ $active, theme }) => ($active ? theme.hover : 'transparent')};
 `;
 
 const SaveBtn = styled.button`
@@ -315,6 +342,10 @@ export const UrlBar: React.FC<UrlBarProps> = ({
   onCancel,
   onSave,
 }) => {
+  const [urlFocused, setUrlFocused] = useState(false);
+  const [urlActiveIndex, setUrlActiveIndex] = useState(-1);
+  const urlDropdownRef = useRef<HTMLDivElement>(null);
+
   const displayUrl = useMemo(() => {
     const enabledParams = queryParams.filter((p) => p.key && p.enabled !== false);
     if (enabledParams.length === 0) return url;
@@ -323,6 +354,30 @@ export const UrlBar: React.FC<UrlBarProps> = ({
     const queryString = enabledParams.map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&');
     return `${baseUrl}${queryString ? '?' + queryString : ''}`;
   }, [url, queryParams]);
+
+  const urlSuggestions = urlFocused ? getDynamicVarSuggestions(displayUrl) : [];
+
+  const handleUrlKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!urlSuggestions.length) {
+      if (e.key === 'Enter' && !sendDisabled) onSend();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setUrlActiveIndex((i) => Math.min(i + 1, urlSuggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setUrlActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const idx = urlActiveIndex >= 0 ? urlActiveIndex : 0;
+      onUrlChange(applyDynamicVarSuggestion(displayUrl, urlSuggestions[idx]));
+      setUrlActiveIndex(-1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setUrlActiveIndex(-1);
+    }
+  };
 
   return (
     <UrlBarContainer>
@@ -334,11 +389,33 @@ export const UrlBar: React.FC<UrlBarProps> = ({
           placeholder="https://api.example.com/endpoint"
           onChange={(v) => onUrlChange(v)}
           variables={environment?.variables}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !sendDisabled) onSend();
+          onFocus={() => { setUrlFocused(true); setUrlActiveIndex(-1); }}
+          onBlur={() => {
+            setTimeout(() => { setUrlFocused(false); setUrlActiveIndex(-1); }, 200);
           }}
+          onKeyDown={handleUrlKeyDown}
           className="url-input"
         />
+
+        {urlSuggestions.length > 0 && (
+          <UrlSuggestionDropdown ref={urlDropdownRef}>
+            {urlSuggestions.map((token, idx) => (
+              <UrlSuggestionItem
+                key={token}
+                data-testid="url-suggestion-item"
+                $active={idx === urlActiveIndex}
+                onMouseDown={() => {
+                  onUrlChange(applyDynamicVarSuggestion(displayUrl, token));
+                  setUrlActiveIndex(-1);
+                }}
+                onMouseEnter={() => setUrlActiveIndex(idx)}
+                onMouseLeave={() => setUrlActiveIndex(-1)}
+              >
+                {token}
+              </UrlSuggestionItem>
+            ))}
+          </UrlSuggestionDropdown>
+        )}
       </UrlInputWrapper>
 
       <SaveBtn data-testid="save-btn" onClick={onSave} title="Save to Collection">

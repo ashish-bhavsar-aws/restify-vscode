@@ -92,6 +92,13 @@ export interface CertEntry {
   caPath: string;
 }
 
+export interface DefaultHeadersConfig {
+  userAgent: boolean;
+  requestId: boolean;
+  correlationId: boolean;
+  date: boolean;
+}
+
 export interface SettingsState {
   proxy: string;
   proxyAuthorization: string;
@@ -99,6 +106,7 @@ export interface SettingsState {
   certificates: CertEntry[];
   showActivityLog: boolean;
   defaultTimeout: number;   // default request timeout in ms
+  defaultHeaders: DefaultHeadersConfig;
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -108,6 +116,12 @@ export const DEFAULT_SETTINGS: SettingsState = {
   certificates: [],
   showActivityLog: true,
   defaultTimeout: 30000,
+  defaultHeaders: {
+    userAgent: false,
+    requestId: false,
+    correlationId: false,
+    date: false,
+  },
 };
 
 export const DEFAULT_REQUEST: RequestState = {

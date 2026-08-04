@@ -1,5 +1,6 @@
  import React, { useMemo } from 'react';
 import styled from 'styled-components';
+import { isDynamicVariableToken, previewDynamicVariable } from '../../core/dynamicVarTokens';
 
 interface VariableDisplayProps {
   text: string;
@@ -8,24 +9,30 @@ interface VariableDisplayProps {
 }
 
 interface ParsedPart {
-  type: 'text' | 'variable';
+  type: 'text' | 'variable' | 'dynamic';
   content: string;
   varName?: string;
   isResolved?: boolean;
   resolvedValue?: string;
 }
 
-const VariableTag = styled.span<{ $resolved?: boolean }>`
+const VariableTag = styled.span<{ $resolved?: boolean; $dynamic?: boolean }>`
   display: inline;
   font-weight: 600;
   font-size: inherit;
   font-family: ${({ theme }) => theme.monoFamily};
   white-space: nowrap;
   padding: 0;
-  color: ${({ $resolved, theme }) => ($resolved ? theme.success : theme.error)};
+  color: ${({ $resolved, $dynamic, theme }) => {
+    if ($dynamic) return theme.info;
+    return $resolved ? theme.success : theme.error;
+  }};
   background: none;
   border: none;
-  ${({ $resolved, theme }) => !$resolved && `
+  ${({ $resolved, $dynamic, theme }) =>
+    !$resolved &&
+    !$dynamic &&
+    `
     text-decoration: wavy underline ${theme.error};
     text-decoration-thickness: 1.5px;
     text-underline-offset: 2px;
@@ -104,6 +111,14 @@ export const VariableDisplay: React.FC<VariableDisplayProps> = ({
     const parsed = parseVariables(text);
     return parsed.map((part) => {
       if (part.type === 'variable' && part.varName) {
+        if (isDynamicVariableToken(part.varName)) {
+          return {
+            ...part,
+            type: 'dynamic' as const,
+            isResolved: true,
+            resolvedValue: previewDynamicVariable(part.varName),
+          };
+        }
         const resolved = resolveVariable(part.varName, variables);
         return {
           ...part,
@@ -130,6 +145,18 @@ export const VariableDisplay: React.FC<VariableDisplayProps> = ({
         // Variable part
         const isResolved = part.isResolved;
         const varName = part.varName || '';
+
+        if (part.type === 'dynamic') {
+          return (
+            <VariableTag
+              key={idx}
+              $dynamic
+              title={`${part.content} — dynamic variable, resolved fresh on each request (e.g. ${part.resolvedValue})`}
+            >
+              {part.content}
+            </VariableTag>
+          );
+        }
 
         if (isResolved) {
           return (
@@ -168,6 +195,7 @@ export const useHasUnresolvedVariables = (
     const parts = parseVariables(text);
     return parts.some((part) => {
       if (part.type === 'variable' && part.varName) {
+        if (isDynamicVariableToken(part.varName)) return false;
         return resolveVariable(part.varName, variables) === null;
       }
       return false;

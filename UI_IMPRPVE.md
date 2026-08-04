@@ -3,6 +3,33 @@
 ## Overview
 This note captures the most valuable UI improvements for the current webview experience, based on the existing layout, component structure, and visual system.
 
+## Recent UI Feedback
+- Users want clearer action hierarchy for Send / Save / Generate Code, especially when the panel is narrow.
+- The request/response split feels cramped on smaller widths and needs better resize affordances.
+- Script, auth, and environment controls are not obvious enough in the current tab layout.
+- Empty and loading states currently feel sparse and do not guide users through the workflow.
+- Response pane controls and status metadata should be more discoverable and visually distinct.
+
+## Known Bugs
+- Request and response tab sets use `role="tab"` without a `role="tablist"` container, so ARIA tab semantics are incomplete.
+- The request name input is unlabeled and relies on placeholder text only, which hurts accessibility.
+- Environment dropdown actions (edit/delete) are embedded inside the listbox and can break keyboard navigation semantics.
+- Dynamic variable suggestions in the URL bar appear without robust focus/keyboard handling or aria announcements.
+- Settings default header toggles are visually grouped but not explicitly labeled with a fieldset/legend.
+- Response action buttons in the status bar are crowded and lack stronger separation between primary and secondary actions.
+- The Save/Send button row in the URL bar is not aligned consistently with the URL input on narrow widths.
+- Color combinations and contrast ratios are not explicitly audited across buttons, badges, and status chips.
+- Some input controls use generic text types where specialized input types or validation would improve usability.
+- Component spacing and loose layout behavior need an audit to eliminate inconsistent padding, margins, and alignment.
+
+## UI Audit Checklist
+- Verify color contrast for primary/secondary buttons, tabs, badges, and status chips.
+- Ensure input fields use the most appropriate type and validation hint (`url`, `number`, `text`, etc.).
+- Confirm all interactive controls have clear focus states and labels.
+- Check panel and form spacing for consistent padding, margins, and alignment.
+- Audit modals, dropdowns, and tab panels for consistent visual style and interaction behavior.
+- Validate button hierarchy so primary actions stand out and secondary actions feel less prominent.
+
 ## Priority Legend
 - P0 = High impact, should be addressed first
 - P1 = Important for usability and polish
@@ -25,7 +52,7 @@ This note captures the most valuable UI improvements for the current webview exp
 ### 3. Improve input and action discoverability
 - Make primary actions like Send, Save, Generate Code, and environment switching more visually obvious.
 - Improve button hierarchy so users can quickly tell what is primary versus secondary.
-- Reduce cognitive load by grouping related controls more clearly.
+- Reduce cognitive load by grouping related controls more clearly and aligning them consistently.
 
 ### 4. Standardize keyboard and focus behavior
 - Improve focus visibility across modals, dropdowns, tabs, and form controls.

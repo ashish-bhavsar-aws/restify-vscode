@@ -4,6 +4,8 @@ import { KVItem, Environment } from '../types';
 import { Icon, faTrash } from './FaIcon';
 import VariableTextInput from './VariableTextInput';
 import { getPredefinedHeaderNames, getHeaderSuggestions } from '../constants/predefinedHeaders';
+import { isDynamicVariableToken } from '../../core/dynamicVarTokens';
+import { getDynamicVarSuggestions, applyDynamicVarSuggestion } from '../utils/dynamicVarSuggestions';
 
 const hasUnresolvedVariables = (
   text: string,
@@ -14,6 +16,7 @@ const hasUnresolvedVariables = (
   let match: RegExpExecArray | null;
   while ((match = variableRegex.exec(text)) !== null) {
     const varName = match[1];
+    if (isDynamicVariableToken(varName)) continue;
     if (!variables.some((v) => v.key === varName)) {
       return true;
     }
@@ -238,7 +241,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   isHeaderTable = false,
 }) => {
   const variables = environment?.variables || [];
-  const [focusedIndex, _setFocusedIndex] = useState<number | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [showKeyAutocomplete, setShowKeyAutocomplete] = useState<number | null>(null);
   const [showValueAutocomplete, setShowValueAutocomplete] = useState<number | null>(null);
   const [keyInput, setKeyInput] = useState<string>('');
@@ -247,6 +250,14 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   const [valueActiveIndex, setValueActiveIndex] = useState<number>(-1);
   const keyDropdownRef = useRef<HTMLDivElement>(null);
   const valueDropdownRef = useRef<HTMLDivElement>(null);
+
+  const applyValueSuggestion = useCallback(
+    (currentValue: string, suggestion: string): string =>
+      suggestion.startsWith('{{$')
+        ? applyDynamicVarSuggestion(currentValue, suggestion)
+        : suggestion,
+    [],
+  );
 
   const resolveVariables = (text: string): string => {
     if (!text || !text.includes('{{')) return text;
@@ -293,7 +304,8 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   const handleValueKeyDown = useCallback((
     e: React.KeyboardEvent<HTMLInputElement>,
     rowIndex: number,
-    suggestions: string[]
+    suggestions: string[],
+    currentValue: string,
   ) => {
     if (!suggestions.length) return;
     if (e.key === 'ArrowDown') {
@@ -311,7 +323,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
       e.preventDefault();
       const idx = valueActiveIndex >= 0 ? valueActiveIndex : 0;
       const selected = suggestions[idx];
-      onUpdate(rowIndex, 'value', selected);
+      onUpdate(rowIndex, 'value', applyValueSuggestion(currentValue, selected));
       setValueInput(selected);
       setShowValueAutocomplete(null);
       setValueActiveIndex(-1);
@@ -320,7 +332,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
       setShowValueAutocomplete(null);
       setValueActiveIndex(-1);
     }
-  }, [valueActiveIndex, onUpdate]);
+  }, [valueActiveIndex, onUpdate, applyValueSuggestion]);
 
   return (
     <KvWrap>
@@ -333,9 +345,11 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
         const keySuggestions = isHeaderTable && showKeyAutocomplete === i && keyInput.length > 0
           ? getPredefinedHeaderNames().filter((n) => n.toLowerCase().includes(keyInput.toLowerCase()))
           : [];
-        const valueSuggestions = isHeaderTable && showValueAutocomplete === i && item.key && valueInput.length > 0
+        const dynamicVarSuggestions = focusedIndex === i ? getDynamicVarSuggestions(item.value) : [];
+        const headerValueSuggestions = isHeaderTable && showValueAutocomplete === i && item.key && valueInput.length > 0
           ? getHeaderSuggestions(item.key).filter((v) => v.toLowerCase().includes(valueInput.toLowerCase()))
           : [];
+        const valueSuggestions = [...headerValueSuggestions, ...dynamicVarSuggestions];
 
         const valueVariant = item.value.includes('{{')
           ? hasUnresolvedVars
@@ -354,6 +368,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
             </KvCheck>
             <ValueRelativeWrapper>
               <KvInput
+                data-testid="kv-key-input"
                 type="text"
                 placeholder="Key"
                 value={item.key}
@@ -410,10 +425,10 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                 </AutocompleteDropdown>
               )}
             </ValueRelativeWrapper>
-            <KvValueWrapper style={{ position: 'relative' }}>
+            <KvValueWrapper data-testid="kv-value-wrapper" style={{ position: 'relative' }}>
               <StyledVariableTextInput
                 value={item.value}
-                placeholder="Value (type {{VAR}} to use environment variables)"
+                placeholder="Value (type {{VAR}} to use variables, or {{$… for dynamic ones)"
                 onChange={(v) => {
                   onUpdate(i, 'value', v);
                   if (isHeaderTable && item.key) {
@@ -423,17 +438,24 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   }
                 }}
                 onFocus={() => {
+                  setFocusedIndex(i);
                   if (isHeaderTable && item.key && item.value.length > 0) {
                     setShowValueAutocomplete(i);
                     setValueInput(item.value);
                     setValueActiveIndex(-1);
                   }
                 }}
-                onBlur={() => { setTimeout(() => { setShowValueAutocomplete(null); setValueActiveIndex(-1); }, 200); }}
+                onBlur={() => {
+                  setTimeout(() => {
+                    setFocusedIndex(null);
+                    setShowValueAutocomplete(null);
+                    setValueActiveIndex(-1);
+                  }, 200);
+                }}
                 $hasUnresolvedVars={hasUnresolvedVars}
                 $variant={valueVariant}
                 variables={variables}
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleValueKeyDown(e, i, valueSuggestions)}
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleValueKeyDown(e, i, valueSuggestions, item.value)}
               />
 
               {valueSuggestions.length > 0 && (
@@ -452,9 +474,10 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   {valueSuggestions.map((val, idx) => (
                     <AutocompleteItem
                       key={val}
+                      data-testid="kv-suggestion-item"
                       $active={idx === valueActiveIndex}
                       onMouseDown={() => {
-                        onUpdate(i, 'value', val);
+                        onUpdate(i, 'value', applyValueSuggestion(item.value, val));
                         setShowValueAutocomplete(null);
                         setValueInput(val);
                         setValueActiveIndex(-1);
@@ -474,7 +497,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
           </KvRow>
         );
       })}
-      <AddRowBtn onClick={onAdd}>
+      <AddRowBtn onClick={onAdd} data-testid="kv-add-row">
         {addLabel}
       </AddRowBtn>
     </KvWrap>

@@ -9,6 +9,7 @@ import { ResponsePane } from "./components/ResponsePane";
 import { SaveModal } from "./components/SaveModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { EnvManagerModal } from "./components/EnvManagerModal";
+import { VariablesHelpModal } from "./components/VariablesHelpModal";
 import { Icon, faShieldHalved, faArrowsRotate, faClock } from "./components/FaIcon";
 
 import {
@@ -199,6 +200,7 @@ export const MainPanel: React.FC = () => {
   const [editingEnvForModal, setEditingEnvForModal] = useState<Environment | null>(null);
   const [codeGenOpen, setCodeGenOpen] = useState(false);
   const [codeGenEnabled, setCodeGenEnabled] = useState(false);
+  const [varsHelpOpen, setVarsHelpOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [themeKind, setThemeKind] = useState<number>(2);
   const [savedCollectionName, setSavedCollectionName] = useState<string | null>(
@@ -613,6 +615,7 @@ export const MainPanel: React.FC = () => {
           setEnvManagerOpen(true);
         }}
         onOpenSettings={() => setSettingsModalOpen(true)}
+        onOpenVarsHelp={() => setVarsHelpOpen(true)}
         onGenerateCode={() => setCodeGenOpen(true)}
         codegenEnabled={codeGenEnabled}
       />
@@ -750,6 +753,11 @@ export const MainPanel: React.FC = () => {
         onClose={() => setSettingsModalOpen(false)}
       />
 
+      <VariablesHelpModal
+        open={varsHelpOpen}
+        onClose={() => setVarsHelpOpen(false)}
+      />
+
       <EnvManagerModal
         open={envManagerOpen}
         environments={environments}
@@ -770,6 +778,7 @@ export const MainPanel: React.FC = () => {
         open={codeGenOpen}
         request={buildPayload()}
         environment={activeEnvironment}
+        defaultHeaders={settings.defaultHeaders}
         onClose={() => setCodeGenOpen(false)}
       />
     </Container>

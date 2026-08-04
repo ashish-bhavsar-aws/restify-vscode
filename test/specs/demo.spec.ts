@@ -883,18 +883,20 @@ test('13 - Export collection', async () => {
       await window.waitForTimeout(1000);
 
       const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
-      const inputVisible = await inputBox.count().catch(() => 0);
+      let inputVisible = 0;
+      try {
+        await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
+        inputVisible = 1;
+      } catch {
+        inputVisible = 0;
+      }
       logCheck('Filename input box visible', inputVisible);
 
       if (inputVisible > 0) {
-        await inputBox.first().click();
-        await window.keyboard.press('Meta+A');
-        await window.waitForTimeout(100);
-        await inputBox.first().fill('export-test.json');
-        await window.waitForTimeout(300);
-        await window.keyboard.press('Enter');
-        log('Filename entered and confirmed');
+        await typeInQuickInput(window, 'export-test.json');
+        await confirmQuickInput(window);
         await window.waitForTimeout(1500);
+        log('Filename entered and confirmed');
       } else {
         log('  No input box appeared — export may have saved with default name');
         await window.waitForTimeout(1000);

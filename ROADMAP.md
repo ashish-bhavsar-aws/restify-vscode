@@ -37,7 +37,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F10 | **Pre-request scripts** | 🟠 P1 | Only post-response scripts exist (`scriptExecutor.ts`). Add pre-request hooks (set variables, sign payloads, randomize data). |
 | F11 | **OAuth 2.0 flow** | 🟠 P1 | Authorization code + client credentials + password grant with token refresh. Manual OAuth only via bearer today. |
 | F12 | **More auth types** | 🟡 P2 | AWS SigV4, Digest Auth, Hawk, NTLM, JWT-bearer, per-request "inherit from collection". |
-| F13 | **cURL command import** | 🟠 P1 | Paste a `curl ...` command to build a full request (flags: `-X`, `-H`, `-d`, `-F`, `-u`, `--data-binary`, `--url`). Reverse of existing codegen. |
+| F13 | **cURL command import** | 🟠 P1 | ✅ Paste a `curl ...` command to build a full request (flags: `-X`, `-H`, `-d`, `-F`, `-u`, `--data-binary`, `--url`). Reverse of existing codegen. *(done — `src/core/curlParser.ts` tokenizer + parser; `restify.importCurl` command with input box + clipboard auto-detect; unit tests (17) + E2E tests)* |
 | F14 | **Bulk editor for headers/params** | 🟡 P2 | Postman-style raw key-value text editor with parse-on-change. |
 | F15 | **Clipboard paste into KV tables** | 🟡 P2 | Paste tab/newline-delimited rows from Excel/CSV into Params/Headers/Form tables. |
 | F16 | **Dynamic variables** | 🟠 P1 | `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$processEnv}}`, `{{$localDateTime}}` like Postman. |

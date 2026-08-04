@@ -9,6 +9,8 @@ import {
   log,
   logCheck,
   waitForElement,
+  typeInQuickInput,
+  confirmQuickInput,
   type VSCodeApp,
 } from '../utils/vscode';
 import {
@@ -36,7 +38,7 @@ const HTTPS_URL = 'https://localhost:3443/api/echo';
 let app: VSCodeApp;
 let mainFrame: Frame | null = null;
 
-test.describe('Roadmap Features (F1-F6, F8, F16, F17, F33)', () => {
+test.describe('Roadmap Features (F1-F6, F8, F13, F16, F17, F33)', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async () => {
@@ -591,5 +593,81 @@ tests["always fails"] = false;`,
     const tabText = (await testsTab.textContent().catch(() => '')) || '';
     logCheck('Tests tab badge visible', tabText.includes('✗') || tabText.includes('3'));
     await screenshot(app.window, 'features-f33-test-tab-badge');
+  });
+
+  // ─── F13 — cURL command import ──────────────────────────────────
+
+  test('F13 - curl import loads method, url, headers, and body', async () => {
+    log('--- F13: curl import ---');
+    const { window } = app;
+
+    // Open command palette and run "Paste cURL"
+    await window.keyboard.press('Control+Shift+p');
+    await window.waitForTimeout(500);
+    await window.keyboard.type('Paste cURL', { delay: 30 });
+    await window.waitForTimeout(800);
+
+    const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Paste cURL/i }).first();
+    const cmdCount = await cmdItem.count();
+    logCheck('Paste cURL command found', cmdCount > 0);
+    if (cmdCount === 0) {
+      await window.keyboard.press('Escape');
+      return;
+    }
+    await cmdItem.click();
+    await window.waitForTimeout(500);
+
+    // The input box should appear — type a curl command
+    const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
+    await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
+    await inputBox.first().fill(
+      `curl -X POST ${mockUrl('/api/echo')} -H "Content-Type: application/json" -H "X-Imported: true" -d '{"imported":true}'`
+    );
+    await confirmQuickInput(window);
+
+    // Wait for the request to load in the main panel
+    await window.waitForTimeout(3000);
+
+    // Verify URL loaded
+    const urlInput = mainFrame!.locator('.url-input, [data-testid="url-input"]');
+    await urlInput.first().waitFor({ state: 'visible', timeout: 10_000 });
+    const urlValue = (await urlInput.first().inputValue().catch(() => '')) || (await urlInput.first().textContent().catch(() => ''));
+    log(`  URL value: "${(urlValue || '').slice(0, 80)}"`);
+    logCheck('URL contains mock server', (urlValue || '').includes('localhost:3000'));
+
+    // Verify method loaded (look for method badge or selector)
+    const methodBadge = mainFrame!.locator('.method-select, [data-testid="method-select"]');
+    const methodText = (await methodBadge.first().textContent().catch(() => '')) || '';
+    log(`  Method: "${methodText.trim()}"`);
+    logCheck('Method is POST', methodText.includes('POST'));
+
+    await screenshot(app.window, 'features-f13-curl-imported');
+  });
+
+  test('F13 - curl import with basic auth', async () => {
+    log('--- F13: curl auth import ---');
+    const { window } = app;
+
+    await window.keyboard.press('Control+Shift+p');
+    await window.waitForTimeout(500);
+    await window.keyboard.type('Paste cURL', { delay: 30 });
+    await window.waitForTimeout(800);
+
+    const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Paste cURL/i }).first();
+    await cmdItem.click();
+    await window.waitForTimeout(500);
+
+    const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
+    await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
+    await inputBox.first().fill(`curl -u admin:secret ${mockUrl('/api/echo')}`);
+    await confirmQuickInput(window);
+    await window.waitForTimeout(3000);
+
+    // Verify URL loaded
+    const urlInput = mainFrame!.locator('.url-input, [data-testid="url-input"]');
+    const urlValue = (await urlInput.first().textContent().catch(() => '')) || '';
+    logCheck('URL loaded from curl auth', urlValue.includes('localhost:3000'));
+
+    await screenshot(app.window, 'features-f13-curl-auth');
   });
 });

@@ -93,6 +93,12 @@
         "title": "Import Collection",
         "category": "Restify",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "restify.importCurl",
+        "title": "Paste cURL",
+        "category": "Restify",
+        "icon": "$(clippy)"
       }
     ],
     "menus": {
@@ -109,6 +115,11 @@
         },
         {
           "command": "restify.importCollection",
+          "when": "view == restify-collections",
+          "group": "navigation"
+        },
+        {
+          "command": "restify.importCurl",
           "when": "view == restify-collections",
           "group": "navigation"
         }

@@ -7,6 +7,7 @@ import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList, faXmark, faChevronRight,
   faArrowUp, faList, faLink, faFileCode, faFileLines, faDownload, faCode, faCookieBite,
+  faFlaskVial,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
@@ -162,7 +163,7 @@ interface ResponsePaneProps {
   post?: (msg: any) => void;
 }
 
-type ResTab = 'body' | 'headers' | 'cookies' | 'logs' | 'raw';
+type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'logs' | 'raw';
 
 /* ─── Styled Components ──────────────────────────────────── */
 
@@ -853,6 +854,108 @@ const VarKey = styled.span`
   min-width: 140px;
 `;
 
+/* ─── Test Results ───────────────────────────────────── */
+
+interface TestResultsProps {
+  request?: any;
+}
+
+const TestResults: React.FC<TestResultsProps> = ({ request }) => {
+  if (request?.scriptRunning) {
+    return (
+      <ScriptRunningBox>
+        <Spinner $size={14} />
+        Running tests…
+      </ScriptRunningBox>
+    );
+  }
+
+  const tests: Record<string, boolean> = request?.scriptTests || {};
+  const entries = Object.entries(tests);
+  if (entries.length === 0) {
+    return (
+      <EmptyHint>
+        No test assertions defined. Use <code>{'tests["name"] = true'}</code> in your post-response script.
+      </EmptyHint>
+    );
+  }
+
+  const passed = entries.filter(([, v]) => v).length;
+  const failed = entries.filter(([, v]) => !v).length;
+
+  return (
+    <TestResultsWrapper>
+      <TestSummaryBar $allPassed={failed === 0}>
+        <TestSummaryIcon>{failed === 0 ? '✓' : '✗'}</TestSummaryIcon>
+        <TestSummaryText>
+          {passed} passed{failed > 0 ? `, ${failed} failed` : ''}
+        </TestSummaryText>
+        <TestSummaryTotal>{entries.length} total</TestSummaryTotal>
+      </TestSummaryBar>
+      {entries.map(([name, result]) => (
+        <TestResultRow key={name} $passed={result}>
+          <TestResultIcon $passed={result}>{result ? '✓' : '✗'}</TestResultIcon>
+          <TestResultName>{name}</TestResultName>
+        </TestResultRow>
+      ))}
+    </TestResultsWrapper>
+  );
+};
+
+const TestResultsWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+`;
+
+const TestSummaryBar = styled.div<{ $allPassed: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: ${({ $allPassed, theme }) => $allPassed
+    ? `color-mix(in srgb, ${theme.success} 10%, transparent)`
+    : `color-mix(in srgb, ${theme.error} 10%, transparent)`};
+  font-size: 13px;
+  font-weight: 600;
+`;
+
+const TestSummaryIcon = styled.span`
+  font-size: 14px;
+  font-weight: 700;
+`;
+
+const TestSummaryText = styled.span`
+  flex: 1;
+`;
+
+const TestSummaryTotal = styled.span`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  font-weight: 400;
+`;
+
+const TestResultRow = styled.div<{ $passed: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  font-size: 12px;
+`;
+
+const TestResultIcon = styled.span<{ $passed: boolean }>`
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+  color: ${({ $passed, theme }) => $passed ? theme.success : theme.error};
+`;
+
+const TestResultName = styled.span`
+  flex: 1;
+`;
+
 /* ─── Request Log ─────────────────────────────────────── */
 
 interface RequestLogProps {
@@ -1525,7 +1628,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
 
       {/* Tab bar */}
       <TabBar id="res-tabs">
-        {(['body', 'headers', 'cookies', 'logs', 'raw'] as ResTab[]).map((tab) => (
+        {(['body', 'headers', 'cookies', 'tests', 'logs', 'raw'] as ResTab[]).map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}
@@ -1538,6 +1641,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 tab === 'body' ? faFileLines
                 : tab === 'headers' ? faLink
                 : tab === 'cookies' ? faCookieBite
+                : tab === 'tests' ? faFlaskVial
                 : tab === 'logs' ? faClipboardList
                 : faFileCode
               }
@@ -1550,6 +1654,17 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             {tab === 'cookies' && cookieRows.length > 0 && (
               <TabBadge>{cookieRows.length}</TabBadge>
             )}
+            {tab === 'tests' && (() => {
+              const tests: Record<string, boolean> = request?.scriptTests || {};
+              const count = Object.keys(tests).length;
+              if (count === 0) return null;
+              const allPassed = Object.values(tests).every(Boolean);
+              return (
+                <TabBadge style={{ background: allPassed ? 'var(--accent, #50fa7b)' : 'var(--error, #c0392b)', color: 'var(--accent-fg, #fff)' }}>
+                  {allPassed ? '✓' : '✗'} {count}
+                </TabBadge>
+              );
+            })()}
             {tab === 'logs' && ((request?.networkLogs?.length || 0) > 0 || (request?.scriptLogs?.length || 0) > 0) && (
               <TabBadge style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: 'var(--accent-fg, #fff)' }}>
                 {request.scriptSuccess === false ? '✗' : ((request?.networkLogs?.length || 0) + (request?.scriptLogs?.length || 0))}
@@ -1660,6 +1775,17 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 </tbody>
               </HeadersTable>
             )}
+          </ScrollArea>
+        </TabContent>
+      )}
+
+      {/* Tests tab */}
+      {activeTab === 'tests' && (
+        <TabContent>
+          <ScrollArea>
+            <div style={{ padding: '12px' }}>
+              <TestResults request={request} />
+            </div>
           </ScrollArea>
         </TabContent>
       )}

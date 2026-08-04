@@ -679,6 +679,7 @@ export class RestifyPanel {
     const vm = require("vm") as typeof import("vm");
     const logs: string[] = [];
     const variables: Record<string, any> = {};
+    const tests: Record<string, boolean> = {};
     const vars = variables;
 
     const log = (...args: any[]) =>
@@ -722,6 +723,7 @@ export class RestifyPanel {
         log,
         vars,
         variables,
+        tests,
         console: { log, warn: log, error: log, info: log },
       });
 
@@ -745,7 +747,7 @@ export class RestifyPanel {
 
       this.panel.webview.postMessage({
         command: "scriptResult",
-        result: { success: true, variables, logs },
+        result: { success: true, variables, logs, tests },
       });
       this.activityProvider?.append(
         "Script completed",
@@ -769,6 +771,7 @@ export class RestifyPanel {
           success: false,
           variables,
           logs,
+          tests,
           error: err?.message ?? String(err),
         },
       });

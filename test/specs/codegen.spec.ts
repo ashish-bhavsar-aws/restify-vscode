@@ -17,6 +17,10 @@ import {
   openCodegen,
   closeCodegen,
   mockUrl,
+  createEnvironment,
+  selectEnvironment,
+  setUrl,
+  fillBearerToken,
 } from '../utils/helpers';
 import type { Frame } from '@playwright/test';
 
@@ -122,5 +126,151 @@ test.describe('Code Generation', () => {
     const stillVisible = await modal.isVisible().catch(() => false);
     logCheck('Modal closed', !stillVisible);
     expect(stillVisible).toBe(false);
+  });
+
+  test('Codegen resolves environment variables to exact values', async () => {
+    log('--- Codegen vars test ---');
+
+    // Create environment with variables
+    await createEnvironment(mainFrame!, 'CodeGenVarsTest', {
+      baseUrl: 'http://localhost:3000',
+      token: 'secret-token-xyz',
+    });
+    await selectEnvironment(mainFrame!, 'CodeGenVarsTest');
+    await mainFrame!.waitForTimeout(500);
+
+    // Set URL using variable
+    await setUrl(mainFrame!, '{{baseUrl}}/');
+    await mainFrame!.waitForTimeout(200);
+
+    // Set bearer auth using variable
+    await fillBearerToken(mainFrame!, '{{token}}');
+    await mainFrame!.waitForTimeout(200);
+
+    // Send request so codegen has data
+    const input = mainFrame!.locator('.url-input [data-testid="variable-text-input"]');
+    if (await input.first().isVisible().catch(() => false)) {
+      await input.first().press('Enter');
+    }
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    log('Request completed for vars codegen test');
+
+    // Open codegen and check cURL (default)
+    await openCodegen(mainFrame!);
+    const modal = mainFrame!.locator('[data-testid="codegen-modal"]');
+    const visible = await modal.isVisible().catch(() => false);
+    logCheck('Codegen modal visible', visible);
+    expect(visible).toBe(true);
+
+    const codeBlock = modal.locator('[role="region"]').first();
+    const codeText = (await codeBlock.textContent().catch(() => '')) ?? '';
+    log(`  Code preview: ${codeText.substring(0, 200)}`);
+
+    // Verify exact values are present
+    const hasBaseUrl = codeText.includes('http://localhost:3000');
+    logCheck('Resolved baseUrl in code', hasBaseUrl);
+    expect(hasBaseUrl).toBe(true);
+
+    const hasToken = codeText.includes('secret-token-xyz');
+    logCheck('Resolved token in code', hasToken);
+    expect(hasToken).toBe(true);
+
+    // Verify variable placeholders are NOT present
+    const noBaseUrlVar = !codeText.includes('{{baseUrl}}');
+    logCheck('No {{baseUrl}} placeholder', noBaseUrlVar);
+    expect(noBaseUrlVar).toBe(true);
+
+    const noTokenVar = !codeText.includes('{{token}}');
+    logCheck('No {{token}} placeholder', noTokenVar);
+    expect(noTokenVar).toBe(true);
+
+    await screenshot(app.window, 'codegen-vars-resolved');
+
+    // Check a few more languages to confirm resolution works across them
+    for (const lang of ['JavaScript (fetch)', 'Python (requests)', 'Go (net/http)']) {
+      const langBtn = modal.locator('button, div[role="button"], li, div').filter({ hasText: lang });
+      if (await langBtn.count() > 0) {
+        await langBtn.first().click();
+        await mainFrame!.waitForTimeout(300);
+      }
+      const text = (await codeBlock.textContent().catch(() => '')) ?? '';
+      const resolved = text.includes('http://localhost:3000') && text.includes('secret-token-xyz');
+      const hasPlaceholder = text.includes('{{baseUrl}}') || text.includes('{{token}}');
+      logCheck(`${lang}: vars resolved`, resolved && !hasPlaceholder);
+      expect(resolved).toBe(true);
+      expect(hasPlaceholder).toBe(false);
+      await screenshot(app.window, `codegen-vars-${lang.replace(/[^a-zA-Z]/g, '-').toLowerCase()}`);
+    }
+
+    // Close codegen
+    await closeCodegen(mainFrame!);
+  });
+
+  test('Codegen resolves dynamic variables to sample values', async () => {
+    log('--- Codegen dynamic vars test ---');
+
+    // Set URL with dynamic variables
+    await setUrl(mainFrame!, 'http://localhost:3000/{{$guid}}/{{$timestamp}}');
+    await mainFrame!.waitForTimeout(200);
+
+    // Send request so codegen has data
+    const input = mainFrame!.locator('.url-input [data-testid="variable-text-input"]');
+    if (await input.first().isVisible().catch(() => false)) {
+      await input.first().press('Enter');
+    }
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    log('Request completed for dynamic vars codegen test');
+
+    // Open codegen
+    await openCodegen(mainFrame!);
+    const modal = mainFrame!.locator('[data-testid="codegen-modal"]');
+    const visible = await modal.isVisible().catch(() => false);
+    logCheck('Codegen modal visible', visible);
+    expect(visible).toBe(true);
+
+    const codeBlock = modal.locator('[role="region"]').first();
+    const codeText = (await codeBlock.textContent().catch(() => '')) ?? '';
+    log(`  Code preview: ${codeText.substring(0, 300)}`);
+
+    // Dynamic vars are resolved to sample values in the actual code.
+    // A comment block mentions the original tokens (by design), so we check
+    // that resolved values ARE present and that the comment notes the substitution.
+
+    // Should contain a UUID-like pattern (8-4-4-4-12 hex)
+    const hasUuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(codeText);
+    logCheck('Resolved GUID as UUID', hasUuid);
+    expect(hasUuid).toBe(true);
+
+    // Should contain a numeric timestamp (digits only, long number)
+    const hasTimestamp = /\d{10,}/.test(codeText);
+    logCheck('Resolved timestamp as number', hasTimestamp);
+    expect(hasTimestamp).toBe(true);
+
+    // The substitution note should be present (confirms dynamic vars were processed)
+    const hasSubstitutionNote = codeText.includes('substituted') || codeText.includes('sample values');
+    logCheck('Substitution note present', hasSubstitutionNote);
+    expect(hasSubstitutionNote).toBe(true);
+
+    await screenshot(app.window, 'codegen-dynamic-vars-resolved');
+
+    // Verify across a couple more languages
+    for (const lang of ['JavaScript (fetch)', 'Python (requests)']) {
+      const langBtn = modal.locator('button, div[role="button"], li, div').filter({ hasText: lang });
+      if (await langBtn.count() > 0) {
+        await langBtn.first().click();
+        await mainFrame!.waitForTimeout(300);
+      }
+      const text = (await codeBlock.textContent().catch(() => '')) ?? '';
+      const hasResolvedUuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(text);
+      const hasResolvedTs = /\d{10,}/.test(text);
+      logCheck(`${lang}: dynamic vars resolved`, hasResolvedUuid && hasResolvedTs);
+      expect(hasResolvedUuid).toBe(true);
+      expect(hasResolvedTs).toBe(true);
+      await screenshot(app.window, `codegen-dynamic-vars-${lang.replace(/[^a-zA-Z]/g, '-').toLowerCase()}`);
+    }
+
+    await closeCodegen(mainFrame!);
   });
 });

@@ -22,6 +22,10 @@ import {
   Collection,
   SettingsState,
 } from "./types";
+import {
+  isDynamicVariableToken,
+  previewDynamicVariable,
+} from "../core/dynamicVarTokens";
 
 const vscodeApi = (window as any).acquireVsCodeApi?.();
 
@@ -136,7 +140,7 @@ const VarsLabel = styled.span`
   letter-spacing: 0.04em;
 `;
 
-const VarChip = styled.span<{ $resolved: boolean }>`
+const VarChip = styled.span<{ $resolved: boolean; $dynamic?: boolean }>`
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 10px;
@@ -144,18 +148,24 @@ const VarChip = styled.span<{ $resolved: boolean }>`
   user-select: none;
   cursor: default;
 
-  ${({ $resolved, theme }) =>
-    $resolved
+  ${({ $resolved, $dynamic, theme }) =>
+    $dynamic
       ? css`
-          background: ${theme.badgeBg};
-          color: ${theme.badgeFg};
-          border: 1px solid ${theme.badgeBg};
+          background: color-mix(in srgb, ${theme.info} 18%, transparent);
+          color: ${theme.info};
+          border: 1px solid color-mix(in srgb, ${theme.info} 35%, transparent);
         `
-      : css`
-          background: color-mix(in srgb, ${theme.error} 18%, transparent);
-          color: ${theme.error};
-          border: 1px solid color-mix(in srgb, ${theme.error} 35%, transparent);
-        `}
+      : $resolved
+        ? css`
+            background: ${theme.badgeBg};
+            color: ${theme.badgeFg};
+            border: 1px solid ${theme.badgeBg};
+          `
+        : css`
+            background: color-mix(in srgb, ${theme.error} 18%, transparent);
+            color: ${theme.error};
+            border: 1px solid color-mix(in srgb, ${theme.error} 35%, transparent);
+          `}
 `;
 
 const MainArea = styled.div`
@@ -301,6 +311,7 @@ export const MainPanel: React.FC = () => {
             scriptSuccess: msg.result?.success !== false,
             scriptError: msg.result?.error,
             scriptVariables: msg.result?.variables || {},
+            scriptTests: msg.result?.tests || {},
           }));
           break;
         case "requestError":
@@ -573,17 +584,27 @@ export const MainPanel: React.FC = () => {
 
   // Compute which env variables are referenced in the current request
   const usedVars = React.useMemo(() => {
-    if (!activeEnvironment) return null;
-    const allVarKeys = new Set(activeEnvironment.variables.map((v) => v.key));
+    const allVarKeys = new Set(
+      activeEnvironment?.variables?.map((v) => v.key) ?? [],
+    );
     const searchText = [
       request.url,
       request.body || "",
       ...(request.headers || []).map((h) => `${h.key} ${h.value}`),
       ...(request.queryParams || []).map((p) => `${p.key} ${p.value}`),
     ].join(" ");
-    const matches = [...searchText.matchAll(/\{\{([^}]+)}}/g)].map((m) => m[1]);
+    const matches = [...searchText.matchAll(/\{\{([^}]+)}}/g)].map(
+      (m) => m[1],
+    );
     const unique = [...new Set(matches)];
-    return unique.map((name) => ({ name, resolved: allVarKeys.has(name) }));
+    return unique.map((rawName) => {
+      const isDynamic = rawName.startsWith("$");
+      const name = isDynamic ? rawName.slice(1) : rawName;
+      const resolved = isDynamic
+        ? isDynamicVariableToken(name)
+        : allVarKeys.has(name);
+      return { name: rawName, resolved, dynamic: isDynamic };
+    });
   }, [
     request.url,
     request.body,
@@ -700,21 +721,27 @@ export const MainPanel: React.FC = () => {
       {usedVars && usedVars.length > 0 && (
         <UsedVarsStrip>
           <VarsLabel>Vars:</VarsLabel>
-          {usedVars.map((v) => (
-            <VarChip
-              key={v.name}
-              $resolved={v.resolved}
-              title={
-                v.resolved
-                  ? "Resolved in active environment"
-                  : "Not found in active environment"
-              }
-            >
-              {"{{"}
-              {v.name}
-              {"}}"}
-            </VarChip>
-          ))}
+          {usedVars.map((v) => {
+            const displayName = v.dynamic
+              ? `{{$${v.name.slice(1)}}}`
+              : `{{${v.name}}}`;
+            return (
+              <VarChip
+                key={v.name}
+                $resolved={v.resolved}
+                $dynamic={v.dynamic}
+                title={
+                  v.dynamic
+                    ? `${displayName} — dynamic variable, resolved fresh on each request (e.g. ${previewDynamicVariable(v.name.slice(1))})`
+                    : v.resolved
+                      ? "Resolved in active environment"
+                      : "Not found in active environment"
+                }
+              >
+                {displayName}
+              </VarChip>
+            );
+          })}
         </UsedVarsStrip>
       )}
 

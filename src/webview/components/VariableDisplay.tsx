@@ -66,7 +66,7 @@ const parseVariables = (text: string): ParsedPart[] => {
     parts.push({
       type: 'variable',
       content: match[0], // Full {{VAR}}
-      varName: match[1], // Just VAR
+      varName: match[1].startsWith('$') ? match[1].slice(1) : match[1], // Strip $ for dynamic vars
     });
 
     lastIndex = variableRegex.lastIndex;

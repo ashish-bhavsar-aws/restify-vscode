@@ -4,6 +4,7 @@ export interface ScriptResult {
   success: boolean;
   variables: Record<string, any>;
   logs: string[];
+  tests?: Record<string, boolean>;
   error?: string;
 }
 
@@ -17,6 +18,7 @@ export async function executeUserScript(
 
   const logs: string[] = [];
   const variables: Record<string, any> = {};
+  const tests: Record<string, boolean> = {};
 
   const log = (...args: any[]): void => {
     logs.push(
@@ -40,6 +42,7 @@ export async function executeUserScript(
     ...context,
     vars: variables,
     variables,
+    tests,
     set,
     log,
     console: { log, warn: log, error: log, info: log },
@@ -67,12 +70,13 @@ ${script}
       ]);
     }
 
-    return { success: true, variables, logs };
+    return { success: true, variables, logs, tests };
   } catch (err: any) {
     return {
       success: false,
       variables,
       logs,
+      tests,
       error: err?.message ?? String(err),
     };
   }

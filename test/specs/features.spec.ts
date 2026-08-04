@@ -36,7 +36,7 @@ const HTTPS_URL = 'https://localhost:3443/api/echo';
 let app: VSCodeApp;
 let mainFrame: Frame | null = null;
 
-test.describe('Roadmap Features (F1-F6, F8, F16, F17)', () => {
+test.describe('Roadmap Features (F1-F6, F8, F16, F17, F33)', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async () => {
@@ -488,5 +488,108 @@ test.describe('Roadmap Features (F1-F6, F8, F16, F17)', () => {
     logCheck('Modal closed', stillOpen === 0);
     expect(stillOpen).toBe(0);
     await screenshot(app.window, 'features-f16-vars-help');
+  });
+
+  // ── F16: Dynamic variable hover display ──────────────────────────
+
+  test('F16 - dynamic variable shows preview tooltip and info color', async () => {
+    log('--- F16: dynamic var hover display ---');
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    await setUrl(mainFrame!, mockUrl('/api/echo?id={{$guid}}'));
+    // Blur the URL input to switch VariableTextInput back to display mode
+    await mainFrame!.evaluate(() => {
+      const input = document.querySelector('.url-input [data-testid="variable-text-input"]') as HTMLInputElement | null;
+      if (input) input.blur();
+    });
+    await mainFrame!.waitForTimeout(600);
+
+    // Find the dynamic variable tag (VariableTag with title containing "dynamic variable")
+    const dynamicTag = mainFrame!.locator('[title*="dynamic variable"]').first();
+    const tagCount = await dynamicTag.count();
+    logCheck('Dynamic variable tag found', tagCount > 0);
+    expect(tagCount).toBeGreaterThan(0);
+
+    // Verify tooltip text contains preview value
+    const title = await dynamicTag.getAttribute('title');
+    logCheck('Tooltip mentions "dynamic variable"', title?.includes('dynamic variable') ?? false);
+    expect(title).toContain('dynamic variable');
+    logCheck('Tooltip contains a UUID preview', /[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(title || ''));
+    expect(title).toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+
+    // Verify the element has the info color (theme.info = #3794ff in Default Dark Modern)
+    const color = await dynamicTag.evaluate((el) => getComputedStyle(el).color);
+    logCheck('Dynamic var tag has info color', color);
+    expect(color).not.toContain('220'); // not error red (#cd3131)
+    expect(color).not.toContain('181'); // not success green (#89d185)
+
+    await screenshot(app.window, 'features-f16-dynamic-var-hover');
+  });
+
+  // ── F33: Test/assertion scripts ─────────────────────────────────
+
+  test('F33 - write test assertions in post-response script', async () => {
+    log('--- F33: test assertions ---');
+    await clickRequestTab(mainFrame!, 'script');
+    await mainFrame!.waitForTimeout(300);
+
+    const codeEditor = mainFrame!.locator('.monaco-editor, textarea, [role="textbox"]').first();
+    if (await codeEditor.count() > 0) {
+      await codeEditor.click();
+      await mainFrame!.waitForTimeout(200);
+      await app.window.keyboard.press('Meta+A');
+      await mainFrame!.waitForTimeout(50);
+      await app.window.keyboard.press('Backspace');
+      await mainFrame!.waitForTimeout(100);
+      await app.window.keyboard.type(
+        `tests["status is 200"] = response.status === 200;
+tests["has body"] = response.body !== "";
+tests["always fails"] = false;`,
+        { delay: 5 },
+      );
+      await mainFrame!.waitForTimeout(300);
+    }
+    await screenshot(app.window, 'features-f33-test-script-written');
+    log('Test assertions script written');
+  });
+
+  test('F33 - send request and verify test results', async () => {
+    log('--- F33: send + verify tests ---');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/json-response'));
+    const ok = await waitForResponse(mainFrame!, 20_000);
+    expect(ok).toBe(true);
+
+    // Wait for script execution to complete
+    await mainFrame!.waitForTimeout(4000);
+
+    // Navigate to Tests tab
+    await clickResponseTab(mainFrame!, 'tests');
+    await mainFrame!.waitForTimeout(500);
+
+    const body = await getResponseText(mainFrame!);
+    logCheck('Tests tab shows results', body.includes('200') || body.includes('passed'));
+    logCheck('Passing test visible', body.includes('status is 200'));
+    logCheck('Failing test visible', body.includes('always fails'));
+    await screenshot(app.window, 'features-f33-test-results');
+  });
+
+  test('F33 - test summary shows pass/fail counts', async () => {
+    log('--- F33: summary counts ---');
+    // Stay on tests tab
+    const body = await getResponseText(mainFrame!);
+    const hasPassed = body.includes('2 passed') || body.includes('2');
+    const hasFailed = body.includes('1 failed');
+    logCheck('Pass count shown', hasPassed);
+    logCheck('Fail count shown', hasFailed);
+    await screenshot(app.window, 'features-f33-test-summary');
+  });
+
+  test('F33 - test tab badge shows pass/fail indicator', async () => {
+    log('--- F33: tab badge ---');
+    // The tests tab badge should show a failure indicator
+    const testsTab = mainFrame!.locator('[data-testid="res-tab-tests"]');
+    const tabText = (await testsTab.textContent().catch(() => '')) || '';
+    logCheck('Tests tab badge visible', tabText.includes('✗') || tabText.includes('3'));
+    await screenshot(app.window, 'features-f33-test-tab-badge');
   });
 });

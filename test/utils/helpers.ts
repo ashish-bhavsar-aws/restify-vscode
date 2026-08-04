@@ -202,7 +202,7 @@ export async function clickRequestTab(
 
 export async function clickResponseTab(
   frame: Frame,
-  tab: 'body' | 'headers' | 'cookies' | 'logs' | 'raw',
+  tab: 'body' | 'headers' | 'cookies' | 'tests' | 'logs' | 'raw',
 ): Promise<void> {
   await clickInFrame(frame, `[data-testid="res-tab-${tab}"]`);
   await frame.waitForTimeout(200);

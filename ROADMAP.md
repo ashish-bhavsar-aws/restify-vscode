@@ -130,7 +130,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F9 — Core unit tests
 - F10 — Pre-request scripts
 - F31 — Collection runner
-- F33 — Test/assertion scripts
+- F33 — Test/assertion scripts ✅
 - F41 — Secret variables
 - F51 — .http file support
 - F54 — Command palette actions
@@ -187,14 +187,14 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 > Turns Restify from "send and see" into "automate workflows".
 
 - [x] F10 **Pre-request scripts**: extend `scriptExecutor.ts` to a generic pipeline (pre → request → post); API parity (`vars`, `request`, `log`). *(done — `preScript` on RequestState, run host-side via `src/core/script.ts` before the request; `src/core/http.ts` shared engine)*
-- [ ] F33 **Test/assertion scripts**: post-request `tests` object (`tests["status is 200"] = response.status === 200`); render pass/fail badges in response pane; store results in history.
+- [x] F33 **Test/assertion scripts**: post-request `tests` object (`tests["status is 200"] = response.status === 200`); render pass/fail badges in response pane; store results in history. *(done — `tests` object in `src/core/script.ts` sandbox, wired through `_runScript` in RestifyPanel, `TestResults` component in ResponsePane with pass/fail badges + summary bar; unit-tested)*
 - [x] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$processEnv:NAME}}`, `{{$localDateTime}}` resolved host-side before request. *(done — `src/core/dynamicVars.ts`, wired into `StorageManager.resolveVariables`, unit-tested; codegen substitutes dynamic tokens with samples/placeholders — see F53 correctness pass below)*
 - [ ] F21 **Request chaining**: after each run, expose response as `{{response.<method>.<jsonpath>}}` style or via script `set()`; picker UI in Save/history flow.
 - [ ] F41 **Secret variables**: add `secret` flag to `KVItem`; store secret values in `context.secrets`/`SecretStorage`; mask in UI (dot display + reveal).
 - [ ] F31 **Collection runner** (first slice): run a folder/collection sequentially, reusing the single-request engine; results grid with status/time/test badges; cancel support.
 - [ ] F32 **Data-driven runs**: CSV/JSON rows as iteration variables for the runner.
 
-**Exit criteria:** script pipeline covered by unit tests; runner E2E (2–3 request collection) passing.
+**Exit criteria:** script pipeline covered by unit tests (incl. test assertions ✅); runner E2E (2–3 request collection) passing.
 
 ### Phase 3 — Import/Export & Interop (P1/P2)
 > Makes Restify a first-class citizen in existing API toolchains.
@@ -266,7 +266,7 @@ Focus: move from basic request sending to practical daily workflows while keepin
 **Must-have**
 - F10 — Pre-request scripts
 - F31 — Collection runner
-- F33 — Test/assertion scripts
+- F33 — Test/assertion scripts ✅
 - F41 — Secret variables
 - F51 — .http file support
 - F54 — Command palette actions

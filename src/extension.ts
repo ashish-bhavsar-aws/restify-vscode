@@ -5,10 +5,15 @@ import { SidebarProvider } from './panels/SidebarProvider';
 import { ActivityProvider } from './panels/ActivityProvider';
 import { parseCurl } from './core/curlParser';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   // Use the extension's global storage path for file-backed history persistence
   const storagePath = context.globalStorageUri?.fsPath || undefined;
-  const storageManager = new StorageManager(context.globalState, storagePath);
+  const storageManager = new StorageManager(
+    context.globalState,
+    storagePath,
+    context.secrets
+  );
+  await storageManager.hydrateSecrets();
 
   // Store storageManager in subscriptions so we can access it in deactivate
   context.subscriptions.push({
@@ -128,6 +133,42 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.openFromSidebar', (data) => {
       vscode.commands.executeCommand('restify.openMain', data);
+    })
+  );
+
+  // F54: Command palette actions
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.sendRequest', () => {
+      const activePanel = Array.from(openPanels).pop();
+      if (activePanel) {
+        activePanel.sendRequest();
+      } else {
+        vscode.window.showWarningMessage('No active Restify panel. Open a request first.');
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.searchCollections', async () => {
+      const query = await vscode.window.showInputBox({
+        prompt: 'Search collections',
+        placeHolder: 'Enter search term...',
+      });
+      if (query) {
+        collectionsProvider.search(query);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.exportAllCollections', () => {
+      collectionsProvider.exportAll();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.openEnvironments', () => {
+      vscode.commands.executeCommand('restify.openMain');
     })
   );
 

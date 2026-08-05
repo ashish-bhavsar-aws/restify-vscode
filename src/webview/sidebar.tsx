@@ -5,6 +5,7 @@ import {
   faMagnifyingGlass, faFloppyDisk, faTrash, faPen,
   faFileExport, faFileImport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
+  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark,
 } from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
   id: string; method: string; url: string; status: number;
@@ -15,6 +16,29 @@ interface CollectionGroup { id: string; name: string; requests?: CollectionReque
 interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
 type SidebarType = 'history' | 'collections' | 'environments';
 interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; }
+interface RunEntry {
+  requestId: string;
+  name: string;
+  method: string;
+  url: string;
+  status: number;
+  statusText: string;
+  duration: number;
+  size: number;
+  error?: string;
+  cancelled?: boolean;
+  tests?: Record<string, boolean>;
+  testSummary?: { passed: number; failed: number };
+}
+interface RunState {
+  running: boolean;
+  total: number;
+  collectionId?: string;
+  groupId?: string;
+  entries: RunEntry[];
+  cancelled?: boolean;
+  error?: string;
+}
 
 const METHOD_COLORS: Record<string, string> = {
   GET: 'var(--tag-get)',
@@ -207,6 +231,15 @@ const AddGroupBtn = styled(IconButton)`
 `;
 
 const RenameColBtn = styled(IconButton)`
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.accent} !important;
+  }
+`;
+
+const RunBtn = styled(IconButton)`
   opacity: 0;
   transition: opacity 0.15s;
 
@@ -661,6 +694,7 @@ export const Sidebar: React.FC = () => {
   const [expansionStates, setExpansionStates] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [triggerNewCollection, setTriggerNewCollection] = useState(false);
+  const [runState, setRunState] = useState<RunState | null>(null);
   const pendingToggleRef = useRef<{ id: string; state: boolean } | null>(null);
 
   useEffect(() => {
@@ -669,15 +703,50 @@ export const Sidebar: React.FC = () => {
     const handler = (event: MessageEvent) => {
       const d = event.data;
       if (d.command === 'openNewCollectionModal') { setTriggerNewCollection(true); }
+      if (d.command === 'searchCollections') {
+        setSidebarType('collections');
+        setSearch(d.query || '');
+      }
       if (d.command === 'setData') {
         if (d.data.history)      setHistory(d.data.history);
         if (d.data.collections)  setCollections(d.data.collections);
+        if (typeof d.data.search === 'string') setSearch(d.data.search);
         if (d.data.expansionStates && !pendingToggleRef.current) {
           setExpansionStates(d.data.expansionStates);
         }
         if (pendingToggleRef.current) {
           pendingToggleRef.current = null;
         }
+      }
+      if (d.command === 'collectionRunStarted') {
+        setRunState({
+          running: true,
+          total: d.total ?? 0,
+          collectionId: d.collectionId,
+          groupId: d.groupId,
+          entries: [],
+        });
+      }
+      if (d.command === 'collectionRunProgress') {
+        setRunState((prev) => {
+          if (!prev) return prev;
+          const entries = [...prev.entries];
+          const idx = entries.findIndex((e) => e.requestId === d.entry?.requestId);
+          if (idx >= 0) entries[idx] = d.entry;
+          else entries.push(d.entry);
+          return { ...prev, entries };
+        });
+      }
+      if (d.command === 'collectionRunComplete') {
+        setRunState((prev) => ({
+          running: false,
+          total: prev?.total ?? d.results?.length ?? 0,
+          collectionId: d.collectionId,
+          groupId: d.groupId,
+          entries: (d.results ?? prev?.entries ?? []) as RunEntry[],
+          cancelled: !!d.cancelled,
+          error: d.error,
+        }));
       }
     };
     window.addEventListener('message', handler);
@@ -731,8 +800,13 @@ export const Sidebar: React.FC = () => {
             }
           }}
           triggerNew={triggerNewCollection}
-          onTriggerNewDone={() => setTriggerNewCollection(false)} />
+          onTriggerNewDone={() => setTriggerNewCollection(false)}
+          onRunCollection={(id) => { post({ command: 'runCollection', collectionId: id }); setRunState(null); }}
+          onRunGroup={(id, gid) => { post({ command: 'runCollection', collectionId: id, groupId: gid }); setRunState(null); }} />
       )}
+      <RunnerResultsModal runState={runState}
+        onCancel={() => post({ command: 'cancelCollectionRun' })}
+        onClose={() => setRunState(null)} />
     </Container>
   );
 };
@@ -860,6 +934,8 @@ interface CollectionsPanelProps {
   onRenameGroup(collectionId: string, groupId: string, name: string): void;
   onDeleteGroupRequest(collectionId: string, groupId: string, requestId: string): void;
   onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null, fromCollectionId?: string): void;
+  onRunCollection(collectionId: string): void;
+  onRunGroup(collectionId: string, groupId: string): void;
   triggerNew?: boolean;
   onTriggerNewDone?(): void;
 }
@@ -921,12 +997,13 @@ interface GroupTreeProps {
   onDeleteGroup(groupId: string, groupName: string): void;
   onRenameGroup(groupId: string, name: string): void;
   onMoveRequestToGroup(requestId: string, fromGroupId: string | null, toGroupId: string, fromCollectionId?: string): void;
+  onRunGroup(groupId: string): void;
 }
 const GroupTree: React.FC<GroupTreeProps> = ({
   group, collectionId, collectionName, depth, search, expansionStates,
   editingRequest, dragRef, onToggle, onLoad, onDeleteRequest, onCopyRequest,
   onStartRenameRequest, onCommitRenameRequest, onCancelRenameRequest,
-  onSaveGroup, onDeleteGroup, onRenameGroup, onMoveRequestToGroup
+  onSaveGroup, onDeleteGroup, onRenameGroup, onMoveRequestToGroup, onRunGroup
 }) => {
   const [renamingGroup, setRenamingGroup] = useState(false);
   const [renameVal, setRenameVal] = useState(group.name);
@@ -1021,6 +1098,10 @@ const GroupTree: React.FC<GroupTreeProps> = ({
             </GroupName>
         }
         <CollectionCount>{reqs.length}</CollectionCount>
+        <RunBtn title="Run folder" data-testid="run-group-btn"
+          onClick={e => { e.stopPropagation(); onRunGroup(group.id); }}>
+          <Icon icon={faPlay} size={10} />
+        </RunBtn>
         <AddGroupBtn title="New sub-folder"
           onClick={e => { e.stopPropagation(); setShowNewSubGroup(true); onToggle(group.id, true); }}>
           <Icon icon={faFolderPlus} size={11} />
@@ -1048,7 +1129,8 @@ const GroupTree: React.FC<GroupTreeProps> = ({
               onSaveGroup={(g, pId) => onSaveGroup(g, pId ?? sg.id)}
               onDeleteGroup={onDeleteGroup}
               onRenameGroup={onRenameGroup}
-              onMoveRequestToGroup={onMoveRequestToGroup} />
+              onMoveRequestToGroup={onMoveRequestToGroup}
+              onRunGroup={onRunGroup} />
           ))}
           {showNewSubGroup && (
             <NewGroupInline>
@@ -1084,7 +1166,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   onCopyRequest, onMoveRequest: _onMoveRequest, onReorderRequest: _onReorderRequest,   onRenameCollection, onRenameRequest,
   onExportAllCollections, onExportCollection, onImport,
   onSaveGroup, onDeleteGroup, onRenameGroup, onDeleteGroupRequest, onMoveRequestToGroup,
-  triggerNew, onTriggerNewDone
+  onRunCollection, onRunGroup, triggerNew, onTriggerNewDone
 }) => {
   const [showNew, setShowNew] = useState(false);
   useEffect(() => { if (triggerNew) { setShowNew(true); onTriggerNewDone?.(); } }, [triggerNew, onTriggerNewDone]);
@@ -1178,6 +1260,10 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                       </CollectionName>
                   }
                   <CollectionCount>{totalCount}</CollectionCount>
+                  <RunBtn title="Run collection" data-testid="run-collection-btn"
+                    onClick={e => { e.stopPropagation(); onRunCollection(col.id); }}>
+                    <Icon icon={faPlay} size={11} />
+                  </RunBtn>
                   <AddGroupBtn title="New folder"
                     onClick={e => { e.stopPropagation(); setShowNewGroupFor(col.id); setNewGroupName(''); onToggle(col.id, true); }}>
                     <Icon icon={faFolderPlus} size={12} />
@@ -1241,6 +1327,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                           onMoveRequestToGroup(col.id, rid, fromGid, toGid);
                         }
                       }}
+                      onRunGroup={gid => onRunGroup(col.id, gid)}
                     />
                   ))}
                   {showNewGroupFor === col.id && (
@@ -1298,4 +1385,177 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
       </ModalOverlay>
     )}
   </>);
+};
+
+/* ─── Collection runner results ──────────────────────────── */
+const RunModalOverlay = styled(ModalOverlay)``;
+
+const RunModalBox = styled.div`
+  background: ${({ theme }) => theme.bg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  padding: 16px;
+  width: 92%;
+  max-width: 560px;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 48px ${({ theme }) => theme.shadowMd};
+`;
+
+const RunHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+
+  h3 {
+    font-size: 13px;
+    color: ${({ theme }) => theme.fg};
+    flex: 1;
+    margin: 0;
+  }
+`;
+
+const RunSpinner = styled.span`
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, ${({ theme }) => theme.accent} 30%, transparent);
+  border-top-color: ${({ theme }) => theme.accent};
+  animation: rspin 0.8s linear infinite;
+
+  @keyframes rspin {
+    to { transform: rotate(360deg); }
+  }
+`;
+
+const RunSummary = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  padding: 8px 10px;
+  background: ${({ theme }) => theme.hover};
+  border-radius: 6px;
+  margin-bottom: 10px;
+
+  strong {
+    color: ${({ theme }) => theme.fg};
+    font-weight: 600;
+  }
+`;
+
+const RunList = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 120px;
+`;
+
+const RunRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: ${({ theme }) => theme.hover};
+`;
+
+const RunName = styled.div`
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: ${({ theme }) => theme.fg};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const RunMeta = styled.span`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  white-space: nowrap;
+`;
+
+const statusColor = (s: number | undefined): string => {
+  if (s === undefined) return 'var(--muted)';
+  if (s >= 200 && s < 300) return 'var(--green, #4ec9b0)';
+  if (s >= 300 && s < 400) return 'var(--blue, #569cd6)';
+  if (s >= 400 && s < 500) return 'var(--orange, #ce9178)';
+  if (s >= 500) return 'var(--red, #f14c4c)';
+  return 'var(--muted)';
+};
+
+const RunnerResultsModal: React.FC<{
+  runState: RunState | null;
+  onCancel(): void;
+  onClose(): void;
+}> = ({ runState, onCancel, onClose }) => {
+  const entries = runState?.entries ?? [];
+  const passedTests = entries.reduce((n, e) => n + (e.testSummary?.passed ?? 0), 0);
+  const failedTests = entries.reduce((n, e) => n + (e.testSummary?.failed ?? 0), 0);
+  const totalDuration = entries.reduce((n, e) => n + e.duration, 0);
+  const done = entries.filter(e => !e.cancelled && e.status !== undefined).length;
+  const failedReqs = entries.filter(e => !e.cancelled && (e.status >= 400 || e.error)).length;
+
+  return (
+    <RunModalOverlay $open={!!runState} onClick={onClose}>
+      <RunModalBox data-testid="runner-modal" onClick={e => e.stopPropagation()}>
+        <RunHeader>
+          {runState?.running && <RunSpinner />}
+          <h3>{runState?.running ? 'Running…' : 'Collection run'}</h3>
+          {!runState?.running && (
+            <IconButton data-testid="runner-close-btn" title="Close" onClick={onClose}><Icon icon={faXmark} size={14} /></IconButton>
+          )}
+        </RunHeader>
+        <RunSummary data-testid="runner-summary">
+          <span><strong>{runState?.running ? entries.length : done}</strong> / {runState?.total ?? 0} requests</span>
+          {done > 0 && <span>{done - failedReqs} passed</span>}
+          {failedReqs > 0 && <span><strong style={{ color: 'var(--red, #f14c4c)' }}>{failedReqs} failed</strong></span>}
+          {(passedTests || failedTests) > 0 && (
+            <span>tests {passedTests} <strong style={{ color: 'var(--red, #f14c4c)' }}>{failedTests}</strong></span>
+          )}
+          {totalDuration > 0 && <span>{Math.round(totalDuration)}ms</span>}
+          {runState?.cancelled && <span><strong>Cancelled</strong></span>}
+          {runState?.error && <span title={runState.error}><strong style={{ color: 'var(--red, #f14c4c)' }}>Error: {runState.error}</strong></span>}
+        </RunSummary>
+        <RunList>
+          {entries.length === 0 && (
+            <RunRow><RunName style={{ color: 'var(--muted)' }}>{runState?.running ? 'Running…' : 'No requests'}</RunName></RunRow>
+          )}
+          {entries.map((e) => (
+            <RunRow key={e.requestId} title={e.url || e.name}>
+              <MethodBadge $method={e.method}>{METHOD_SHORT[e.method] || e.method}</MethodBadge>
+              <RunName>{e.name || e.url || 'Untitled'}</RunName>
+              {e.error
+                ? <RunMeta style={{ color: 'var(--red, #f14c4c)' }} title={e.error}>{e.cancelled ? 'cancelled' : 'error'}</RunMeta>
+                : <RunMeta style={{ color: statusColor(e.status) }}>{e.status}{e.statusText ? ' ' + e.statusText : ''}</RunMeta>}
+              {e.testSummary && (e.testSummary.passed > 0 || e.testSummary.failed > 0) && (
+                <RunMeta style={{ color: 'var(--muted)' }}>
+                  {e.testSummary.failed > 0
+                    ? <Icon icon={faCircleXmark} size={11} style={{ color: 'var(--red, #f14c4c)', marginRight: 2 }} />
+                    : <Icon icon={faCircleCheck} size={11} style={{ color: 'var(--green, #4ec9b0)', marginRight: 2 }} />}
+                  {e.testSummary.passed}/{e.testSummary.passed + e.testSummary.failed}
+                </RunMeta>
+              )}
+              {e.duration > 0 && <RunMeta>{Math.round(e.duration)}ms</RunMeta>}
+              {e.size > 0 && <RunMeta>{(e.size / 1024).toFixed(1)}KB</RunMeta>}
+            </RunRow>
+          ))}
+        </RunList>
+        <ModalActions style={{ marginTop: 10, justifyContent: 'flex-end' }}>
+          {runState?.running ? (
+            <PrimaryButton data-testid="runner-cancel-btn" onClick={onCancel}><Icon icon={faStop} size={11} style={{ marginRight: 4 }} />Cancel</PrimaryButton>
+          ) : (
+            <PrimaryButton data-testid="runner-done-close-btn" onClick={onClose}>Close</PrimaryButton>
+          )}
+        </ModalActions>
+      </RunModalBox>
+    </RunModalOverlay>
+  );
 };

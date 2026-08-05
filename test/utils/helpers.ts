@@ -1,5 +1,6 @@
 import type { Frame, Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import * as path from 'path';
 import {
   clickInFrame,
   waitForElement,
@@ -40,7 +41,7 @@ export async function startMockServer(): Promise<void> {
   log('  Starting mock server...');
   const { exec } = await import('child_process');
   _serverProcess = exec('node index.js', {
-    cwd: require('path').resolve(__dirname, '..', '..', 'server'),
+    cwd: path.resolve(__dirname, '..', '..', 'server'),
   });
   await new Promise((r) => setTimeout(r, 1500));
   log('  Mock server started');
@@ -284,7 +285,7 @@ export async function addHeader(
 
 export async function setAuthType(
   frame: Frame,
-  authType: 'none' | 'bearer' | 'basic' | 'apikey',
+  authType: 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2',
 ): Promise<void> {
   await clickRequestTab(frame, 'auth');
   await frame.waitForTimeout(500);
@@ -294,6 +295,7 @@ export async function setAuthType(
     bearer: 'Bearer Token',
     basic: 'Basic Auth',
     apikey: 'API Key',
+    oauth2: 'OAuth 2.0',
   };
   const searchLabel = labelMap[authType] || authType;
 
@@ -368,6 +370,14 @@ export async function fillBearerToken(
   await setAuthType(frame, 'bearer');
   await frame.waitForTimeout(500);
   await clickDisplayAndFill(frame, 0, token);
+}
+
+export async function fillAuthField(
+  frame: Frame,
+  displayIndex: number,
+  value: string,
+): Promise<void> {
+  await clickDisplayAndFill(frame, displayIndex, value);
 }
 
 export async function fillBasicAuth(
@@ -589,12 +599,19 @@ export async function selectCollectionDropdown(
 ): Promise<void> {
   // Click the first custom dropdown trigger (collection)
   const trigger = frame.locator('button[aria-haspopup="listbox"]').first();
-  await trigger.click();
+  await trigger.scrollIntoViewIfNeeded();
+  await trigger.evaluate((el) => {
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientX: 5, clientY: 5 }));
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  });
   await frame.waitForTimeout(300);
 
   const option = frame.locator('li[role="option"]').filter({ hasText: label });
   if (await option.count() > 0) {
-    await option.first().click();
+    await option.first().evaluate((el) => {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+    });
     await frame.waitForTimeout(300);
   }
 }

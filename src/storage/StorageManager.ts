@@ -2,12 +2,20 @@ import * as vscode from "vscode";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
-import { resolveDynamicVariables } from "../core";
+import { resolveDynamicVariables, resolveResponseVariables } from "../core";
+import type { OAuth2Token, ResponseVarsContext } from "../core";
+
+export interface EnvVariable {
+  key: string;
+  value: string;
+  timestamp?: number; // timestamp for script variables
+  isSecret?: boolean; // true → value stored in SecretStorage, not globalState
+}
 
 export interface Environment {
   id: string;
   name: string;
-  variables: { key: string; value: string; timestamp?: number }[]; // timestamp for script variables
+  variables: EnvVariable[];
 }
 
 export interface HistoryEntry {
@@ -73,11 +81,15 @@ export class StorageManager {
   private BODY_INLINE_LIMIT = 4 * 1024; // keep bodies inline if <= 4KB
   private readonly DEFAULT_GLOBAL_ENV_ID = "global-environment";
   private readonly DEFAULT_GLOBAL_ENV_NAME = "Global";
+  private readonly SECRET_KEY_PREFIX = "restify.env";
+  private secretCache = new Map<string, string>();
+  private lastResponse: ResponseVarsContext | undefined;
 
   // storageDir: optional file-system directory to persist history to a file
   constructor(
     private globalState: vscode.Memento,
     private storageDir?: string,
+    private secretStorage?: vscode.SecretStorage,
   ) {
     this.expansionStates = this.getExpansionStates();
 
@@ -806,26 +818,120 @@ export class StorageManager {
     this.notifyChange();
   }
 
-  saveEnvironment(env: Environment): void {
+  // ─── Secrets (SecretStorage) ──────────────────────────────
+  private _secretKey(envId: string, varKey: string): string {
+    return `${this.SECRET_KEY_PREFIX}.${encodeURIComponent(envId)}.var.${encodeURIComponent(varKey)}`;
+  }
+
+  /**
+   * Load all secret values from SecretStorage into the in-memory cache so
+   * variable resolution can stay synchronous. Call once after construction.
+   */
+  async hydrateSecrets(): Promise<void> {
+    if (!this.secretStorage) return;
+    for (const env of this.getEnvironments()) {
+      for (const v of env.variables || []) {
+        if (v.isSecret && v.key) {
+          try {
+            const value = await this.secretStorage.get(this._secretKey(env.id, v.key));
+            if (value !== undefined) {
+              this.secretCache.set(this._secretKey(env.id, v.key), value);
+            }
+          } catch {
+            /* ignore individual secret read failures */
+          }
+        }
+      }
+    }
+  }
+
+  /** Resolve a secret value from the cache (falls back to SecretStorage). */
+  async getSecretValue(envId: string, varKey: string): Promise<string | undefined> {
+    const key = this._secretKey(envId, varKey);
+    const cached = this.secretCache.get(key);
+    if (cached !== undefined) return cached;
+    if (!this.secretStorage) return undefined;
+    try {
+      const value = await this.secretStorage.get(key);
+      if (value !== undefined) this.secretCache.set(key, value);
+      return value;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async saveEnvironment(env: Environment): Promise<void> {
     const environments = this.getEnvironments();
     const idx = environments.findIndex((e) => e.id === env.id);
+    const envId = idx >= 0 ? environments[idx].id : env.id || this.createId("environment");
+
+    // Track previously-secret keys so removed/un-toggled secrets are cleaned up.
+    const oldVars = idx >= 0 ? environments[idx].variables || [] : [];
+
+    const cleanVars: EnvVariable[] = [];
+    for (const v of env.variables ?? []) {
+      const entry = { ...v };
+      if (entry.isSecret) {
+        if (entry.value && entry.key) {
+          if (this.secretStorage) {
+            try {
+              await this.secretStorage.store(this._secretKey(envId, entry.key), entry.value);
+            } catch (e) {
+              console.error("Failed to store secret variable", e);
+            }
+          }
+          this.secretCache.set(this._secretKey(envId, entry.key), entry.value);
+        }
+        // Never persist the plaintext secret to globalState.
+        entry.value = "";
+        cleanVars.push(entry);
+      } else {
+        if (entry.key) {
+          try {
+            if (this.secretStorage) await this.secretStorage.delete(this._secretKey(envId, entry.key));
+          } catch { /* ignore */ }
+          this.secretCache.delete(this._secretKey(envId, entry.key));
+        }
+        cleanVars.push(entry);
+      }
+    }
+
+    // Clean up secrets that no longer exist in the environment.
+    const keptSecretKeys = new Set(cleanVars.filter((v) => v.isSecret && v.key).map((v) => v.key));
+    for (const old of oldVars) {
+      if (old.isSecret && old.key && !keptSecretKeys.has(old.key)) {
+        try {
+          if (this.secretStorage) await this.secretStorage.delete(this._secretKey(envId, old.key));
+        } catch { /* ignore */ }
+        this.secretCache.delete(this._secretKey(envId, old.key));
+      }
+    }
+
+    const saved: Environment = { ...env, id: envId, variables: cleanVars };
     if (idx >= 0) {
-      environments[idx] = env;
+      environments[idx] = saved;
     } else {
-      const newEnv: Environment = {
-        ...env,
-        id: env.id || this.createId("environment"),
-        variables: env.variables ?? [],
-      };
-      environments.push(newEnv);
+      environments.push(saved);
     }
     this.globalState.update("restify.environments", environments);
     this.notifyChange();
   }
 
-  deleteEnvironment(id: string): void {
+  async deleteEnvironment(id: string): Promise<void> {
     if (id === this.DEFAULT_GLOBAL_ENV_ID) {
       return;
+    }
+
+    const env = this.getEnvironments().find((e) => e.id === id);
+    if (env) {
+      for (const v of env.variables || []) {
+        if (v.isSecret && v.key) {
+          try {
+            if (this.secretStorage) await this.secretStorage.delete(this._secretKey(id, v.key));
+          } catch { /* ignore */ }
+          this.secretCache.delete(this._secretKey(id, v.key));
+        }
+      }
     }
 
     const environments = this.getEnvironments().filter((e) => e.id !== id);
@@ -850,19 +956,80 @@ export class StorageManager {
     return this.globalState.get("restify.expansionStates", {});
   }
 
+  // ─── OAuth 2.0 token cache ─────────────────────────────────
+  private readonly oauthCachePrefix = "restify.oauth2.token.";
+
+  getOAuthTokenCache(key: string): OAuth2Token | undefined {
+    try {
+      return this.globalState.get<OAuth2Token>(this.oauthCachePrefix + key);
+    } catch {
+      return undefined;
+    }
+  }
+
+  setOAuthTokenCache(key: string, token: OAuth2Token): void {
+    try {
+      this.globalState.update(this.oauthCachePrefix + key, token);
+    } catch {
+      /* ignore persistence failures */
+    }
+  }
+
   // ─── Variable resolution ──────────────────────────────────
   resolveVariables(text: string): string {
     let resolved = text;
     const activeEnv = this.getActiveEnvironment();
     if (activeEnv && activeEnv.variables) {
       for (const v of activeEnv.variables) {
+        if (!v.key) continue;
+        const value = v.isSecret
+          ? (this.secretCache.get(this._secretKey(activeEnv.id, v.key)) ?? "")
+          : v.value;
         resolved = resolved.replace(
           new RegExp(`\\{\\{${v.key}\\}\\}`, "g"),
-          v.value,
+          value,
         );
       }
     }
-    return resolveDynamicVariables(resolved);
+    resolved = resolveDynamicVariables(resolved);
+    return resolveResponseVariables(resolved, this.lastResponse);
+  }
+
+  // ─── Request chaining (last response) ─────────────────────
+  /** Store the last response so `{{response.*}}` tokens resolve in later requests. */
+  setLastResponse(response: {
+    status?: number;
+    statusText?: string;
+    headers?: Record<string, string | string[] | undefined>;
+    body?: string;
+  }): void {
+    this.lastResponse = {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers || undefined,
+      body: response.body || undefined,
+    };
+  }
+
+  getLastResponse(): ResponseVarsContext | undefined {
+    return this.lastResponse;
+  }
+
+  /**
+   * Return a resolved name → value map of the active environment's variables,
+   * including secret values from the secret cache (never persisted to state).
+   */
+  getActiveEnvironmentVariables(): Record<string, string> {
+    const activeEnv = this.getActiveEnvironment();
+    const result: Record<string, string> = {};
+    if (!activeEnv) return result;
+    for (const v of activeEnv.variables || []) {
+      if (!v.key) continue;
+      result[v.key] = v.isSecret
+        ? (this.secretCache.get(this._secretKey(activeEnv.id, v.key)) ?? "")
+        : v.value;
+    }
+    return result;
   }
 
   // ─── Cookies (cookie jar) ─────────────────────────────────

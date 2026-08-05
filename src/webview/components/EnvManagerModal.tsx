@@ -2,7 +2,15 @@ import React, { useState } from 'react';
 import styled, { css } from 'styled-components';
 import { Environment } from '../types';
 import { Icon } from './FaIcon';
-import { faXmark, faPen, faTrash } from '@fortawesome/free-solid-svg-icons';
+import {
+  faXmark,
+  faPen,
+  faTrash,
+  faLock,
+  faLockOpen,
+  faEye,
+  faEyeSlash,
+} from '@fortawesome/free-solid-svg-icons';
 
 interface EnvManagerModalProps {
   open: boolean;
@@ -13,6 +21,7 @@ interface EnvManagerModalProps {
   onSetActive: (id: string | null) => void;
   onSave: (env: Environment) => void;
   onDelete: (id: string) => void;
+  onRevealSecret?: (envId: string, varKey: string) => Promise<string | undefined>;
 }
 
 const Overlay = styled.div<{ $open: boolean }>`
@@ -278,7 +287,7 @@ const VarsTable = styled.table`
   }
 
   td:last-child {
-    width: 28px;
+    width: 52px;
     text-align: center;
   }
 `;
@@ -302,6 +311,29 @@ const VarInput = styled.input`
   &::placeholder {
     color: ${({ theme }) => theme.muted};
     opacity: 0.6;
+  }
+`;
+
+const ValueWrap = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+`;
+
+const RevealBtn = styled.button`
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.muted};
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 3px;
+  line-height: 1;
+  flex-shrink: 0;
+
+  &:hover {
+    color: ${({ theme }) => theme.fg};
+    background: ${({ theme }) => theme.hover};
   }
 `;
 
@@ -333,10 +365,13 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
   onSetActive,
   onSave,
   onDelete,
+  onRevealSecret,
 }) => {
   const [editingEnv, setEditingEnv] = useState<Environment | null>(null);
+  const [revealedVals, setRevealedVals] = useState<Record<number, string>>({});
 
   React.useEffect(() => {
+    setRevealedVals({});
     if (open && initialEditingEnv) {
       setEditingEnv({ ...initialEditingEnv });
     } else if (open && !initialEditingEnv) {
@@ -355,6 +390,13 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
       idx === i ? { ...v, [field]: val } : v
     );
     setEditingEnv({ ...editingEnv, variables: vars });
+    if (field === 'value') {
+      setRevealedVals((r) => {
+        const next = { ...r };
+        delete next[i];
+        return next;
+      });
+    }
   };
 
   const addVar = () => {
@@ -371,12 +413,40 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
       ...editingEnv,
       variables: editingEnv.variables.filter((_, idx) => idx !== i),
     });
+    setRevealedVals((r) => {
+      const next = { ...r };
+      delete next[i];
+      return next;
+    });
+  };
+
+  const toggleSecret = (i: number) => {
+    if (!editingEnv) return;
+    const vars = editingEnv.variables.map((v, idx) =>
+      idx === i ? { ...v, isSecret: !v.isSecret } : v
+    );
+    setEditingEnv({ ...editingEnv, variables: vars });
+    setRevealedVals((r) => {
+      const next = { ...r };
+      delete next[i];
+      return next;
+    });
+  };
+
+  const revealSecret = async (i: number) => {
+    if (!editingEnv) return;
+    const v = editingEnv.variables[i];
+    if (!v?.key) return;
+    if (!onRevealSecret || !editingEnv.id) return;
+    const value = await onRevealSecret(editingEnv.id, v.key);
+    setRevealedVals((r) => ({ ...r, [i]: value ?? '' }));
   };
 
   const handleSave = () => {
     if (!editingEnv || !editingEnv.name.trim()) return;
     onSave(editingEnv);
     setEditingEnv(null);
+    setRevealedVals({});
   };
 
   const handleOverlayClick = () => {
@@ -422,36 +492,70 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {editingEnv.variables.map((v, i) => (
-                    <tr key={i}>
-                      <td>
-                        <VarInput
-                          placeholder="key"
-                          value={v.key}
-                          data-testid="env-var-key"
-                          onChange={(e) => updateVar(i, 'key', e.target.value)}
-                        />
-                      </td>
-                      <td>
-                        <VarInput
-                          placeholder="value"
-                          value={v.value}
-                          data-testid="env-var-value"
-                          onChange={(e) =>
-                            updateVar(i, 'value', e.target.value)
-                          }
-                        />
-                      </td>
-                      <td>
-                        <IconBtn
-                          onClick={() => removeVar(i)}
-                          title="Remove variable"
-                        >
-                          <Icon icon={faTrash} size={12} />
-                        </IconBtn>
-                      </td>
-                    </tr>
-                  ))}
+                  {editingEnv.variables.map((v, i) => {
+                    const isSecret = v.isSecret;
+                    const revealedVal = revealedVals[i];
+                    const showMasked =
+                      isSecret && v.value === '' && revealedVal === undefined;
+                    return (
+                      <tr key={i}>
+                        <td>
+                          <VarInput
+                            placeholder="key"
+                            value={v.key}
+                            data-testid="env-var-key"
+                            onChange={(e) => updateVar(i, 'key', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <ValueWrap>
+                            <VarInput
+                              placeholder={isSecret ? '••••••••' : 'value'}
+                              type={isSecret && showMasked ? 'password' : 'text'}
+                              value={isSecret ? (revealedVal ?? v.value) : v.value}
+                              data-testid="env-var-value"
+                              onChange={(e) =>
+                                updateVar(i, 'value', e.target.value)
+                              }
+                            />
+                            {isSecret && (
+                              <RevealBtn
+                                type="button"
+                                title={showMasked ? 'Reveal secret' : 'Hide secret'}
+                                data-testid={`env-secret-reveal-${i}`}
+                                onClick={() => {
+                                  if (showMasked) revealSecret(i);
+                                  else setRevealedVals((r) => {
+                                    const next = { ...r };
+                                    delete next[i];
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <Icon icon={showMasked ? faEye : faEyeSlash} size={11} />
+                              </RevealBtn>
+                            )}
+                          </ValueWrap>
+                        </td>
+                        <td>
+                          <IconBtn
+                            title={isSecret ? 'Secret variable (stored encrypted)' : 'Mark as secret'}
+                            onClick={() => toggleSecret(i)}
+                            data-testid={`env-secret-toggle-${i}`}
+                            style={isSecret ? { color: 'var(--info)' } : undefined}
+                          >
+                            <Icon icon={isSecret ? faLock : faLockOpen} size={12} />
+                          </IconBtn>
+                          <IconBtn
+                            onClick={() => removeVar(i)}
+                            title="Remove variable"
+                          >
+                            <Icon icon={faTrash} size={12} />
+                          </IconBtn>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </VarsTable>
             </VarsScroll>

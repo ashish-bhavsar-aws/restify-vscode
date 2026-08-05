@@ -21,6 +21,7 @@ import {
   Environment,
   Collection,
   SettingsState,
+  OAuth2ConfigPayload,
 } from "./types";
 import {
   isDynamicVariableToken,
@@ -211,6 +212,12 @@ export const MainPanel: React.FC = () => {
   const [codeGenOpen, setCodeGenOpen] = useState(false);
   const [codeGenEnabled, setCodeGenEnabled] = useState(false);
   const [varsHelpOpen, setVarsHelpOpen] = useState(false);
+  const [responseVarsTokens, setResponseVarsTokens] = useState<string[]>([]);
+  const [oauthFetching, setOauthFetching] = useState(false);
+  const [oauthStatus, setOauthStatus] = useState<{
+    state: 'success' | 'error' | 'none';
+    text?: string;
+  }>({ state: 'none' });
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [themeKind, setThemeKind] = useState<number>(2);
   const [savedCollectionName, setSavedCollectionName] = useState<string | null>(
@@ -225,6 +232,7 @@ export const MainPanel: React.FC = () => {
   const savedCollectionNameRef = useRef<string | null>(null);
   const savedGroupIdRef = useRef<string | undefined>(undefined);
   const activeEnvIdRef = useRef<string | null>(null);
+  const pendingSecretResolves = useRef(new Map<string, (value: string) => void>());
 
   /* ── VS Code API bootstrap ───────────────────────── */
   useEffect(() => {
@@ -268,6 +276,14 @@ export const MainPanel: React.FC = () => {
           setEnvironments(msg.environments ?? []);
           setActiveEnvId(msg.activeEnvId ?? null);
           break;
+        case "envSecretValue": {
+          const resolve = pendingSecretResolves.current.get(msg.id);
+          if (resolve) {
+            resolve(msg.value ?? "");
+            pendingSecretResolves.current.delete(msg.id);
+          }
+          break;
+        }
         case "collections":
           setCollections(msg.data ?? []);
           break;
@@ -280,6 +296,36 @@ export const MainPanel: React.FC = () => {
           setResponse(null);
           setRequestInfo({
             networkLogs: [],
+          });
+          break;
+        case "responseVarsUpdated":
+          setResponseVarsTokens(msg.tokens ?? []);
+          break;
+        case "oauthTokenResult":
+          setOauthFetching(false);
+          if (msg.error) {
+            setOauthStatus({ state: "error", text: msg.error });
+            break;
+          }
+          setRequest((prev: RequestState) => ({
+            ...prev,
+            authData: {
+              ...prev.authData,
+              accessToken: msg.accessToken,
+              refreshToken: msg.refreshToken ?? prev.authData.refreshToken,
+              tokenExpiresAt: msg.expiresAt ?? prev.authData.tokenExpiresAt,
+              tokenType: msg.tokenType ?? prev.authData.tokenType,
+              tokenScope: msg.scope ?? prev.authData.tokenScope,
+            },
+          }));
+          setOauthStatus({
+            state: "success",
+            text:
+              msg.source === "cache"
+                ? "Using cached access token"
+                : msg.source === "refresh"
+                  ? "Access token refreshed"
+                  : "Access token obtained",
           });
           break;
         case "requestComplete":
@@ -417,6 +463,12 @@ export const MainPanel: React.FC = () => {
       };
       if (request.authData.addTo === "query") queryParams.push(kv);
       else headers.push(kv);
+    } else if (request.authType === "oauth2" && request.authData.accessToken) {
+      headers.push({
+        key: "Authorization",
+        value: `Bearer ${request.authData.accessToken}`,
+        enabled: true,
+      });
     }
 
     return { ...request, headers, queryParams };
@@ -432,6 +484,13 @@ export const MainPanel: React.FC = () => {
       savedRequest: request,
     });
   }, [buildPayload, request]);
+
+  // Ask the extension host to run an OAuth 2.0 flow and cache the token
+  const handleGetOAuthToken = useCallback((config: OAuth2ConfigPayload) => {
+    setOauthFetching(true);
+    setOauthStatus({ state: 'none' });
+    post({ command: "getOAuthToken", config });
+  }, []);
 
   // Normal send handler
   const handleSendGuarded = handleSend;
@@ -561,6 +620,16 @@ export const MainPanel: React.FC = () => {
   const handleDeleteEnvironment = (id: string) => {
     post({ command: "deleteEnvironment", id });
   };
+
+  const handleRevealSecret = useCallback(
+    (envId: string, varKey: string) =>
+      new Promise<string | undefined>((resolve) => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        pendingSecretResolves.current.set(id, resolve);
+        post({ command: "getEnvSecretValue", id, envId, varKey });
+      }),
+    []
+  );
 
   const handleSaveSettings = (newSettings: SettingsState) => {
     setSettings(newSettings);
@@ -753,6 +822,9 @@ export const MainPanel: React.FC = () => {
             onUpdate={updateRequest}
             themeKind={themeKind}
             environment={activeEnvironment}
+            oauthFetching={oauthFetching}
+            oauthStatus={oauthStatus}
+            onGetOAuthToken={handleGetOAuthToken}
           />
           <Resizer />
           <ResponsePane
@@ -761,6 +833,7 @@ export const MainPanel: React.FC = () => {
             request={requestInfo}
             onDownloadFile={handleDownloadFile}
             post={post}
+            responseVarsTokens={responseVarsTokens}
           />
         </SplitPane>
       </MainArea>
@@ -799,6 +872,7 @@ export const MainPanel: React.FC = () => {
         }}
         onSave={handleSaveEnvironment}
         onDelete={handleDeleteEnvironment}
+        onRevealSecret={handleRevealSecret}
       />
 
       <CodeGenModal

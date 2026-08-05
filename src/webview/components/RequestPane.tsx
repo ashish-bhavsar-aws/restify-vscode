@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
-import { KVItem, FormDataItem, RequestState, Environment } from '../types';
+import { KVItem, FormDataItem, RequestState, Environment, OAuth2ConfigPayload } from '../types';
 import { KeyValueTable } from './KeyValueTable';
 import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
@@ -13,6 +13,9 @@ interface RequestPaneProps {
   onUpdate: (updates: Partial<RequestState>) => void;
   themeKind?: number;
   environment?: Environment | null;
+  oauthFetching?: boolean;
+  oauthStatus?: { state: 'success' | 'error' | 'none'; text?: string };
+  onGetOAuthToken?: (config: OAuth2ConfigPayload) => void;
 }
 
 type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth';
@@ -514,6 +517,94 @@ const PasswordToggleBtn = styled.button`
   line-height: 1;
 `;
 
+/* ─── OAuth 2.0 ─────────────────────────────────── */
+
+const OAuthHint = styled.p`
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const OAuthStatus = styled.div<{ $state?: 'success' | 'error' }>`
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 11px;
+  line-height: 1.4;
+  color: ${({ theme, $state }) =>
+    $state === 'success' ? '#2ea043' : $state === 'error' ? '#f85149' : theme.muted};
+  background: ${({ theme, $state }) =>
+    $state
+      ? `color-mix(in srgb, ${$state === 'success' ? '#2ea043' : '#f85149'} 10%, transparent)`
+      : theme.surface2};
+  border: 1px solid ${({ theme }) => theme.border};
+  word-break: break-word;
+`;
+
+const OAuthGetTokenBtn = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  width: 100%;
+  padding: 7px 12px;
+  background: ${({ theme }) => theme.accent};
+  color: #fff;
+  border: none;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+`;
+
+const OAuthSpin = styled.span`
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
+const OAuthTokenRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+`;
+
+const OAuthResetBtn = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.accent};
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
 /* ─── Auth Type Dropdown ─────────────────────────── */
 
 const AuthTypeWrap = styled.div`
@@ -694,6 +785,7 @@ const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
   { value: 'bearer', label: 'Bearer Token' },
   { value: 'basic', label: 'Basic Auth' },
   { value: 'apikey', label: 'API Key' },
+  { value: 'oauth2', label: 'OAuth 2.0' },
 ];
 
 const BODY_TYPES: BodyType[] = ['none', 'json', 'form', 'urlencoded', 'text', 'xml', 'graphql'];
@@ -870,7 +962,7 @@ const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType
 
 /* ─── RequestPane ────────────────────────────────── */
 
-export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment }) => {
+export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment, oauthFetching, oauthStatus, onGetOAuthToken }) => {
   const [activeTab, setActiveTab] = useState<ReqTab>('params');
 
   const activeParamCount = request.queryParams.filter((p) => p.key && p.enabled !== false).length;
@@ -1310,6 +1402,9 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               authType={request.authType}
               authData={request.authData}
               environment={environment}
+              oauthFetching={oauthFetching}
+              oauthStatus={oauthStatus}
+              onGetOAuthToken={onGetOAuthToken}
               onAuthTypeChange={(authType) => onUpdate({ authType })}
               onAuthDataChange={(authData) => onUpdate({ authData: { ...request.authData, ...authData } })}
             />
@@ -1326,12 +1421,98 @@ interface AuthPanelProps {
   authType: AuthType;
   authData: RequestState['authData'];
   environment?: Environment | null;
+  oauthFetching?: boolean;
+  oauthStatus?: { state: 'success' | 'error' | 'none'; text?: string };
+  onGetOAuthToken?: (config: OAuth2ConfigPayload) => void;
   onAuthTypeChange: (type: AuthType) => void;
   onAuthDataChange: (data: Partial<RequestState['authData']>) => void;
 }
 
-const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, onAuthTypeChange, onAuthDataChange }) => {
+const OAUTH2_GRANT_TYPES: Array<{ value: NonNullable<RequestState['authData']['oauth2GrantType']>; label: string }> = [
+  { value: 'authorization_code', label: 'Authorization Code' },
+  { value: 'client_credentials', label: 'Client Credentials' },
+  { value: 'password', label: 'Password' },
+];
+
+type OAuth2GrantType = NonNullable<RequestState['authData']['oauth2GrantType']>;
+
+/* ─── OAuthGrantDropdown ─────────────────────────── */
+
+const OAuthGrantDropdown: React.FC<{ value: OAuth2GrantType; onChange: (v: OAuth2GrantType) => void }> = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const label = OAUTH2_GRANT_TYPES.find((t) => t.value === value)?.label || 'Authorization Code';
+
+  return (
+    <AuthTypeWrap ref={ref} style={{ marginBottom: 4 }}>
+      <AuthTypeTriggerBtn type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <AuthTypeTriggerLabel>{label}</AuthTypeTriggerLabel>
+        <AuthTypeChevron $open={open} viewBox="0 0 10 6" width="10" height="6">
+          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </AuthTypeChevron>
+      </AuthTypeTriggerBtn>
+      {open && (
+        <AuthTypeMenu role="listbox">
+          {OAUTH2_GRANT_TYPES.map((t) => (
+            <AuthTypeOption
+              key={t.value}
+              role="option"
+              aria-selected={t.value === value}
+              $selected={t.value === value}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(t.value);
+                setOpen(false);
+              }}
+            >
+              <AuthTypeOptLabel>{t.label}</AuthTypeOptLabel>
+            </AuthTypeOption>
+          ))}
+        </AuthTypeMenu>
+      )}
+    </AuthTypeWrap>
+  );
+};
+
+const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, oauthFetching, oauthStatus, onGetOAuthToken, onAuthTypeChange, onAuthDataChange }) => {
   const [showPassword, setShowPassword] = useState(false);
+  const [showClientSecret, setShowClientSecret] = useState(false);
+  const [showOauthPassword, setShowOauthPassword] = useState(false);
+
+  const buildOAuth2Config = (): OAuth2ConfigPayload => ({
+    grantType: authData.oauth2GrantType || 'authorization_code',
+    authUrl: authData.oauth2AuthUrl,
+    tokenUrl: authData.oauth2TokenUrl || '',
+    clientId: authData.oauth2ClientId || '',
+    clientSecret: authData.oauth2ClientSecret,
+    scopes: authData.oauth2Scopes,
+    username: authData.oauth2Username,
+    password: authData.oauth2Password,
+    redirectUrl: authData.oauth2RedirectUrl,
+    usePkce: authData.oauth2UsePkce !== false,
+    extraParams: authData.oauth2ExtraParams,
+  });
+
+  const oauthReady = !!(authData.oauth2TokenUrl && authData.oauth2ClientId);
+  const oauthGrant = authData.oauth2GrantType || 'authorization_code';
+
+  const expiryText = (expiresAt?: number): string | null => {
+    if (!expiresAt) return null;
+    if (Date.now() > expiresAt) return 'expired';
+    const mins = Math.round((expiresAt - Date.now()) / 60000);
+    if (mins < 60) return `expires in ${mins}m`;
+    return `expires in ${Math.round(mins / 60)}h`;
+  };
   return (
     <AuthPanelWrapper>
       <FieldLabel>Auth Type</FieldLabel>
@@ -1402,6 +1583,161 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, 
           </RelativeWrap>
           <FieldLabel style={{ marginTop: 8 }}>Add To</FieldLabel>
           <AddToDropdown value={authData.addTo || 'header'} onChange={(v) => onAuthDataChange({ addTo: v })} />
+        </AuthFieldsContainer>
+      )}
+
+      {authType === 'oauth2' && (
+        <AuthFieldsContainer>
+          <OAuthHint>
+            Configure the OAuth 2.0 provider and fetch an access token. The token is cached by the
+            extension and refreshed automatically when possible.
+          </OAuthHint>
+
+          <FieldLabel>Grant Type</FieldLabel>
+          <OAuthGrantDropdown value={oauthGrant} onChange={(v) => onAuthDataChange({ oauth2GrantType: v })} />
+
+          {oauthGrant === 'authorization_code' && (
+            <>
+              <FieldLabel style={{ marginTop: 8 }}>Authorization URL</FieldLabel>
+              <AuthInput
+                value={authData.oauth2AuthUrl || ''}
+                placeholder="https://provider.com/oauth/authorize"
+                onChange={(v) => onAuthDataChange({ oauth2AuthUrl: v })}
+                variables={environment?.variables}
+              />
+              <FieldLabel style={{ marginTop: 8 }}>Redirect URL (optional — auto-generated if empty)</FieldLabel>
+              <AuthInput
+                value={authData.oauth2RedirectUrl || ''}
+                placeholder="http://127.0.0.1:<port>/callback"
+                onChange={(v) => onAuthDataChange({ oauth2RedirectUrl: v })}
+                variables={environment?.variables}
+              />
+              <FieldLabel style={{ marginTop: 8 }}>Use PKCE</FieldLabel>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={authData.oauth2UsePkce !== false}
+                  onChange={(e) => onAuthDataChange({ oauth2UsePkce: e.target.checked })}
+                />
+                Send code challenge (S256)
+              </label>
+            </>
+          )}
+
+          <FieldLabel style={{ marginTop: 8 }}>Token URL</FieldLabel>
+          <AuthInput
+            value={authData.oauth2TokenUrl || ''}
+            placeholder="https://provider.com/oauth/token"
+            onChange={(v) => onAuthDataChange({ oauth2TokenUrl: v })}
+            variables={environment?.variables}
+          />
+
+          <FieldLabel style={{ marginTop: 8 }}>Client ID</FieldLabel>
+          <AuthInput
+            value={authData.oauth2ClientId || ''}
+            placeholder="client_id"
+            onChange={(v) => onAuthDataChange({ oauth2ClientId: v })}
+            variables={environment?.variables}
+          />
+
+          <FieldLabel style={{ marginTop: 8 }}>Client Secret</FieldLabel>
+          <RelativeWrap>
+            <AuthInput
+              value={authData.oauth2ClientSecret || ''}
+              placeholder="client_secret"
+              onChange={(v) => onAuthDataChange({ oauth2ClientSecret: v })}
+              variables={environment?.variables}
+              type={showClientSecret ? 'text' : 'password'}
+            />
+            <PasswordToggleBtn
+              type="button"
+              onClick={() => setShowClientSecret((v) => !v)}
+              title={showClientSecret ? 'Hide client secret' : 'Show client secret'}
+            >
+              <Icon icon={showClientSecret ? faEyeSlash : faEye} size={12} />
+            </PasswordToggleBtn>
+          </RelativeWrap>
+
+          <FieldLabel style={{ marginTop: 8 }}>Scopes (space separated)</FieldLabel>
+          <AuthInput
+            value={authData.oauth2Scopes || ''}
+            placeholder="read write"
+            onChange={(v) => onAuthDataChange({ oauth2Scopes: v })}
+            variables={environment?.variables}
+          />
+
+          {oauthGrant === 'password' && (
+            <>
+              <FieldLabel style={{ marginTop: 8 }}>Username</FieldLabel>
+              <AuthInput
+                value={authData.oauth2Username || ''}
+                placeholder="username"
+                onChange={(v) => onAuthDataChange({ oauth2Username: v })}
+                variables={environment?.variables}
+              />
+              <FieldLabel style={{ marginTop: 8 }}>Password</FieldLabel>
+              <RelativeWrap>
+                <AuthInput
+                  value={authData.oauth2Password || ''}
+                  placeholder="password"
+                  onChange={(v) => onAuthDataChange({ oauth2Password: v })}
+                  variables={environment?.variables}
+                  type={showOauthPassword ? 'text' : 'password'}
+                />
+                <PasswordToggleBtn
+                  type="button"
+                  onClick={() => setShowOauthPassword((v) => !v)}
+                  title={showOauthPassword ? 'Hide password' : 'Show password'}
+                >
+                  <Icon icon={showOauthPassword ? faEyeSlash : faEye} size={12} />
+                </PasswordToggleBtn>
+              </RelativeWrap>
+            </>
+          )}
+
+          <OAuthGetTokenBtn
+            type="button"
+            data-testid="oauth-get-token-btn"
+            disabled={oauthFetching || !oauthReady}
+            onClick={() => onGetOAuthToken?.(buildOAuth2Config())}
+          >
+            {oauthFetching && <OAuthSpin />}
+            {oauthFetching
+              ? (oauthGrant === 'authorization_code' ? 'Waiting for browser authorization…' : 'Requesting token…')
+              : authData.accessToken
+                ? 'Refresh Access Token'
+                : 'Get New Access Token'}
+          </OAuthGetTokenBtn>
+
+          {oauthStatus?.text && (
+            <OAuthStatus data-testid="oauth-status" $state={oauthStatus.state === 'success' ? 'success' : oauthStatus.state === 'error' ? 'error' : undefined}>
+              {oauthStatus.text}
+            </OAuthStatus>
+          )}
+
+          {authData.accessToken && (
+            <OAuthTokenRow data-testid="oauth-token-row">
+              <span>
+                ✓ Token ready
+                {expiryText(authData.tokenExpiresAt) ? ` (${expiryText(authData.tokenExpiresAt)})` : ''}
+              </span>
+              <OAuthResetBtn
+                type="button"
+                data-testid="oauth-clear-token-btn"
+                onClick={() =>
+                  onAuthDataChange({
+                    accessToken: '',
+                    refreshToken: '',
+                    tokenExpiresAt: undefined,
+                    tokenType: undefined,
+                    tokenScope: undefined,
+                  })
+                }
+              >
+                Clear token
+              </OAuthResetBtn>
+            </OAuthTokenRow>
+          )}
         </AuthFieldsContainer>
       )}
     </AuthPanelWrapper>

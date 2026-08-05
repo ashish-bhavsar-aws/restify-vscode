@@ -111,6 +111,13 @@ app.use((req, res, next) => {
   }
   // URL-encoded or fallback
   else {
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      express.urlencoded({ extended: true })(req, res, (err) => {
+        if (err) { req.body = undefined; }
+        next();
+      });
+      return;
+    }
     express.json()(req, res, (err) => {
       if (err) { req.body = undefined; }
       next();
@@ -974,6 +981,138 @@ app.get('/api/slow', (req, res) => {
   setTimeout(() => {
     res.json({ slow: true, waited: ms });
   }, ms);
+});
+
+/**
+ * @swagger
+ * /api/oauth/token:
+ *   post:
+ *     summary: OAuth 2.0 token endpoint used by the OAuth flow e2e tests
+ *     tags:
+ *       - OAuth 2.0
+ *     responses:
+ *       200:
+ *         description: Token response
+ */
+app.post('/api/oauth/token', (req, res) => {
+  const grantType = req.body.grant_type;
+  if (grantType === 'authorization_code') {
+    if (req.body.code !== 'mock-auth-code') {
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'Bad authorization code' });
+    }
+    return res.json({
+      access_token: 'mock-oauth-token',
+      refresh_token: 'mock-refresh-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+    });
+  }
+  if (grantType === 'client_credentials') {
+    if (req.body.client_id !== 'mock-client') {
+      return res.status(401).json({ error: 'invalid_client' });
+    }
+    return res.json({
+      access_token: 'mock-client-credentials-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+    });
+  }
+  if (grantType === 'password') {
+    if (req.body.username !== 'alice' || req.body.password !== 'hunter2') {
+      return res.status(401).json({ error: 'invalid_grant', error_description: 'Wrong username or password' });
+    }
+    return res.json({
+      access_token: 'mock-password-token',
+      refresh_token: 'mock-password-refresh',
+      token_type: 'Bearer',
+      expires_in: 300,
+    });
+  }
+  if (grantType === 'refresh_token') {
+    if (req.body.refresh_token !== 'mock-refresh-token') {
+      return res.status(400).json({ error: 'invalid_grant' });
+    }
+    return res.json({
+      access_token: 'mock-refreshed-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+    });
+  }
+  res.status(400).json({ error: 'unsupported_grant_type' });
+});
+
+/**
+ * @swagger
+ * /api/oauth/authorize:
+ *   get:
+ *     summary: Simulated authorization endpoint — auto-redirects with a code
+ *     tags:
+ *       - OAuth 2.0
+ */
+app.get('/api/oauth/authorize', (req, res) => {
+  const redirectUri = req.query.redirect_uri;
+  if (!redirectUri) {
+    return res.status(400).send('missing redirect_uri');
+  }
+  const separator = String(redirectUri).includes('?') ? '&' : '?';
+  res.redirect(302, `${redirectUri}${separator}code=mock-auth-code`);
+});
+
+/**
+ * @swagger
+ * /api/oauth/verify:
+ *   get:
+ *     summary: Verifies the OAuth access token in the Authorization header
+ *     tags:
+ *       - OAuth 2.0
+ */
+app.get('/api/oauth/verify', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const valid =
+    auth === 'Bearer mock-oauth-token' ||
+    auth === 'Bearer mock-refreshed-token' ||
+    auth === 'Bearer mock-client-credentials-token' ||
+    auth === 'Bearer mock-password-token';
+  res.json({ authorized: valid, authorization: auth });
+});
+
+/**
+ * @swagger
+ * /api/chain/start:
+ *   get:
+ *     summary: Returns a token to be chained into the next request
+ *     tags:
+ *       - Request Chaining
+ */
+app.get('/api/chain/start', (req, res) => {
+  res.json({ token: 'chain-token-123', user: { id: 42, name: 'Chain User' } });
+});
+
+/**
+ * @swagger
+ * /api/chain/verify:
+ *   get:
+ *     summary: Verifies a chained token arrived as a Bearer header
+ *     tags:
+ *       - Request Chaining
+ */
+app.get('/api/chain/verify', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const verified = auth === 'Bearer chain-token-123';
+  res.json({ verified, authorization: auth });
+});
+
+/**
+ * @swagger
+ * /api/secret/verify:
+ *   get:
+ *     summary: Verifies a secret variable was substituted into a header
+ *     tags:
+ *       - Secrets
+ */
+app.get('/api/secret/verify', (req, res) => {
+  const key = req.headers['x-secret-key'] || '';
+  res.json({ verified: key === 'super-secret-value', header: key });
 });
 
 // Error handling middleware

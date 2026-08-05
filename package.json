@@ -99,6 +99,30 @@
         "title": "Paste cURL",
         "category": "Restify",
         "icon": "$(clippy)"
+      },
+      {
+        "command": "restify.sendRequest",
+        "title": "Send Request",
+        "category": "Restify",
+        "icon": "$(play)"
+      },
+      {
+        "command": "restify.searchCollections",
+        "title": "Search in Collections",
+        "category": "Restify",
+        "icon": "$(search)"
+      },
+      {
+        "command": "restify.exportAllCollections",
+        "title": "Export All Collections",
+        "category": "Restify",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "restify.openEnvironments",
+        "title": "Manage Environments",
+        "category": "Restify",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -239,6 +263,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "lint:unused": "eslint . --ext .ts,.tsx --rule 'unused-imports/no-unused-imports: error' --rule '@typescript-eslint/no-unused-vars: error'",
+    "guardrails": "node scripts/check-guardrails.mjs",
     "test:unit": "vitest run"
   },
   "activationEvents": [

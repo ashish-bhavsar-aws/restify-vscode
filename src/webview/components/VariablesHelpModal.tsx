@@ -137,6 +137,34 @@ export const VariablesHelpModal: React.FC<VariablesHelpModalProps> = ({ open, on
           </Row>
         ))}
 
+        <Title style={{ margin: '14px 0 8px', fontSize: 13 }}>Response chaining</Title>
+        <Intro>
+          After a request completes, its response is exposed as variables you can reference in the
+          <strong> next</strong> request — no post-script needed. Use the{' '}
+          <strong>{'{{ }}'}</strong> button in the response toolbar to copy a token, or type them
+          manually.
+        </Intro>
+        <Row>
+          <Token>{'{{response.status}}'}</Token>
+          <Desc>HTTP status code of the last response</Desc>
+          <Example>{'{{response.status}}'}</Example>
+        </Row>
+        <Row>
+          <Token>{'{{response.body}}'}</Token>
+          <Desc>Raw response body (string)</Desc>
+          <Example>{'{{response.body}}'}</Example>
+        </Row>
+        <Row>
+          <Token>{'{{response.headers.X}}'}</Token>
+          <Desc>Response header (case-insensitive)</Desc>
+          <Example>{'{{response.headers.content-type}}'}</Example>
+        </Row>
+        <Row>
+          <Token>{'{{response.$.path}}'}</Token>
+          <Desc>JSONPath into the parsed JSON body</Desc>
+          <Example>{'{{response.$.token}}'}</Example>
+        </Row>
+
         <Note>
           Tip: type <strong>{'{{$'}</strong> in the URL or a header value to autocomplete.
           Environment variables use the <strong>{'{{envVar}}'}</strong> syntax and come from

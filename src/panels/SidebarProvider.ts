@@ -6,11 +6,14 @@ import * as http from 'http';
 import { URL } from 'url';
 import { StorageManager } from '../storage/StorageManager';
 import { getSidebarHtml } from '../webview/sidebarHtml';
+import { runCollectionRequests } from '../core';
 
 type SidebarType = 'history' | 'collections';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
+  private _searchQuery?: string;
+  private _runController?: AbortController;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -211,28 +214,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           vscode.window.showInformationMessage('✓ Collection exported');
           break;
         }
-        case 'exportAllCollections': {
-          const cols = this.storageManager.getCollections();
-          if (!cols.length) {
-            vscode.window.showWarningMessage('No collections to export');
-            break;
-          }
-          const data = JSON.stringify(cols, null, 2);
-          const defaultName = 'restify.collections.json';
-          const fileName = await vscode.window.showInputBox({
-            prompt: 'Enter a filename for the exported collections',
-            value: defaultName,
-            validateInput: (v) => v.trim() ? null : 'Filename cannot be empty',
-          });
-          if (!fileName) break;
-          const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
-          const targetUri = wsFolder
-            ? vscode.Uri.joinPath(wsFolder, fileName)
-            : vscode.Uri.file(path.join(os.homedir(), fileName));
-          await vscode.workspace.fs.writeFile(targetUri, Buffer.from(data, 'utf8'));
-          vscode.window.showInformationMessage(`✓ Exported ${cols.length} collection${cols.length !== 1 ? 's' : ''}`);
+        case 'exportAllCollections':
+          await this.exportAll();
           break;
-        }
         case 'importCollections':
         case 'showImportOptions':
           await this.importCollection();
@@ -301,6 +285,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'requestData':
           this._sendData();
           break;
+        case 'runCollection':
+          await this._runCollection(msg.collectionId, msg.groupId ?? null);
+          break;
+        case 'cancelCollectionRun':
+          this._runController?.abort();
+          break;
         case 'toggleCollectionState':
           this.storageManager.setCollectionExpansionState(
             msg.id,
@@ -335,6 +325,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       data = {
         collections: this.storageManager.getCollections(),
         expansionStates: this.storageManager.getExpansionStates(),
+        search: this._searchQuery ?? '',
       };
     }
     this._view.webview.postMessage({
@@ -350,6 +341,101 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   postMessage(msg: any): void {
     this._view?.webview.postMessage(msg);
+  }
+
+  search(query: string): void {
+    this._searchQuery = query;
+    if (this._view) {
+      this._view.webview.postMessage({ command: 'searchCollections', query });
+    }
+  }
+
+  async exportAll(): Promise<void> {
+    const cols = this.storageManager.getCollections();
+    if (!cols.length) {
+      vscode.window.showWarningMessage('No collections to export');
+      return;
+    }
+    const data = JSON.stringify(cols, null, 2);
+    const defaultName = 'restify.collections.json';
+    const fileName = await vscode.window.showInputBox({
+      prompt: 'Enter a filename for the exported collections',
+      value: defaultName,
+      validateInput: (v) => v.trim() ? null : 'Filename cannot be empty',
+    });
+    if (!fileName) return;
+    const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const targetUri = wsFolder
+      ? vscode.Uri.joinPath(wsFolder, fileName)
+      : vscode.Uri.file(path.join(os.homedir(), fileName));
+    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(data, 'utf8'));
+    vscode.window.showInformationMessage(`✓ Exported ${cols.length} collection${cols.length !== 1 ? 's' : ''}`);
+  }
+
+  // ─── Collection runner (F31) ──────────────────────────────
+  private async _runCollection(collectionId: string, groupId: string | null): Promise<void> {
+    const cols = this.storageManager.getCollections();
+    const col = cols.find((c) => String(c.id) === String(collectionId));
+    if (!col) return;
+    if (this._runController) {
+      vscode.window.showWarningMessage('A collection run is already in progress');
+      return;
+    }
+
+    const requests = _flattenCollectionRequests(col, groupId);
+    if (requests.length === 0) {
+      vscode.window.showWarningMessage('This collection has no requests to run');
+      return;
+    }
+
+    const controller = new AbortController();
+    this._runController = controller;
+    this.postMessage({
+      command: 'collectionRunStarted',
+      collectionId,
+      groupId,
+      total: requests.length,
+    });
+
+    let cookies = this.storageManager.getCookies();
+    try {
+      const results = await runCollectionRequests({
+        requests,
+        variables: this.storageManager.getActiveEnvironmentVariables(),
+        signal: controller.signal,
+        cookies,
+        lastResponse: this.storageManager.getLastResponse(),
+        onCookiesChanged: (next) => {
+          cookies = next;
+          this.storageManager.saveCookies(next);
+        },
+        onProgress: (entry, index, total) => {
+          this.postMessage({
+            command: 'collectionRunProgress',
+            entry,
+            index,
+            total,
+          });
+        },
+      });
+      this.postMessage({
+        command: 'collectionRunComplete',
+        results,
+        collectionId,
+        groupId,
+        cancelled: controller.signal.aborted,
+      });
+    } catch (err: any) {
+      this.postMessage({
+        command: 'collectionRunComplete',
+        results: [],
+        collectionId,
+        groupId,
+        error: err?.message ?? String(err),
+      });
+    } finally {
+      this._runController = undefined;
+    }
   }
 
   async importCollection(): Promise<void> {
@@ -549,6 +635,39 @@ function _findGroupInline(groups: any[], id: string): any {
     }
   }
   return undefined;
+}
+
+/** Flatten a collection (or a single group within it) into a list of requests. */
+function _flattenCollectionRequests(col: any, groupId: string | null): any[] {
+  const out: any[] = [];
+  const visit = (requests: any[] | undefined) => {
+    for (const r of requests || []) out.push(r);
+  };
+
+  if (groupId) {
+    const group = _findGroupInline(col.groups || [], groupId);
+    if (group) {
+      visit(group.requests);
+      const visitSubGroups = (groups: any[] | undefined) => {
+        for (const g of groups || []) {
+          visit(g.requests);
+          visitSubGroups(g.groups);
+        }
+      };
+      visitSubGroups(group.groups);
+    }
+    return out;
+  }
+
+  visit(col.requests);
+  const visitGroups = (groups: any[] | undefined) => {
+    for (const g of groups || []) {
+      visit(g.requests);
+      visitGroups(g.groups);
+    }
+  };
+  visitGroups(col.groups);
+  return out;
 }
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────

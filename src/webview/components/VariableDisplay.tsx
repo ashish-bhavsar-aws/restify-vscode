@@ -4,7 +4,7 @@ import { isDynamicVariableToken, previewDynamicVariable } from '../../core/dynam
 
 interface VariableDisplayProps {
   text: string;
-  variables?: Array<{ key: string; value: string }>;
+  variables?: Array<{ key: string; value: string; isSecret?: boolean }>;
   onlyHighlight?: boolean; // If true, only render the text without any markup
 }
 
@@ -88,11 +88,14 @@ const parseVariables = (text: string): ParsedPart[] => {
  */
 const resolveVariable = (
   varName: string,
-  variables?: Array<{ key: string; value: string }>
+  variables?: Array<{ key: string; value: string; isSecret?: boolean }>
 ): string | null => {
   if (!variables) return null;
   const variable = variables.find((v) => v.key === varName);
-  return variable ? variable.value : null;
+  if (!variable) return null;
+  // Secret values are never sent to the webview — mask them.
+  if (variable.isSecret) return '••••••••';
+  return variable.value;
 };
 
 /**

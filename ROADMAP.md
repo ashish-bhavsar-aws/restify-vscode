@@ -1,6 +1,6 @@
 # Restify — Missing Features & Implementation Roadmap
 
-**Status**: Living document · **Last reviewed**: 2026-08-04 · **Extension version**: 1.0.26
+**Status**: Living document · **Last reviewed**: 2026-08-05 · **Extension version**: 1.0.26
 
 This document inventories the gaps between Restify's current feature set and what a mature REST API client (Postman, Thunder Client, Bruno, HTTPie, REST Client) offers, then sequences them into an implementation roadmap for features that belong inside the VS Code extension itself.
 
@@ -35,7 +35,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
 | F10 | **Pre-request scripts** | 🟠 P1 | Only post-response scripts exist (`scriptExecutor.ts`). Add pre-request hooks (set variables, sign payloads, randomize data). |
-| F11 | **OAuth 2.0 flow** | 🟠 P1 | Authorization code + client credentials + password grant with token refresh. Manual OAuth only via bearer today. |
+| F11 | **OAuth 2.0 flow** | 🟠 P1 | ✅ Authorization code + client credentials + password grant with token refresh. *(done — `src/core/oauth2.ts` incl. token cache + refresh + PKCE; E2E in `feature2.spec.ts`)* |
 | F12 | **More auth types** | 🟡 P2 | AWS SigV4, Digest Auth, Hawk, NTLM, JWT-bearer, per-request "inherit from collection". |
 | F13 | **cURL command import** | 🟠 P1 | ✅ Paste a `curl ...` command to build a full request (flags: `-X`, `-H`, `-d`, `-F`, `-u`, `--data-binary`, `--url`). Reverse of existing codegen. *(done — `src/core/curlParser.ts` tokenizer + parser; `restify.importCurl` command with input box + clipboard auto-detect; unit tests (17) + E2E tests)* |
 | F14 | **Bulk editor for headers/params** | 🟡 P2 | Postman-style raw key-value text editor with parse-on-change. |
@@ -46,7 +46,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F19 | **Basic Auth via URL** | 🟡 P2 | Support `https://user:pass@host/` URL form and carry it into Authorization header. |
 | F20 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
 | F61 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
-| F21 | **Request chaining** | 🟠 P1 | Reference previous response values in the next request (`{{previousResponse.$.token}}`) with a selector UI. |
+| F21 | **Request chaining** | 🟠 P1 | ✅ Reference previous response values in the next request (`{{response.<method>.<path>}}`) with a selector UI. *(done — `src/core/responseVars.ts` + picker; E2E in `feature3.spec.ts`)* |
 
 ### 1.3 Response Viewer
 
@@ -66,7 +66,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| F31 | **Collection runner** | 🟠 P1 | Run all requests in a collection/folder sequentially; show per-request pass/fail + timing results grid. |
+| F31 | **Collection runner** | 🟠 P1 | ✅ Run all requests in a collection/folder sequentially; show per-request pass/fail + timing results grid. *(done — `src/core/collectionRunner.ts` + sidebar runner modal; E2E in `feature4.spec.ts`)* |
 | F32 | **Data-driven runs** | 🟡 P2 | Iterate a collection against CSV/JSON data files (each row injects variables). |
 | F33 | **Test/assertion scripts** | 🟠 P1 | Postman-style `tests` tab: assertions render as pass/fail badges in the response pane (builds on existing script engine). |
 | F34 | **Export to OpenAPI / HAR / .http** | 🟡 P2 | Reverse of the importers. Postman export already supported via `importCollection`. |
@@ -81,7 +81,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| F41 | **Secret variables + encrypted storage** | 🟠 P1 | Masked `{{secret}}` values; store in keychain/`SecretStorage` instead of plaintext (globalState is currently plaintext). |
+| F41 | **Secret variables + encrypted storage** | 🟠 P1 | ✅ Masked `{{secret}}` values; store in keychain/`SecretStorage` instead of plaintext (globalState is currently plaintext). *(done — `SecretStorage` + mask/reveal; E2E in `feature5.spec.ts`)* |
 | F42 | **Variable scoping** | 🟡 P2 | global / collection / environment / local scope precedence (currently one active env + a Global env). |
 | F43 | **Initial vs current value** | 🟡 P2 | Postman-style two-column env values, with "reset to initial". |
 | F44 | **Environment import/export** | 🟡 P2 | Share env files, incl. Postman env JSON format. |
@@ -111,7 +111,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F57 | **History search & pins** | 🟡 P2 | Persist search query, pin favorites, fuzzy search across history. |
 | F58 | **Screenshots/theme polish** | 🟡 P2 | Icon themes, method color on request rows, empty-state CTAs. |
 | F59 | **VS Code discoverability / marketplace metadata** | 🟡 P2 | Improve extension keywords, tags, descriptions, and category metadata so Restify is easier to find in the VS Code marketplace and command palette. |
-| F60 | **Code size and maintainability guardrails** | 🟠 P1 | Keep the extension maintainable by enforcing file-size limits, component boundaries, shared utilities, and a clear rule for when to extract logic into core modules. |
+| F60 | **Code size and maintainability guardrails** | 🟠 P1 | ✅ Keep the extension maintainable by enforcing file-size limits, component boundaries, shared utilities, and a clear rule for when to extract logic into core modules. *(done — `scripts/check-guardrails.mjs` + `npm run guardrails`; rules in `GUARDRAILS.md`)* |
 
 ---
 
@@ -129,9 +129,9 @@ This section separates the highest-priority features from the broader roadmap in
 - F8 — Configurable timeout
 - F9 — Core unit tests
 - F10 — Pre-request scripts
-- F31 — Collection runner
+- F31 — Collection runner ✅
 - F33 — Test/assertion scripts ✅
-- F41 — Secret variables
+- F41 — Secret variables ✅
 - F51 — .http file support
 - F54 — Command palette actions
 - F60 — Code size and maintainability guardrails
@@ -189,12 +189,13 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F10 **Pre-request scripts**: extend `scriptExecutor.ts` to a generic pipeline (pre → request → post); API parity (`vars`, `request`, `log`). *(done — `preScript` on RequestState, run host-side via `src/core/script.ts` before the request; `src/core/http.ts` shared engine)*
 - [x] F33 **Test/assertion scripts**: post-request `tests` object (`tests["status is 200"] = response.status === 200`); render pass/fail badges in response pane; store results in history. *(done — `tests` object in `src/core/script.ts` sandbox, wired through `_runScript` in RestifyPanel, `TestResults` component in ResponsePane with pass/fail badges + summary bar; unit-tested)*
 - [x] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$processEnv:NAME}}`, `{{$localDateTime}}` resolved host-side before request. *(done — `src/core/dynamicVars.ts`, wired into `StorageManager.resolveVariables`, unit-tested; codegen substitutes dynamic tokens with samples/placeholders — see F53 correctness pass below)*
-- [ ] F21 **Request chaining**: after each run, expose response as `{{response.<method>.<jsonpath>}}` style or via script `set()`; picker UI in Save/history flow.
-- [ ] F41 **Secret variables**: add `secret` flag to `KVItem`; store secret values in `context.secrets`/`SecretStorage`; mask in UI (dot display + reveal).
-- [ ] F31 **Collection runner** (first slice): run a folder/collection sequentially, reusing the single-request engine; results grid with status/time/test badges; cancel support.
+- [x] F21 **Request chaining**: after each run, expose response as `{{response.<method>.<jsonpath>}}` style or via script `set()`; picker UI in Save/history flow. *(done — `src/core/responseVars.ts` resolves `{{response.<method>.<path>}}` tokens, `response-vars` picker surfaced in the response pane, chained values resolved host-side before the request; unit-tested + E2E in `feature3.spec.ts`)*
+- [x] F41 **Secret variables**: add `secret` flag to `KVItem`; store secret values in `context.secrets`/`SecretStorage`; mask in UI (dot display + reveal). *(done — `secret: true` on env KV items, values persisted to VS Code `SecretStorage`, masked `type="password"` inputs with reveal toggle, `{{secret_key}}` resolves to the decrypted value; unit-tested + E2E in `feature5.spec.ts`)*
+- [x] F31 **Collection runner** (first slice): run a folder/collection sequentially, reusing the single-request engine; results grid with status/time/test badges; cancel support. *(done — `src/core/collectionRunner.ts` sequential runner + cancel, results grid in sidebar modal; unit-tested + E2E in `feature4.spec.ts`)*
 - [ ] F32 **Data-driven runs**: CSV/JSON rows as iteration variables for the runner.
+- [x] F60 **Code size and maintainability guardrails**: file-size limits, component boundaries, shared-utility placement rules. *(done — `scripts/check-guardrails.mjs` + `npm run guardrails`; rules in `GUARDRAILS.md`)*
 
-**Exit criteria:** script pipeline covered by unit tests (incl. test assertions ✅); runner E2E (2–3 request collection) passing.
+**Exit criteria:** script pipeline covered by unit tests (incl. test assertions ✅); runner E2E (2–3 request collection) passing. *(status: F21/F41/F31 E2E all passing.)*
 
 ### Phase 3 — Import/Export & Interop (P1/P2)
 > Makes Restify a first-class citizen in existing API toolchains.
@@ -220,7 +221,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 **Exit criteria:** round-trip tests (import → export → import) for curl/Postman/OpenAPI/HAR; `.http` E2E.
 
 ### Phase 4 — Productivity & UX (P2)
-- [ ] F11 **OAuth 2.0**: authorization-code flow with system browser + redirect listener; token cache; refresh; PKCE.
+- [x] F11 **OAuth 2.0**: authorization-code flow with system browser + redirect listener; token cache; refresh; PKCE. *(done — `src/core/oauth2.ts`: authorization-code + client-credentials + password grants, token cache keyed by token-URL/client/scopes, refresh, PKCE challenge; unit-tested + E2E for client-credentials/password in `feature2.spec.ts`; authorization-code grant covered by unit tests, loopback redirect listener included)*
 - [ ] F22 **JSON schema validation** of responses (paste schema or pull from imported OpenAPI).
 - [ ] F23 **JSONPath/XPath query** in response viewer.
 - [ ] F25 **Save response to file**; F30 **completion notifications**.
@@ -264,13 +265,13 @@ Focus: fix correctness issues, make the extension feel stable, and improve every
 Focus: move from basic request sending to practical daily workflows while keeping the codebase maintainable.
 
 **Must-have**
-- F10 — Pre-request scripts
-- F31 — Collection runner
+- F10 — Pre-request scripts ✅
+- F31 — Collection runner ✅
 - F33 — Test/assertion scripts ✅
-- F41 — Secret variables
+- F41 — Secret variables ✅
 - F51 — .http file support
 - F54 — Command palette actions
-- F60 — Code size and maintainability guardrails
+- F60 — Code size and maintainability guardrails ✅
 
 **Nice-to-have**
 - F14 — Bulk editor for headers/params
@@ -290,7 +291,7 @@ Focus: make Restify fit into broader developer workflows and existing API toolch
 - F52 — Multi-tab/multi-panel support
 
 **Nice-to-have**
-- F11 — OAuth 2.0
+- F11 — OAuth 2.0 ✅
 - F22 — JSON schema validation
 - F23 — JSONPath/XPath query
 - F24 — Response beautify options

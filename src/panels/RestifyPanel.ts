@@ -32,7 +32,11 @@ import {
   getRedirectMethod,
   performHttpRequest,
   storeCookies,
+  collectResponseVariableTokens,
+  getOAuth2Token,
+  oauth2CacheKey,
   type CoreRequestForBody,
+  type OAuth2Config,
 } from "../core";
 
 // Load https-proxy-agent at runtime to avoid module resolution issues
@@ -88,7 +92,7 @@ interface RequestData {
   rejectUnauthorized?: boolean;
   preScript?: string;
   script?: string; // Post-response script for variable extraction
-  authType?: "none" | "bearer" | "basic" | "apikey";
+  authType?: "none" | "bearer" | "basic" | "apikey" | "oauth2";
   authData?: {
     token?: string;
     username?: string;
@@ -96,6 +100,23 @@ interface RequestData {
     keyName?: string;
     keyValue?: string;
     addTo?: "header" | "query";
+    // OAuth 2.0 configuration + cached token
+    oauth2GrantType?: "authorization_code" | "client_credentials" | "password";
+    oauth2AuthUrl?: string;
+    oauth2TokenUrl?: string;
+    oauth2ClientId?: string;
+    oauth2ClientSecret?: string;
+    oauth2Scopes?: string;
+    oauth2Username?: string;
+    oauth2Password?: string;
+    oauth2RedirectUrl?: string;
+    oauth2UsePkce?: boolean;
+    oauth2ExtraParams?: Record<string, string>;
+    accessToken?: string;
+    refreshToken?: string;
+    tokenExpiresAt?: number;
+    tokenType?: string;
+    tokenScope?: string;
   };
   gqlQuery?: string;
   gqlVars?: string;
@@ -221,6 +242,12 @@ export class RestifyPanel {
     // If webview is already ready, send immediately
     if (this.webviewReady) {
       this._sendPendingRequest();
+    }
+  }
+
+  sendRequest(): void {
+    if (this.webviewReady) {
+      this.panel.webview.postMessage({ command: 'triggerSendRequest' });
     }
   }
 
@@ -560,6 +587,43 @@ export class RestifyPanel {
     }
   }
 
+  private async _handleGetOAuthToken(config: OAuth2Config): Promise<void> {
+    const postResult = (payload: Record<string, unknown>) => {
+      this.panel.webview.postMessage({ command: "oauthTokenResult", ...payload });
+    };
+    try {
+      const result = await getOAuth2Token(config, {
+        cache: {
+          get: (key) => this.storageManager.getOAuthTokenCache(key),
+          set: (key, token) => this.storageManager.setOAuthTokenCache(key, token),
+        },
+        cacheKey: oauth2CacheKey(config),
+        openUrl: (url) => {
+          void vscode.env.openExternal(vscode.Uri.parse(url));
+          this.activityProvider?.append(
+            "OAuth 2.0",
+            `Opening browser for authorization:\n${url}`,
+            "info",
+          );
+        },
+        log: (message) =>
+          this.activityProvider?.append("OAuth 2.0", message, "info"),
+      });
+      postResult({
+        accessToken: result.token.accessToken,
+        refreshToken: result.token.refreshToken,
+        expiresAt: result.token.expiresAt,
+        tokenType: result.token.tokenType,
+        scope: result.token.scope,
+        source: result.source,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.activityProvider?.append("OAuth 2.0", `Error: ${message}`, "error");
+      postResult({ error: message });
+    }
+  }
+
   private async _handleMessage(msg: any): Promise<void> {
     switch (msg.command) {
       case "webviewReady":
@@ -572,6 +636,9 @@ export class RestifyPanel {
       case "executeRequest":
         // msg.savedRequest is the original state (no injected auth headers) — used for history.
         await this._executeRequest(msg.request, msg.savedRequest);
+        break;
+      case "getOAuthToken":
+        await this._handleGetOAuthToken(msg.config);
         break;
       case "cancelRequest":
         this._cancelActiveRequest();
@@ -600,7 +667,7 @@ export class RestifyPanel {
               }
             });
             // Update environment using saveEnvironment
-            this.storageManager.saveEnvironment({
+            await this.storageManager.saveEnvironment({
               ...env,
               variables: existingVars,
             });
@@ -642,13 +709,25 @@ export class RestifyPanel {
               (v.value || "").toString().trim() !== "",
           );
         }
-        this.storageManager.saveEnvironment(env);
+        await this.storageManager.saveEnvironment(env);
         this._sendEnvironments();
         break;
       }
       case "deleteEnvironment": {
-        this.storageManager.deleteEnvironment(msg.id);
+        await this.storageManager.deleteEnvironment(msg.id);
         this._sendEnvironments();
+        break;
+      }
+      case "getEnvSecretValue": {
+        const value = await this.storageManager.getSecretValue(
+          msg.envId,
+          msg.varKey,
+        );
+        this.panel.webview.postMessage({
+          command: "envSecretValue",
+          id: msg.id,
+          value: value ?? "",
+        });
         break;
       }
       case "updateTitle":
@@ -1232,6 +1311,24 @@ export class RestifyPanel {
         timings.postMessageSize = size;
       } catch {
         /* empty */
+      }
+
+      // Request chaining: expose this response as {{response.*}} tokens.
+      try {
+        this.storageManager.setLastResponse({
+          status: result.status,
+          statusText: result.statusText,
+          headers: result.headers,
+          body: result.body,
+        });
+        this.panel.webview.postMessage({
+          command: "responseVarsUpdated",
+          tokens: collectResponseVariableTokens(
+            this.storageManager.getLastResponse()!,
+          ),
+        });
+      } catch {
+        /* ignore chaining failures */
       }
 
       // Measure history add time

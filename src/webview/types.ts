@@ -23,7 +23,7 @@ export interface RequestState {
   formData: FormDataItem[];
   gqlQuery: string;
   gqlVars: string;
-  authType: 'none' | 'bearer' | 'basic' | 'apikey';
+  authType: 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2';
   authData: {
     token?: string;
     username?: string;
@@ -31,6 +31,23 @@ export interface RequestState {
     keyName?: string;
     keyValue?: string;
     addTo?: 'header' | 'query';
+    // OAuth 2.0 configuration + cached token
+    oauth2GrantType?: 'authorization_code' | 'client_credentials' | 'password';
+    oauth2AuthUrl?: string;
+    oauth2TokenUrl?: string;
+    oauth2ClientId?: string;
+    oauth2ClientSecret?: string;
+    oauth2Scopes?: string;
+    oauth2Username?: string;
+    oauth2Password?: string;
+    oauth2RedirectUrl?: string;
+    oauth2UsePkce?: boolean;
+    oauth2ExtraParams?: Record<string, string>;
+    accessToken?: string;
+    refreshToken?: string;
+    tokenExpiresAt?: number;
+    tokenType?: string;
+    tokenScope?: string;
   };
   rejectUnauthorized: boolean;
   followRedirects?: boolean;
@@ -55,10 +72,15 @@ export interface ResponseState {
   filePreviewType?: 'text' | 'csv' | 'pdf' | 'excel' | 'none';
 }
 
+export interface EnvVariable extends KVItem {
+  timestamp?: number;
+  isSecret?: boolean;
+}
+
 export interface Environment {
   id: string;
   name: string;
-  variables: KVItem[];
+  variables: EnvVariable[];
 }
 
 export interface CollectionGroup {
@@ -107,6 +129,20 @@ export interface SettingsState {
   showActivityLog: boolean;
   defaultTimeout: number;   // default request timeout in ms
   defaultHeaders: DefaultHeadersConfig;
+}
+
+export interface OAuth2ConfigPayload {
+  grantType: 'authorization_code' | 'client_credentials' | 'password';
+  authUrl?: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret?: string;
+  scopes?: string;
+  username?: string;
+  password?: string;
+  redirectUrl?: string;
+  usePkce?: boolean;
+  extraParams?: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {

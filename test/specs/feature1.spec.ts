@@ -72,6 +72,9 @@ test.describe('Feature 1 (F1-F10) — Core Networking & Request Builder', () => 
     const vars = await mainFrame!.locator('#req-pane textarea').nth(1);
     await vars.click();
     await vars.fill('{"id": 1}');
+    // Let the GraphQL editor state fully commit before sending; otherwise the
+    // request can be serialized with a stale body type (observed as a 400).
+    await mainFrame!.waitForTimeout(500);
     await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
     const ok = await waitForResponse(mainFrame!, 15_000);
     expect(ok).toBe(true);
@@ -238,19 +241,21 @@ test.describe('Feature 1 (F1-F10) — Core Networking & Request Builder', () => 
 
   test('F10 - pre-request script sets a header before sending', async () => {
     log('--- F10: pre-request script ---');
-    await clickRequestTab(mainFrame!, 'pre-script');
+    await clickRequestTab(mainFrame!, 'script');
     await mainFrame!.waitForTimeout(300);
 
     const codeEditor = mainFrame!.locator('.monaco-editor, textarea, [role="textbox"]').first();
     if (await codeEditor.count() > 0) {
-      await codeEditor.click();
+      // The CodeEditor's textarea is transparent under a highlight overlay, so
+      // click() hits the overlay — use focus() to target the real textarea.
+      await codeEditor.focus();
       await mainFrame!.waitForTimeout(200);
       await app.window.keyboard.press('Meta+A');
       await mainFrame!.waitForTimeout(50);
       await app.window.keyboard.press('Backspace');
       await mainFrame!.waitForTimeout(100);
       await app.window.keyboard.type(
-        `request.headers["X-Pre-Script"] = "injected-value";`,
+        `request.headers.push({ key: "X-Pre-Script", value: "injected-value", enabled: true });`,
         { delay: 5 },
       );
       await mainFrame!.waitForTimeout(300);

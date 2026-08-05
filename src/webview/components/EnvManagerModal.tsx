@@ -10,6 +10,8 @@ import {
   faLockOpen,
   faEye,
   faEyeSlash,
+  faUpload,
+  faDownload,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface EnvManagerModalProps {
@@ -22,6 +24,8 @@ interface EnvManagerModalProps {
   onSave: (env: Environment) => void;
   onDelete: (id: string) => void;
   onRevealSecret?: (envId: string, varKey: string) => Promise<string | undefined>;
+  onImport?: () => void;
+  onExport?: (env: Environment) => void;
 }
 
 const Overlay = styled.div<{ $open: boolean }>`
@@ -366,6 +370,8 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
   onSave,
   onDelete,
   onRevealSecret,
+  onImport,
+  onExport,
 }) => {
   const [editingEnv, setEditingEnv] = useState<Environment | null>(null);
   const [revealedVals, setRevealedVals] = useState<Record<number, string>>({});
@@ -577,9 +583,20 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
           <>
             <ModalHeader>
               <h3>Manage Environments</h3>
-              <CloseBtn onClick={onClose} data-testid="env-modal-close">
-                <Icon icon={faXmark} size={14} />
-              </CloseBtn>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {onImport && (
+                  <IconBtn
+                    title="Import environment (Postman / Restify JSON)"
+                    onClick={onImport}
+                    data-testid="env-import-btn"
+                  >
+                    <Icon icon={faUpload} size={13} />
+                  </IconBtn>
+                )}
+                <CloseBtn onClick={onClose} data-testid="env-modal-close">
+                  <Icon icon={faXmark} size={14} />
+                </CloseBtn>
+              </div>
             </ModalHeader>
 
             <NewEnvBtn onClick={openNew} data-testid="env-new-btn">+ New Environment</NewEnvBtn>
@@ -622,6 +639,14 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                       >
                         <Icon icon={faPen} size={13} />
                       </IconBtn>
+                      {onExport && (
+                        <IconBtn
+                          title="Export as Postman environment"
+                          onClick={() => onExport(env)}
+                        >
+                          <Icon icon={faDownload} size={13} />
+                        </IconBtn>
+                      )}
                       <IconBtn
                         $danger
                         title="Delete"

@@ -81,6 +81,8 @@ export interface CollectionRunEntry {
   cancelled?: boolean;
   tests?: Record<string, boolean>;
   testSummary?: { passed: number; failed: number };
+  /** 0-based iteration index when running data-driven (F32). */
+  iteration?: number;
 }
 
 export interface CollectionRunnerOptions {
@@ -96,6 +98,12 @@ export interface CollectionRunnerOptions {
   onProgress?: (entry: CollectionRunEntry, index: number, total: number) => void;
   /** Last response to seed `{{response.*}}` tokens before the run starts. */
   lastResponse?: ResponseVarsContext;
+  /**
+   * Data-driven iterations (F32). Each row is injected as variables on top of
+   * `variables` for a full pass over `requests`. When set, every emitted entry
+   * carries its 0-based `iteration`.
+   */
+  iterationData?: Record<string, string>[];
 }
 
 export interface ExecuteRunnerResult {
@@ -114,6 +122,105 @@ function resolveVars(text: string, variables: Record<string, string>): string {
     out = out.split(`{{${key}}}`).join(value ?? "");
   }
   return resolveDynamicVariables(out);
+}
+
+/**
+ * F32: Parse a CSV or JSON data file into iteration rows (each row is a
+ * set of variables to inject per pass over a collection).
+ *
+ * CSV: first non-empty line is the header; quoted fields and escaped quotes
+ * are supported. JSON: an array of objects becomes one row per object; a
+ * single object becomes one row.
+ */
+export function parseIterationData(
+  text: string,
+  filename?: string,
+): Record<string, string>[] {
+  const trimmed = (text || "").replace(/^\uFEFF/, "").trim();
+  if (!trimmed) return [];
+  const isJson =
+    /\.json$/i.test(filename || "") ||
+    trimmed.startsWith("[") ||
+    trimmed.startsWith("{");
+  if (isJson) return _jsonToRows(trimmed);
+  return _csvToRows(trimmed);
+}
+
+function _normalizeRow(obj: any): Record<string, string> | null {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const row: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    row[k] =
+      v === null || v === undefined
+        ? ""
+        : typeof v === "string"
+          ? v
+          : JSON.stringify(v);
+  }
+  return row;
+}
+
+function _jsonToRows(text: string): Record<string, string>[] {
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  if (Array.isArray(data)) {
+    return data.map(_normalizeRow).filter((r): r is Record<string, string> => r !== null);
+  }
+  if (data && typeof data === "object") {
+    const row = _normalizeRow(data);
+    return row ? [row] : [];
+  }
+  return [];
+}
+
+function _parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function _csvToRows(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+  const header = _parseCsvLine(lines[0]).map((h) => h.trim());
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = _parseCsvLine(lines[i]);
+    const row: Record<string, string> = {};
+    header.forEach((h, idx) => {
+      if (h) row[h] = (values[idx] ?? "").trim();
+    });
+    if (Object.keys(row).length > 0) rows.push(row);
+  }
+  return rows;
 }
 
 function mergeExtractedVariables(
@@ -431,33 +538,53 @@ export async function executeRunnerRequest(
  * variables set by one request are available to the next. Each response is also
  * exposed as `{{response.*}}` tokens for the next request (request chaining).
  * Aborting the signal stops execution after the in-flight request.
+ *
+ * When `iterationData` is provided, a full pass over `requests` runs for each
+ * row with that row's variables overlaid on `variables`; emitted entries carry
+ * a 0-based `iteration` so callers can group results by row.
  */
 export async function runCollectionRequests(
   options: CollectionRunnerOptions,
 ): Promise<CollectionRunEntry[]> {
   const requests = options.requests || [];
-  const variables: Record<string, string> = { ...(options.variables || {}) };
+  const iterations =
+    options.iterationData && options.iterationData.length > 0
+      ? options.iterationData
+      : [null];
   const results: CollectionRunEntry[] = [];
-  let lastResponse = options.lastResponse;
+  const perIterationTotal = requests.length * iterations.length;
 
-  for (let i = 0; i < requests.length; i++) {
-    if (options.signal?.aborted) break;
-    const { entry, extractedVariables, bodyText, responseHeaders } =
-      await executeRunnerRequest(requests[i], variables, {
-        ...options,
-        lastResponse,
-      });
-    mergeExtractedVariables(variables, extractedVariables);
-    if (entry.status > 0) {
-      lastResponse = {
-        status: entry.status,
-        statusText: entry.statusText,
-        headers: responseHeaders,
-        body: bodyText,
-      };
+  for (let iter = 0; iter < iterations.length; iter++) {
+    const row = iterations[iter];
+    const variables: Record<string, string> = {
+      ...(options.variables || {}),
+      ...(row || {}),
+    };
+    let lastResponse = options.lastResponse;
+    const baseIndex = results.length;
+
+    for (let i = 0; i < requests.length; i++) {
+      if (options.signal?.aborted) break;
+      const { entry, extractedVariables, bodyText, responseHeaders } =
+        await executeRunnerRequest(requests[i], variables, {
+          ...options,
+          lastResponse,
+        });
+      mergeExtractedVariables(variables, extractedVariables);
+      if (entry.status > 0) {
+        lastResponse = {
+          status: entry.status,
+          statusText: entry.statusText,
+          headers: responseHeaders,
+          body: bodyText,
+        };
+      }
+      if (row) entry.iteration = iter;
+      results.push(entry);
+      options.onProgress?.(entry, baseIndex + i, perIterationTotal);
     }
-    results.push(entry);
-    options.onProgress?.(entry, i, requests.length);
+
+    if (options.signal?.aborted) break;
   }
 
   return results;

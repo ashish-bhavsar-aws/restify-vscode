@@ -337,6 +337,9 @@ const CopyBtn = styled.button<{ $active?: boolean }>`
   font-family: inherit;
   transition: all .15s;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 
   &:hover {
     color: ${({ $active, theme }) => $active ? theme.accent : theme.fg};
@@ -614,6 +617,12 @@ const ChevronIcon = styled.span<{ $open: boolean }>`
 const CollapsibleTitle = styled(LogTitle)`
   margin: 0;
   flex: 1;
+`;
+
+const SectionLabel = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 `;
 
 const CollapsibleBadge = styled.span`
@@ -1028,7 +1037,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
   return (
     <RequestLogContainer>
 
-      <CollapsibleSection title={<><Icon icon={faArrowUp} size={11} style={{ marginRight: 5 }} />Request</>} defaultOpen={true}>
+      <CollapsibleSection title={<SectionLabel><Icon icon={faArrowUp} size={11} />Request</SectionLabel>} defaultOpen={true}>
         <LogEntry label="Method" value={request?.method || 'N/A'} />
         <LogEntry label="URL" value={request?.url || 'N/A'} monospace />
         <LogEntry label="Protocol" value={request?.url?.startsWith('https') ? 'HTTPS' : 'HTTP'} />
@@ -1047,7 +1056,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       </CollapsibleSection>
 
       {enabledRequestHeaders.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Request Headers</>} defaultOpen={false} badge={enabledRequestHeaders.length}>
+        <CollapsibleSection title={<SectionLabel><Icon icon={faList} size={11} />Request Headers</SectionLabel>} defaultOpen={false} badge={enabledRequestHeaders.length}>
           {enabledRequestHeaders.map((h: any, idx: number) => (
             <LogEntry key={idx} label={h.key} value={h.value} monospace small />
           ))}
@@ -1055,7 +1064,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       )}
 
       {enabledQueryParams.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faLink} size={11} style={{ marginRight: 5 }} />Query Parameters</>} defaultOpen={false} badge={enabledQueryParams.length}>
+        <CollapsibleSection title={<SectionLabel><Icon icon={faLink} size={11} />Query Parameters</SectionLabel>} defaultOpen={false} badge={enabledQueryParams.length}>
           {enabledQueryParams.map((p: any, idx: number) => (
             <LogEntry key={idx} label={p.key} value={p.value} monospace small />
           ))}
@@ -1063,34 +1072,34 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       )}
 
       {request?.body && (
-        <CollapsibleSection title={<><Icon icon={faFileCode} size={11} style={{ marginRight: 5 }} />Request Body</>} defaultOpen={false}>
+        <CollapsibleSection title={<SectionLabel><Icon icon={faFileCode} size={11} />Request Body</SectionLabel>} defaultOpen={false}>
           <MonoPre>{request.body}</MonoPre>
         </CollapsibleSection>
       )}
 
       {request?.networkLogs && request.networkLogs.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />Network Logs</>} defaultOpen={true} badge={request.networkLogs.length}>
+        <CollapsibleSection title={<SectionLabel><Icon icon={faTerminal} size={11} />Network Logs</SectionLabel>} defaultOpen={true} badge={request.networkLogs.length}>
           {request.networkLogs.map((ln: string, idx: number) => (
             <LogLine key={idx}>{ln}</LogLine>
           ))}
         </CollapsibleSection>
       )}
 
-      <CollapsibleSection title={<><Icon icon={faDownload} size={11} style={{ marginRight: 5 }} />Response</>} defaultOpen={true}>
+      <CollapsibleSection title={<SectionLabel><Icon icon={faDownload} size={11} />Response</SectionLabel>} defaultOpen={true}>
         <LogEntry label="Status Code" value={`${response.status} ${response.statusText}`} highlight={response.status >= 400} />
         <LogEntry label="Duration" value={`${response.duration}ms`} />
         <LogEntry label="Response Size" value={formatSize(response.size)} />
         <LogTimestamp>{new Date().toLocaleString()}</LogTimestamp>
       </CollapsibleSection>
 
-      <CollapsibleSection title={<><Icon icon={faList} size={11} style={{ marginRight: 5 }} />Response Headers</>} defaultOpen={false} badge={Object.keys(response.headers).length}>
+      <CollapsibleSection title={<SectionLabel><Icon icon={faList} size={11} />Response Headers</SectionLabel>} defaultOpen={false} badge={Object.keys(response.headers).length}>
         {Object.entries(response.headers).map(([key, val]) => (
           <LogEntry key={key} label={key} value={String(val)} monospace small />
         ))}
       </CollapsibleSection>
 
       {responseCookies.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faCookieBite} size={11} style={{ marginRight: 5 }} />Response Cookies</>} defaultOpen={false} badge={responseCookies.length}>
+        <CollapsibleSection title={<SectionLabel><Icon icon={faCookieBite} size={11} />Response Cookies</SectionLabel>} defaultOpen={false} badge={responseCookies.length}>
           {responseCookies.map((cookie, idx) => (
             <div key={idx}>
               <LogEntry label={cookie.name} value={cookie.value} monospace small />
@@ -1109,14 +1118,14 @@ const RequestLog: React.FC<RequestLogProps> = ({ response, request }) => {
       )}
 
       {request?.scriptLogs && request.scriptLogs.length > 0 && (
-        <CollapsibleSection title={<><Icon icon={faCode} size={11} style={{ marginRight: 5 }} />Script Logs</>} defaultOpen={true} badge={request.scriptLogs.length}>
+        <CollapsibleSection title={<SectionLabel><Icon icon={faCode} size={11} />Script Logs</SectionLabel>} defaultOpen={true} badge={request.scriptLogs.length}>
           {request.scriptLogs.map((ln: string, idx: number) => (
             <LogLine key={idx}>{ln}</LogLine>
           ))}
         </CollapsibleSection>
       )}
 
-      <CollapsibleSection title={<><Icon icon={faTerminal} size={11} style={{ marginRight: 5 }} />cURL Command</>} defaultOpen={false}>
+      <CollapsibleSection title={<SectionLabel><Icon icon={faTerminal} size={11} />cURL Command</SectionLabel>} defaultOpen={false}>
         <CurlCommandGenerator request={request} response={response} />
       </CollapsibleSection>
 
@@ -1159,6 +1168,9 @@ const CurlCopyBtn = styled.button`
   font-size: 11px;
   cursor: pointer;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 `;
 
 const CurlCommandGenerator: React.FC<CurlCommandGeneratorProps> = ({ request }) => {
@@ -1178,7 +1190,7 @@ const CurlCommandGenerator: React.FC<CurlCommandGeneratorProps> = ({ request }) 
         {curlCmd}
       </MonoPre>
       <CurlCopyBtn onClick={handleCopyCurl}>
-        <Icon icon={faCopy} size={11} style={{ marginRight: 4 }} /> Copy cURL Command
+        <Icon icon={faCopy} size={11} /> Copy cURL Command
       </CurlCopyBtn>
     </div>
   );
@@ -1674,7 +1686,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           {responseVarsTokens && responseVarsTokens.length > 0 && (
             <VarsPickerWrap ref={varsPickerRef}>
               <CopyBtn data-testid="response-vars-picker-btn" $active={!!copiedVar} onClick={() => setShowVarsPicker(s => !s)} title="Copy a {{response.*}} variable token">
-                <Icon icon={faCode} size={12} style={{ marginRight: 4 }} />
+                <Icon icon={faCode} size={12} />
                 {copiedVar ? `{{${copiedVar}}} ✓` : '{{ }}'}
               </CopyBtn>
               {showVarsPicker && (
@@ -1691,13 +1703,13 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           )}
           {request && (
             <CopyBtn onClick={handleCopyCurlStatus} title="Copy as cURL command">
-              <Icon icon={faTerminal} size={12} style={{ marginRight: 4 }} />
+              <Icon icon={faTerminal} size={12} />
               {copiedCurl ? 'cURL ✓' : 'cURL'}
             </CopyBtn>
           )}
           {response.body && !isLargeFilePreviewBlocked && (
             <CopyBtn onClick={handleCopy}>
-              <Icon icon={faCopy} size={12} style={{ marginRight: 4 }} />
+              <Icon icon={faCopy} size={12} />
               {copied ? 'Copied ✓' : 'Copy'}
             </CopyBtn>
           )}
@@ -1708,7 +1720,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           )}
           {response.isFileResponse && response.fileBase64 && (
             <CopyBtn $active={downloaded} onClick={handleDownloadFile} title={response.fileName || 'Download file'}>
-              <Icon icon={faDownload} size={12} style={{ marginRight: 4 }} />
+              <Icon icon={faDownload} size={12} />
               {downloaded ? 'Downloaded ✓' : 'Download'}
             </CopyBtn>
           )}

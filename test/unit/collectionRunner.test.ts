@@ -4,6 +4,7 @@ import type { AddressInfo } from "net";
 import {
   runCollectionRequests,
   executeRunnerRequest,
+  parseIterationData,
   RunnerRequestItem,
   StoredCookie,
 } from "../../src/core";
@@ -341,5 +342,74 @@ describe("collectionRunner", () => {
     expect(entry.status).toBe(200);
     expect(extractedVariables.done).toBe(true);
     expect(variables.done).toBe("true");
+  });
+
+  describe("F32 data-driven runs", () => {
+    it("parses CSV iteration data with quoted fields", () => {
+      const rows = parseIterationData(`name,note
+"Ada,Lovelace",first
+Bob,"quoted ""value"""`);
+      expect(rows).toHaveLength(2);
+      expect(rows[0].name).toBe("Ada,Lovelace");
+      expect(rows[0].note).toBe("first");
+      expect(rows[1].note).toBe('quoted "value"');
+    });
+
+    it("parses JSON array iteration data", () => {
+      const rows = parseIterationData(
+        JSON.stringify([{ name: "Ada", n: 1 }, { name: "Bob", n: 2 }]),
+        "data.json",
+      );
+      expect(rows).toEqual([
+        { name: "Ada", n: "1" },
+        { name: "Bob", n: "2" },
+      ]);
+    });
+
+    it("treats a bare JSON object as a single row", () => {
+      const rows = parseIterationData('{"name":"Ada"}');
+      expect(rows).toEqual([{ name: "Ada" }]);
+    });
+
+    it("injects each row's variables per iteration", async () => {
+      const results = await runCollectionRequests({
+        requests: [req({ id: "a", url: baseUrl("/users/{{name}}") })],
+        iterationData: [
+          { name: "ada" },
+          { name: "bob" },
+          { name: "carol" },
+        ],
+        timeout: 5000,
+      });
+      expect(results).toHaveLength(3);
+      expect(results.map((r) => r.url)).toEqual([
+        baseUrl("/users/ada"),
+        baseUrl("/users/bob"),
+        baseUrl("/users/carol"),
+      ]);
+      expect(results.map((r) => r.iteration)).toEqual([0, 1, 2]);
+    });
+
+    it("runs every request once per row", async () => {
+      const results = await runCollectionRequests({
+        requests: [
+          req({ id: "a", url: baseUrl("/users/{{name}}") }),
+          req({ id: "b", url: baseUrl("/health") }),
+        ],
+        iterationData: [{ name: "x" }, { name: "y" }],
+        timeout: 5000,
+      });
+      expect(results).toHaveLength(4);
+      expect(results.map((r) => r.iteration)).toEqual([0, 0, 1, 1]);
+    });
+
+    it("keeps entries uniterated when no data is supplied", async () => {
+      const results = await runCollectionRequests({
+        requests: [req({ id: "a", url: baseUrl("/ok") })],
+        timeout: 5000,
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0].iteration).toBeUndefined();
+    });
   });
 });

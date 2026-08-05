@@ -47,20 +47,47 @@ test.describe('Settings', () => {
     await screenshot(app.window, 'settings-open');
   });
 
-  test('Settings contains Proxy section', async () => {
-    log('--- Proxy section ---');
+  test('Settings modal has General / SSL / Proxy tabs', async () => {
+    log('--- Settings tabs ---');
     const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const text = (await modal.textContent().catch(() => '')) ?? '';
-    logCheck('Contains "Proxy"', text.includes('Proxy'));
-    expect(text).toContain('Proxy');
+    for (const tab of ['general', 'ssl', 'proxy']) {
+      const btn = modal.locator(`[data-testid="settings-tab-${tab}"]`);
+      const exists = await btn.count() > 0;
+      logCheck(`Tab "${tab}" present`, exists);
+      expect(exists).toBe(true);
+    }
   });
 
-  test('Settings contains Certificate section', async () => {
-    log('--- Certificate section ---');
+  test('Proxy tab shows proxy settings', async () => {
+    log('--- Proxy tab ---');
+    await clickInFrame(mainFrame!, '[data-testid="settings-tab-proxy"]');
+    await mainFrame!.waitForTimeout(300);
     const modal = mainFrame!.locator('[data-testid="settings-modal"]');
     const text = (await modal.textContent().catch(() => '')) ?? '';
-    logCheck('Contains "Certificate"', text.includes('Certificate'));
-    expect(text).toContain('Certificate');
+    logCheck('Contains "Proxy Settings"', text.includes('Proxy Settings'));
+    expect(text).toContain('Proxy Settings');
+    const proxyInput = modal.locator('input[placeholder*="proxy"]').count();
+    const portInput = modal.locator('input[type="number"]').count();
+    logCheck('Proxy host input found', await proxyInput);
+    logCheck('Proxy port input found', await portInput);
+    expect(await proxyInput).toBeGreaterThan(0);
+    expect(await portInput).toBeGreaterThan(0);
+    await screenshot(app.window, 'settings-proxy-tab');
+    await clickInFrame(mainFrame!, '[data-testid="settings-tab-general"]');
+    await mainFrame!.waitForTimeout(200);
+  });
+
+  test('SSL tab shows client certificates', async () => {
+    log('--- SSL tab ---');
+    await clickInFrame(mainFrame!, '[data-testid="settings-tab-ssl"]');
+    await mainFrame!.waitForTimeout(300);
+    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
+    const text = (await modal.textContent().catch(() => '')) ?? '';
+    logCheck('Contains "Client Certificates"', text.includes('Client Certificates'));
+    expect(text).toContain('Client Certificates');
+    await screenshot(app.window, 'settings-ssl-tab');
+    await clickInFrame(mainFrame!, '[data-testid="settings-tab-general"]');
+    await mainFrame!.waitForTimeout(200);
   });
 
   test('Settings contains Activity Log toggle', async () => {
@@ -132,7 +159,7 @@ test.describe('Settings', () => {
     expect(visible).toBe(true);
 
     const text = (await modal.textContent().catch(() => '')) ?? '';
-    logCheck('Settings content intact', text.includes('Proxy') && text.includes('Certificate'));
+    logCheck('Settings content intact', text.includes('General') && text.includes('SSL') && text.includes('Proxy'));
     await screenshot(app.window, 'settings-reopened');
     await closeSettings(mainFrame!);
   });

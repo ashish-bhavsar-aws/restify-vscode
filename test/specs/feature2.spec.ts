@@ -11,6 +11,9 @@ import {
   waitForElement,
   typeInQuickInput,
   confirmQuickInput,
+  runCommand,
+  waitForPromptInput,
+  findMainPanelFrame,
   type VSCodeApp,
 } from '../utils/vscode';
 import {
@@ -72,20 +75,8 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     log('--- F13: curl import ---');
     const { window } = app;
 
-    await window.keyboard.press('Control+Shift+p');
-    await window.waitForTimeout(500);
-    await window.keyboard.type('Paste cURL', { delay: 30 });
-    await window.waitForTimeout(800);
-
-    const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Paste cURL/i }).first();
-    const cmdCount = await cmdItem.count();
-    logCheck('Paste cURL command found', cmdCount > 0);
-    if (cmdCount === 0) {
-      await window.keyboard.press('Escape');
-      return;
-    }
-    await cmdItem.click();
-    await window.waitForTimeout(500);
+    await runCommand(window, 'Paste cURL');
+    await waitForPromptInput(window);
 
     const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
     await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
@@ -96,16 +87,19 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
 
     await window.waitForTimeout(3000);
 
+    const freshFrame = await findMainPanelFrame(window);
+    if (freshFrame) mainFrame = freshFrame;
     const urlInput = mainFrame!.locator('.url-input, [data-testid="url-input"]');
     await urlInput.first().waitFor({ state: 'visible', timeout: 10_000 });
     const urlValue = (await urlInput.first().inputValue().catch(() => '')) || (await urlInput.first().textContent().catch(() => ''));
     log(`  URL value: "${(urlValue || '').slice(0, 80)}"`);
     logCheck('URL contains mock server', (urlValue || '').includes('localhost:3000'));
 
-    const methodBadge = mainFrame!.locator('.method-select, [data-testid="method-select"]');
+    const methodBadge = mainFrame!.locator('[data-testid="method-trigger-label"]');
     const methodText = (await methodBadge.first().textContent().catch(() => '')) || '';
     log(`  Method: "${methodText.trim()}"`);
     logCheck('Method is POST', methodText.includes('POST'));
+    expect(methodText).toContain('POST');
 
     await screenshot(app.window, 'f13-curl-imported');
   });
@@ -114,14 +108,8 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     log('--- F13: curl auth import ---');
     const { window } = app;
 
-    await window.keyboard.press('Control+Shift+p');
-    await window.waitForTimeout(500);
-    await window.keyboard.type('Paste cURL', { delay: 30 });
-    await window.waitForTimeout(800);
-
-    const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Paste cURL/i }).first();
-    await cmdItem.click();
-    await window.waitForTimeout(500);
+    await runCommand(window, 'Paste cURL');
+    await waitForPromptInput(window);
 
     const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
     await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
@@ -140,14 +128,8 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     log('--- F13: curl bearer import ---');
     const { window } = app;
 
-    await window.keyboard.press('Control+Shift+p');
-    await window.waitForTimeout(500);
-    await window.keyboard.type('Paste cURL', { delay: 30 });
-    await window.waitForTimeout(800);
-
-    const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Paste cURL/i }).first();
-    await cmdItem.click();
-    await window.waitForTimeout(500);
+    await runCommand(window, 'Paste cURL');
+    await waitForPromptInput(window);
 
     const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
     await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
@@ -166,14 +148,8 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     log('--- F13: curl insecure import ---');
     const { window } = app;
 
-    await window.keyboard.press('Control+Shift+p');
-    await window.waitForTimeout(500);
-    await window.keyboard.type('Paste cURL', { delay: 30 });
-    await window.waitForTimeout(800);
-
-    const cmdItem = window.locator('.quick-input-widget .monaco-list-row').filter({ hasText: /Paste cURL/i }).first();
-    await cmdItem.click();
-    await window.waitForTimeout(500);
+    await runCommand(window, 'Paste cURL');
+    await waitForPromptInput(window);
 
     const inputBox = window.locator('.quick-input-widget .input-box input, .quick-input-widget input');
     await inputBox.first().waitFor({ state: 'visible', timeout: 10_000 });
@@ -192,6 +168,11 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
 
   test('F16 - dynamic variables resolve in the URL query string', async () => {
     log('--- F16: dynamic vars in URL ---');
+    // The curl imports above each opened a NEW panel, so open a fresh one and
+    // re-point mainFrame at it before exercising the URL variable input.
+    await runCommand(app.window, 'Restify: Open Restify');
+    const freshFrame = await findMainPanelFrame(app.window);
+    if (freshFrame) mainFrame = freshFrame;
     await setMethod(mainFrame!, 'GET');
     await setBodyType(mainFrame!, 'none');
     const url = mockUrl(
@@ -463,6 +444,48 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     logCheck('Client credentials token attached', body.includes('mock-client-credentials-token'));
     expect(body).toContain('mock-client-credentials-token');
     await screenshot(app.window, 'f11-oauth-request');
+  });
+
+  // ── F11: OAuth 2.0 — authorization code + PKCE flow ─────────────
+
+  test('F11 - authorization code flow fetches and uses a token', async () => {
+    log('--- F11: authorization code flow ---');
+    await setAuthType(mainFrame!, 'oauth2');
+    await mainFrame!.waitForTimeout(500);
+
+    await selectOAuthGrant(mainFrame!, 'Authorization Code');
+
+    // Field order for authorization_code: Auth URL (0), Redirect URL (1),
+    // Token URL (2), Client ID (3), Client Secret (4), Scopes (5).
+    // Redirect URL is left empty so the extension auto-generates a loopback
+    // listener; PKCE is enabled by default. The mock authorize endpoint
+    // 302-redirects into that listener via the RESTIFY_TEST_OPEN_URL=fetch hook.
+    await fillAuthField(mainFrame!, 0, mockUrl('/api/oauth/authorize'));
+    await fillAuthField(mainFrame!, 2, mockUrl('/api/oauth/token'));
+    await fillAuthField(mainFrame!, 3, 'mock-client');
+    await fillAuthField(mainFrame!, 4, 'mock-secret');
+    await fillAuthField(mainFrame!, 5, 'auth-code-grant');
+
+    await clickInFrame(mainFrame!, '[data-testid="oauth-get-token-btn"]');
+    const tokenRow = mainFrame!.locator('[data-testid="oauth-token-row"]');
+    await tokenRow.waitFor({ state: 'visible', timeout: 20_000 });
+    const rowText = (await tokenRow.textContent()) ?? '';
+    logCheck('Authorization code token ready', rowText.includes('Token ready'));
+    expect(rowText).toContain('Token ready');
+    await screenshot(app.window, 'f11-oauth-auth-code');
+
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/oauth/verify'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"authorized":\s*true/);
+    logCheck('Authorization code authorized request', /"authorized":\s*true/.test(body));
+    expect(body).toMatch(/"authorized":\s*true/);
+    logCheck('Auth code token attached', body.includes('mock-oauth-token'));
+    expect(body).toContain('mock-oauth-token');
+    await screenshot(app.window, 'f11-oauth-auth-code-request');
   });
 
   // ── F11: OAuth 2.0 — password grant flow ────────────────────────

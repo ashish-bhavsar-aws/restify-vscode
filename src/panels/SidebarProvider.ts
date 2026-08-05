@@ -6,7 +6,17 @@ import * as http from 'http';
 import { URL } from 'url';
 import { StorageManager } from '../storage/StorageManager';
 import { getSidebarHtml } from '../webview/sidebarHtml';
-import { runCollectionRequests } from '../core';
+import { runCollectionRequests, parseIterationData } from '../core';
+import {
+  parseImportText,
+  collectionToPostman,
+  collectionToOpenApi,
+  collectionToHar,
+  collectionToHttpText,
+  ImportSource,
+  ImportedCollection,
+} from '../core/converters';
+import { showOpenDialog, showSaveDialog } from './dialogStub';
 
 type SidebarType = 'history' | 'collections';
 
@@ -72,6 +82,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
         case 'deleteHistoryItem':
           this.storageManager.deleteHistoryItem(msg.id);
+          break;
+        case 'toggleHistoryPin':
+          this.storageManager.toggleHistoryPin(msg.id);
           break;
         case 'clearHistory':
           vscode.window
@@ -197,21 +210,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           const cols = this.storageManager.getCollections();
           const col = cols.find((c) => String(c.id) === String(msg.id));
           if (!col) break;
-          const data = JSON.stringify(col, null, 2);
-          const safe = (col.name || 'collection').replace(/[^a-z0-9._-]/gi, '-').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
-          const defaultName = `${safe || 'collection'}-restify.collection.json`;
-          const fileName = await vscode.window.showInputBox({
-            prompt: 'Enter a filename for the exported collection',
-            value: defaultName,
-            validateInput: (v) => v.trim() ? null : 'Filename cannot be empty',
-          });
-          if (!fileName) break;
-          const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
-          const targetUri = wsFolder
-            ? vscode.Uri.joinPath(wsFolder, fileName)
-            : vscode.Uri.file(path.join(os.homedir(), fileName));
-          await vscode.workspace.fs.writeFile(targetUri, Buffer.from(data, 'utf8'));
-          vscode.window.showInformationMessage('✓ Collection exported');
+          const format = await this._chooseExportFormat();
+          if (!format) break;
+          await this._writeExportFile(col, format);
           break;
         }
         case 'exportAllCollections':
@@ -318,6 +319,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           duration: h.duration,
           name: h.name,
           timestamp: h.timestamp,
+          pinned: !!h.pinned,
         })),
         collections: this.storageManager.getCollections(),
       };
@@ -350,6 +352,57 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async _chooseExportFormat(): Promise<string | undefined> {
+    const choice = await vscode.window.showQuickPick(
+      [
+        { label: '$(file-json) Restify JSON', description: 'Native Restify collection format', id: 'restify' },
+        { label: '$(file-code) Postman Collection', description: 'Postman v2.1 collection JSON', id: 'postman' },
+        { label: '$(file-code) OpenAPI 3.0', description: 'OpenAPI / Swagger 3.0 document (YAML-style JSON)', id: 'openapi' },
+        { label: '$(file-binary) HAR', description: 'HAR 1.2 HTTP archive JSON', id: 'har' },
+        { label: '$(file-text) REST Client .http', description: 'REST Client `.http` document', id: 'http' },
+      ],
+      { placeHolder: 'Select export format' }
+    ) as { id: string } | undefined;
+    return choice?.id;
+  }
+
+  private async _writeExportFile(col: any, format: string): Promise<void> {
+    const safe = (col.name || 'collection').replace(/[^a-z0-9._-]/gi, '-').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
+    const extensions: Record<string, string[]> = {
+      restify: ['json'],
+      postman: ['json'],
+      openapi: ['json'],
+      har: ['har'],
+      http: ['http'],
+    };
+    const defaultExt = (extensions[format] || ['json'])[0];
+    const data = (() => {
+      switch (format) {
+        case 'postman':
+          return JSON.stringify(collectionToPostman(col as ImportedCollection), null, 2);
+        case 'openapi':
+          return JSON.stringify(collectionToOpenApi(col as ImportedCollection), null, 2);
+        case 'har':
+          return JSON.stringify(collectionToHar(col as ImportedCollection), null, 2);
+        case 'http':
+          return collectionToHttpText(col as ImportedCollection);
+        default:
+          return JSON.stringify(col, null, 2);
+      }
+    })();
+
+    const uri = await showSaveDialog({
+      defaultUri: vscode.Uri.joinPath(
+        vscode.workspace.workspaceFolders?.[0]?.uri || vscode.Uri.file(os.homedir()),
+        `${safe || 'collection'}.${defaultExt}`
+      ),
+      filters: { [format.toUpperCase()]: extensions[format] },
+    });
+    if (!uri) return;
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8'));
+    vscode.window.showInformationMessage(`\u2713 Collection exported to ${uri.fsPath}`);
+  }
+
   async exportAll(): Promise<void> {
     const cols = this.storageManager.getCollections();
     if (!cols.length) {
@@ -373,6 +426,46 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   // ─── Collection runner (F31) ──────────────────────────────
+  /**
+   * F32: Let the user pick a CSV/JSON data file for a data-driven run, or run
+   * without one. Returns `null` when the run should be cancelled.
+   */
+  private async _pickIterationData(): Promise<Record<string, string>[] | null> {
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(circle-slash) Run without data',
+          description: 'Execute each request once',
+          id: 'none',
+        },
+        {
+          label: '$(file-text) Run with data file...',
+          description: 'Iterate over CSV / JSON rows (each row injects variables)',
+          id: 'data',
+        },
+      ],
+      { placeHolder: 'Data-driven run' }
+    );
+    if (!choice) return null;
+    if (choice.id === 'none') return [];
+
+    const uris = await showOpenDialog({
+      canSelectMany: false,
+      filters: { 'CSV / JSON': ['csv', 'json'] },
+      openLabel: 'Select Data File',
+    });
+    if (!uris || !uris[0]) return null;
+    const raw = Buffer.from(
+      await vscode.workspace.fs.readFile(uris[0])
+    ).toString('utf8');
+    const rows = parseIterationData(raw, uris[0].fsPath);
+    if (rows.length === 0) {
+      vscode.window.showWarningMessage('No data rows found in the selected file.');
+      return null;
+    }
+    return rows;
+  }
+
   private async _runCollection(collectionId: string, groupId: string | null): Promise<void> {
     const cols = this.storageManager.getCollections();
     const col = cols.find((c) => String(c.id) === String(collectionId));
@@ -388,13 +481,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    const iterationData = await this._pickIterationData();
+    if (iterationData === null) return;
+
     const controller = new AbortController();
     this._runController = controller;
     this.postMessage({
       command: 'collectionRunStarted',
       collectionId,
       groupId,
-      total: requests.length,
+      total: requests.length * Math.max(1, iterationData.length),
     });
 
     let cookies = this.storageManager.getCookies();
@@ -405,6 +501,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         signal: controller.signal,
         cookies,
         lastResponse: this.storageManager.getLastResponse(),
+        iterationData,
         onCookiesChanged: (next) => {
           cookies = next;
           this.storageManager.saveCookies(next);
@@ -461,6 +558,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           description: 'Import a previously exported Restify collection JSON file',
           id: 'restify',
         },
+        {
+          label: '$(file-binary) HAR File',
+          description: 'Import requests captured in a HAR (HTTP Archive) JSON file',
+          id: 'har',
+        },
+        {
+          label: '$(bug) Insomnia Export',
+          description: 'Import requests from an Insomnia JSON export',
+          id: 'insomnia',
+        },
+        {
+          label: '$(file-text) REST Client .http File',
+          description: 'Import requests from a REST Client `.http` document',
+          id: 'http',
+        },
       ],
       { placeHolder: 'Select import source' }
     ) as { label: string; description: string; id: string } | undefined;
@@ -480,11 +592,55 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       case 'swagger-url':
         await this._importSwaggerUrl();
         break;
+      case 'har':
+      case 'insomnia':
+      case 'http':
+        await this._importConvertedFile(choice.id);
+        break;
     }
   }
 
+  private async _importConvertedFile(source: Exclude<ImportSource, null>): Promise<void> {
+    const labels: Record<string, { filter: { [k: string]: string[] }; title: string }> = {
+      har: { filter: { 'HAR (HTTP Archive)': ['har', 'json'] }, title: 'Import HAR File' },
+      insomnia: { filter: { 'Insomnia Export': ['json'] }, title: 'Import Insomnia Export' },
+      http: { filter: { 'REST Client (.http)': ['http'] }, title: 'Import .http File' },
+    };
+    const cfg = labels[source];
+    const uris = await showOpenDialog({
+      canSelectMany: false,
+      filters: cfg.filter,
+      openLabel: cfg.title,
+    });
+    if (!uris || !uris[0]) return;
+
+    const raw = Buffer.from(await vscode.workspace.fs.readFile(uris[0])).toString('utf8');
+    const collection = parseImportText(raw, source);
+    if (!collection) {
+      vscode.window.showErrorMessage(
+        `Import failed: file does not look like a valid ${source} document`
+      );
+      return;
+    }
+    await this._saveImportedCollection(collection);
+    const total = _countImportedRequests(collection);
+    vscode.window.showInformationMessage(
+      `\u2713 Imported "${collection.name}" with ${total} request(s)`
+    );
+  }
+
+  private async _saveImportedCollection(collection: ImportedCollection): Promise<void> {
+    const existing = this.storageManager
+      .getCollections()
+      .find((c) => c.name === collection.name);
+    this.storageManager.saveCollection({
+      ..._normalizeImported(collection),
+      id: existing?.id || collection.id,
+    });
+  }
+
   private async _importRestifyCollection(): Promise<void> {
-    const uris = await vscode.window.showOpenDialog({
+    const uris = await showOpenDialog({
       canSelectMany: false,
       filters: { 'Restify Collection JSON': ['json'] },
       openLabel: 'Import Restify Collection',
@@ -510,7 +666,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _importPostmanCollection(): Promise<void> {
-    const uris = await vscode.window.showOpenDialog({
+    const uris = await showOpenDialog({
       canSelectMany: false,
       filters: { 'Postman Collection JSON': ['json'] },
       openLabel: 'Import Postman Collection',
@@ -538,7 +694,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _importSwaggerFile(): Promise<void> {
-    const uris = await vscode.window.showOpenDialog({
+    const uris = await showOpenDialog({
       canSelectMany: false,
       filters: { 'OpenAPI / Swagger (JSON or YAML)': ['json', 'yaml', 'yml'] },
       openLabel: 'Import Swagger / OpenAPI File',
@@ -625,6 +781,38 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 }
 
 // ─── Group tree helper (inline, no import needed) ────────────────────────────
+
+/** Ensure every imported request/group carries a stable id for storage. */
+function _normalizeImported(col: ImportedCollection): any {
+  const _reqId = () =>
+    Date.now().toString() + Math.random().toString(36).slice(2);
+  const normalizeRequest = (r: any) => (r?.id ? r : { ...r, id: _reqId() });
+  const normalizeGroups = (groups: any[] | undefined): any[] =>
+    (groups || []).map((g) => ({
+      ...g,
+      id: g.id || _reqId(),
+      requests: (g.requests || []).map(normalizeRequest),
+      groups: normalizeGroups(g.groups),
+    }));
+  return {
+    id: col.id,
+    name: col.name,
+    requests: (col.requests || []).map(normalizeRequest),
+    groups: normalizeGroups(col.groups),
+  };
+}
+
+function _countImportedRequests(col: ImportedCollection): number {
+  let count = (col.requests || []).length;
+  const visit = (groups: any[] | undefined) => {
+    for (const g of groups || []) {
+      count += (g.requests || []).length;
+      visit(g.groups);
+    }
+  };
+  visit(col.groups);
+  return count;
+}
 
 function _findGroupInline(groups: any[], id: string): any {
   for (const g of groups) {

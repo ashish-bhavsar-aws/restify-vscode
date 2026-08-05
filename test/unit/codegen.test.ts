@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateCode } from "../../src/webview/utils/codegen";
+import { generateCode, SUPPORTED_LANGS } from "../../src/webview/utils/codegen";
 import { RequestState, DefaultHeadersConfig } from "../../src/webview/types";
 
 const baseRequest: RequestState = {
@@ -347,5 +347,108 @@ describe("generateCode multipart edge cases", () => {
       null,
     );
     expect(code).toContain('filename="a\\"b.txt"');
+  });
+});
+
+describe("generateCode F53 languages", () => {
+  const postRequest: RequestState = {
+    ...baseRequest,
+    method: "POST",
+    bodyType: "json",
+    body: '{"name":"Ada"}',
+    headers: [{ key: "X-Test", value: "yes" }],
+  };
+
+  it("generates TypeScript fetch", () => {
+    const code = generateCode("typescript-fetch", postRequest, null);
+    expect(code).toContain("const options: RequestInit");
+    expect(code).toContain('method: "POST"');
+    expect(code).toContain("X-Test");
+    expect(code).toContain('body: "{\\"name\\":\\"Ada\\"}"');
+    expect(code).toContain("await fetch(url, options)");
+  });
+
+  it("generates Dart http", () => {
+    const code = generateCode("dart", postRequest, null);
+    expect(code).toContain("package:http/http.dart");
+    expect(code).toContain('http.Request("POST"');
+    expect(code).toContain("request.body =");
+    expect(code).toContain("X-Test");
+  });
+
+  it("generates Ruby Net::HTTP", () => {
+    const code = generateCode("ruby", postRequest, null);
+    expect(code).toContain("require 'net/http'");
+    expect(code).toContain("Net::HTTP::Post.new(uri)");
+    expect(code).toContain("request.body =");
+    expect(code).toContain('request["X-Test"] = "yes"');
+  });
+
+  it("generates Rust reqwest", () => {
+    const code = generateCode("rust", postRequest, null);
+    expect(code).toContain("reqwest::blocking::Client");
+    expect(code).toContain("reqwest::Method::POST");
+    expect(code).toContain("request = request.body(");
+    expect(code).toContain('request.header("X-Test", "yes")');
+  });
+
+  it("generates Kotlin OkHttp", () => {
+    const code = generateCode("kotlin-okhttp", postRequest, null);
+    expect(code).toContain("import okhttp3.*");
+    expect(code).toContain(".url(");
+    expect(code).toContain('.method("POST", body)');
+    expect(code).toContain("RequestBody.create");
+    expect(code).toContain('.addHeader("X-Test", "yes")');
+  });
+
+  it("generates HTTPie", () => {
+    const code = generateCode("httpie", postRequest, null);
+    expect(code).toContain("http post");
+    expect(code).toContain('"X-Test: yes"');
+    expect(code).toContain("data=");
+  });
+
+  it("handles urlencoded bodies in Dart", () => {
+    const code = generateCode(
+      "dart",
+      {
+        ...baseRequest,
+        method: "POST",
+        bodyType: "urlencoded",
+        urlencoded: [{ key: "name", value: "Jane Doe", enabled: true }],
+      },
+      null,
+    );
+    expect(code).toContain("name=Jane%20Doe");
+    expect(code).toContain("request.body =");
+  });
+
+  it("generates Kotlin multipart for file uploads", () => {
+    const code = generateCode(
+      "kotlin-okhttp",
+      {
+        ...baseRequest,
+        method: "POST",
+        bodyType: "form",
+        formData: [{ key: "upload", value: "", formType: "file", fileName: "f.bin", enabled: true }],
+      },
+      null,
+    );
+    expect(code).toContain("MultipartBody.Builder()");
+    expect(code).toContain("addFormDataPart(\"upload\"");
+  });
+
+  it("registers all F53 languages in SUPPORTED_LANGS", () => {
+    const ids = [
+      "typescript-fetch",
+      "dart",
+      "ruby",
+      "rust",
+      "kotlin-okhttp",
+      "httpie",
+    ];
+    for (const id of ids) {
+      expect(SUPPORTED_LANGS.some((l) => l.id === id)).toBe(true);
+    }
   });
 });

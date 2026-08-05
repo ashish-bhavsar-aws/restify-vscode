@@ -132,12 +132,12 @@ This section separates the highest-priority features from the broader roadmap in
 - F31 — Collection runner ✅
 - F33 — Test/assertion scripts ✅
 - F41 — Secret variables ✅
-- F51 — .http file support
-- F54 — Command palette actions
-- F60 — Code size and maintainability guardrails
+- F51 — .http file support ✅
+- F54 — Command palette actions ✅
+- F60 — Code size and maintainability guardrails ✅
 
 ### Nice-to-have
-- F13 — cURL command import
+- F13 — cURL command import ✅
 - F14 — Bulk editor for headers/params
 - F15 — Clipboard paste into KV tables
 - F16 — Dynamic variables
@@ -149,10 +149,10 @@ This section separates the highest-priority features from the broader roadmap in
 - F24 — Response beautify options
 - F25 — Save response to file
 - F30 — Notification on long request
-- F44 — Environment import/export
+- F44 — Environment import/export ✅
 - F46 — WebSocket client
 - F52 — Multi-tab / multiple panels
-- F53 — Additional codegen languages
+- F53 — Additional codegen languages ✅
 - F59 — Marketplace discoverability metadata
 
 ---
@@ -200,8 +200,8 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 ### Phase 3 — Import/Export & Interop (P1/P2)
 > Makes Restify a first-class citizen in existing API toolchains.
 
-- [ ] F13 **cURL import**: robust `curl` → RequestState parser (flags, quoted args, `--data-raw`, `-H 'Header: value'`, `-u`, `-F`).
-- [ ] F34 **Export to OpenAPI / HAR / .http**; F35 **Import HAR / Insomnia / .http** — mirror existing Postman/OpenAPI importers.
+- [x] F13 **cURL import**: robust `curl` → RequestState parser (flags, quoted args, `--data-raw`, `-H 'Header: value'`, `-u`, `-F`). *(done — `src/core/curlParser.ts` tokenizer + parser; `restify.importCurl` command with input box + clipboard auto-detect; 17 unit tests + E2E in `feature2.spec.ts` and `palette-commands.spec.ts`)*
+- [x] F34/F35 **Import HAR / Insomnia / Restify / Postman / OpenAPI / .http** — all formats parse via `src/core/converters.ts`; E2E covers Postman, OpenAPI file+URL, HAR, Insomnia, Restify, `.http` in `import-export.spec.ts` + `feature6.spec.ts`. Export to OpenAPI / HAR / `.http` / Postman implemented and unit-tested.
 - [ ] F61 **SOAP/WSDL import and SOAP body generation**: parse WSDL, list operations, generate SOAP envelopes, populate request bodies, and auto-add SOAP headers.
   - Implementation steps:
     1. Add a WSDL importer that reads local/remote WSDL files and extracts services, ports, bindings, operations, and message schemas.
@@ -214,9 +214,9 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F18 **Variable autocomplete** in URL/headers/body inputs (debounced suggestions from active env + globals).
 - [ ] F15 **Clipboard paste** into KV tables; F14 **bulk editor** for Params/Headers.
 - [x] F53 **Codegen correctness pass** *(done — GraphQL body serialization, `urlencoded` + text-only-form fields, disabled header/param filtering, API-key-in-query, dynamic-var substitution incl. `{{$processEnv:NAME}}`, Python/Go/Swift multipart fixes; 27 codegen unit tests)*
-- [ ] F53 **Codegen additions** (TypeScript fetch, Dart, Ruby, Rust, Kotlin) — low risk, mostly templates.
-- [ ] F51 **.http files**: open + parse + send; export request → `.http`.
-- [ ] F44 **Environment import/export** incl. Postman env JSON.
+- [x] F53 **Codegen additions** (TypeScript fetch, Dart, Ruby, Rust, Kotlin, HTTPie) — done; all 17 languages present in `src/webview/utils/codegen.ts`, E2E in `codegen.spec.ts` + `feature6.spec.ts`.
+- [x] F51 **.http files**: open + parse + send (`restify.openHttpFile`); export request → `.http` (`restify.exportRequestToHttp`); E2E in `feature6.spec.ts`.
+- [x] F44 **Environment import/export** incl. Postman env JSON. *(done — `_importEnvironment`/`_exportEnvironment` in `RestifyPanel.ts`, Postman/Restify env converters in `src/core/converters.ts`)*
 
 **Exit criteria:** round-trip tests (import → export → import) for curl/Postman/OpenAPI/HAR; `.http` E2E.
 
@@ -225,7 +225,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F22 **JSON schema validation** of responses (paste schema or pull from imported OpenAPI).
 - [ ] F23 **JSONPath/XPath query** in response viewer.
 - [ ] F25 **Save response to file**; F30 **completion notifications**.
-- [ ] F57 **History pins + fuzzy search**; F54 **palette commands**.
+- [x] F57 **History pins + fuzzy search**; [x] F54 **palette commands**. *(F54 done: `Restify: Send Request`, `Search in Collections`, `New from cURL`, New Request/Collection, Import Collection, Export All, Open Environments all registered and working in `src/extension.ts`; F57 done: fuzzy search on name/URL + pinned history entries (`pinned` flag on `HistoryEntry`, `StorageManager.toggleHistoryPin`, star toggle in `HistoryPanel` with pinned-first sorting); E2E in `feature6.spec.ts`)*
 - [ ] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [ ] F46 **WebSocket client** (read-only connection viewer first).
 - [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
@@ -256,9 +256,9 @@ Focus: fix correctness issues, make the extension feel stable, and improve every
 
 **Nice-to-have**
 - F10 — Pre-request scripts ✅
-- F13 — cURL import
+- F13 — cURL import ✅
 - F16 — Dynamic variables ✅
-- F57 — History search and pins
+- F57 — History search and pins ✅
 - F59 — VS Code discoverability metadata
 
 ### Release 2 — Workflow productivity (target: 3–4 weeks)
@@ -269,8 +269,8 @@ Focus: move from basic request sending to practical daily workflows while keepin
 - F31 — Collection runner ✅
 - F33 — Test/assertion scripts ✅
 - F41 — Secret variables ✅
-- F51 — .http file support
-- F54 — Command palette actions
+- F51 — .http file support ✅
+- F54 — Command palette actions ✅
 - F60 — Code size and maintainability guardrails ✅
 
 **Nice-to-have**
@@ -279,15 +279,15 @@ Focus: move from basic request sending to practical daily workflows while keepin
 - F17 — Default dynamic headers ✅
 - F18 — Variable autocomplete
 - F20 — Header presets/groups
-- F44 — Environment import/export
+- F44 — Environment import/export ✅
 
 ### Release 3 — Ecosystem and editor integration (target: 4+ weeks)
 Focus: make Restify fit into broader developer workflows and existing API toolchains.
 
 **Must-have**
-- F13 — cURL import
-- F34/F35 — OpenAPI/HAR/Insomnia/.http import-export
-- F53 — Additional code generation languages
+- F13 — cURL import ✅
+- F34/F35 — OpenAPI/HAR/Insomnia/.http import-export ✅
+- F53 — Additional code generation languages ✅
 - F52 — Multi-tab/multi-panel support
 
 **Nice-to-have**

@@ -8,6 +8,14 @@ const EXTENSION_PATH = path.resolve(__dirname, '..', '..');
 const TEST_USER_DATA = path.resolve(__dirname, '..', '.vscode-test-user-data');
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', 'screenshots');
 const VIDEO_DIR = path.resolve(__dirname, '..', 'videos');
+// Isolated extensions dir so the user's installed extensions (which may remap
+// keybindings like Cmd+Shift+P) never leak into the test instance.
+const EXTENSIONS_DIR = path.resolve(__dirname, '..', '.vscode-test-extensions');
+
+// Path the extension reads to stub native open/save dialogs in e2e tests.
+// Each test writes {"open": <abs path>} or {"save": <abs path>} to this file
+// before the click that would open a dialog; the extension consumes it.
+export const DIALOG_STUB_FILE = path.resolve(__dirname, '..', 'dialog-stub.json');
 
 // ─── Debug Logger ───────────────────────────────────────────────────
 
@@ -122,6 +130,7 @@ export async function launchVSCode(): Promise<VSCodeApp> {
     fs.rmSync(TEST_USER_DATA, { recursive: true, force: true });
   }
   fs.mkdirSync(TEST_USER_DATA, { recursive: true });
+  fs.mkdirSync(EXTENSIONS_DIR, { recursive: true });
 
   // Write settings.json for dark theme + maximize
   const settingsDir = path.join(TEST_USER_DATA, 'User');
@@ -149,6 +158,7 @@ export async function launchVSCode(): Promise<VSCodeApp> {
       '--disable-gpu',
       `--user-data-dir=${TEST_USER_DATA}`,
       `--extensionDevelopmentPath=${EXTENSION_PATH}`,
+      `--extensions-dir=${EXTENSIONS_DIR}`,
       '--disable-extension=vscode.git',
       '--disable-extension=vscode.github.gitUsage',
       '--disable-extension=vscode.welcomePage',
@@ -162,6 +172,8 @@ export async function launchVSCode(): Promise<VSCodeApp> {
     env: {
       ...process.env,
       RESTIFY_TEST_EXPORT_PATH: path.join(SCREENSHOT_DIR, 'export-test.json'),
+      RESTIFY_TEST_STUB_FILE: DIALOG_STUB_FILE,
+      RESTIFY_TEST_OPEN_URL: 'fetch',
     },
     recordVideo: {
       dir: VIDEO_DIR,
@@ -619,6 +631,44 @@ export async function findCollectionsFrame(page: Page): Promise<Frame | null> {
   return null;
 }
 
+/** Find the history sidebar webview frame (identified by its "Filter history..." input). */
+export async function findHistoryFrame(page: Page, timeoutMs = 20_000): Promise<Frame | null> {
+  log(`Searching for history sidebar frame (timeout=${timeoutMs}ms)...`);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (page.isClosed()) {
+      logError('Page is closed, aborting history frame search');
+      return null;
+    }
+
+    const allFrames = page.frames().filter(f => f.url().includes('vscode-webview://'));
+
+    for (const frame of allFrames) {
+      const hasFilter = await frame.locator('input[placeholder="Filter history..."]').count().catch(() => 0);
+      if (hasFilter > 0) {
+        log(`  ✓ Found history frame: ${frame.url().slice(0, 60)}`);
+        return frame;
+      }
+    }
+
+    // Fallback: frame with pin buttons and no collection expand controls
+    for (const frame of allFrames) {
+      const hasPin = await frame.locator('[data-testid="history-pin"]').count().catch(() => 0);
+      const hasExpand = await frame.locator('button[title*="Expand"]').count().catch(() => 0);
+      if (hasPin > 0 && hasExpand === 0) {
+        log(`  Fallback: found history frame via pin buttons: ${frame.url().slice(0, 60)}`);
+        return frame;
+      }
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  logError('No history sidebar frame found');
+  return null;
+}
+
 // ─── Activity bar helpers ───────────────────────────────────────────
 
 export async function dismissOnboarding(page: Page): Promise<void> {
@@ -808,11 +858,78 @@ export async function typeInQuickInput(page: Page, text: string): Promise<void> 
   await page.waitForTimeout(200);
 }
 
+/** Opens the Command Palette and runs a command by its title (e.g. "Restify: Send Request"). */
+export async function runCommand(page: Page, title: string): Promise<void> {
+  log(`Running command palette: "${title}"`);
+  const anyQuickInputVisible = () =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.quick-input-widget')).some((w) => w.offsetParent !== null),
+    );
+  let visible = false;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Move keyboard focus to neutral VS Code chrome (far-right titlebar area)
+    // first — some workbench elements (e.g. the agents/status bar) swallow
+    // Meta+P, and the macOS menu bar occupies the left side of the titlebar.
+    const width = await page.evaluate(() => window.innerWidth).catch(() => 1200);
+    await page
+      .locator('.titlebar, .part.titlebar')
+      .first()
+      .click({ force: true, position: { x: Math.max(width - 120, 200), y: 10 } })
+      .catch(() => {});
+    await page.waitForTimeout(300);
+    // Use Quick Open (Ctrl/Cmd+P) + the ">" prefix, which reliably reaches the
+    // command palette regardless of keybinding hijacks on F1/Ctrl+Shift+P.
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+P' : 'Control+P');
+    await page.waitForTimeout(700);
+    visible = await anyQuickInputVisible().catch(() => false);
+    if (visible) break;
+    log(`  quick-input not visible (attempt ${attempt}), retrying...`);
+  }
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll<HTMLElement>('.quick-input-widget')).some((w) => w.offsetParent !== null),
+    { timeout: 10_000 },
+  );
+  await typeInQuickInput(page, `>${title}`);
+  await page.waitForTimeout(700);
+
+  const entries = page.locator('.quick-input-list-entry');
+  const entryCount = await entries.count();
+  log(`  Quick-input entries after typing: ${entryCount}`);
+  for (let i = 0; i < Math.min(entryCount, 5); i++) {
+    const t = await entries.nth(i).textContent().catch(() => '');
+    log(`    entry[${i}]: "${(t || '').trim().slice(0, 60)}"`);
+  }
+  const item = entries.filter({ hasText: title }).first();
+  const matchCount = await item.count();
+  logCheck(`Command "${title}" found in palette`, matchCount);
+  if (matchCount === 0) {
+    logError(`Command "${title}" not found in palette`);
+    return;
+  }
+  await item.click();
+  await page.waitForTimeout(800);
+  log(`  Command "${title}" executed`);
+}
+
 export async function confirmQuickInput(page: Page): Promise<void> {
   log('Confirming quick input (Enter)...');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(500);
   log('  Quick input confirmed');
+}
+
+export async function waitForPromptInput(page: Page, timeoutMs = 15_000): Promise<void> {
+  // After running a palette command that opens a follow-up input prompt
+  // (e.g. "Paste cURL"), the command palette widget is still closing while the
+  // prompt widget appears. Wait until exactly one quick-input widget is visible
+  // so locators like `.first()` target the prompt and not the closing palette.
+  await page.waitForFunction(() => {
+    const widgets = Array.from(document.querySelectorAll<HTMLElement>('.quick-input-widget'));
+    const visible = widgets.filter((w) => w.offsetParent !== null);
+    return visible.length === 1;
+  }, { timeout: timeoutMs });
+  log('  Single quick-input widget confirmed');
 }
 
 export async function dismissNotification(page: Page): Promise<void> {
@@ -1120,10 +1237,35 @@ export async function fillVariableInput(
   }
 
   // Step 3: Select all and type the new value
-  await input.first().click({ force: true });
+  try {
+    await input.first().click({ force: true });
+  } catch { /* ignore */ }
   await input.first().press('Meta+a');
   await frame.waitForTimeout(100);
-  await input.first().fill(value);
+  try {
+    await input.first().fill(value);
+  } catch {
+    // Fallback: the input may have been re-rendered between steps — retry the
+    // reveal + fill sequence once before giving up.
+    log('  fill() failed, retrying reveal+fill...');
+    await frame.evaluate((sel) => {
+      const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
+      if (display) {
+        const rect = display.getBoundingClientRect();
+        const evt = new MouseEvent('mouseup', {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        });
+        display.dispatchEvent(evt);
+      }
+    }, wrapperSelector);
+    await frame.waitForTimeout(400);
+    await input.first().waitFor({ state: 'visible', timeout: 5_000 });
+    await input.first().fill(value);
+  }
   log('  VariableTextInput filled');
 }
 

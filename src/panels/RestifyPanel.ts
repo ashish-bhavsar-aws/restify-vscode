@@ -9,6 +9,15 @@ import { StorageManager } from "../storage/StorageManager";
 import { getMainPanelHtml } from "../webview/mainPanelHtml";
 import { ActivityProvider } from "./ActivityProvider";
 import {
+  extractFilename,
+  extractFilenameFromPath,
+  getFileDetectionSource,
+  getFilePreviewType,
+  guessExtension,
+  isFileLikeResponse,
+  isTextLike,
+} from "./responsePreview";
+import {
   DEFAULT_MAX_REDIRECTS,
   DEFAULT_TIMEOUT_MS,
   applyDefaultHeaders,
@@ -38,6 +47,12 @@ import {
   type CoreRequestForBody,
   type OAuth2Config,
 } from "../core";
+import {
+  parsePostmanEnvironment,
+  parseRestifyEnvironment,
+  environmentToPostman,
+} from "../core/converters";
+import { showOpenDialog, showSaveDialog } from "./dialogStub";
 
 // Load https-proxy-agent at runtime to avoid module resolution issues
 let HttpProxyAgent: any;
@@ -147,6 +162,7 @@ export class RestifyPanel {
   private activityProvider?: ActivityProvider;
   private pendingRequest: RequestData | null = null;
   private webviewReady: boolean = false;
+  private pendingRequestFetch: ((request: any) => void) | null = null;
   private _activeController: AbortController | null = null;
   private readonly extensionVersion: string;
 
@@ -251,6 +267,18 @@ export class RestifyPanel {
     }
   }
 
+  /** Ask the webview for its current request state (used by exports). */
+  getCurrentRequest(): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.webviewReady) {
+        resolve(this.pendingRequest);
+        return;
+      }
+      this.pendingRequestFetch = resolve;
+      this.panel.webview.postMessage({ command: 'getCurrentRequest', id: 'export' });
+    });
+  }
+
   private _sendPendingRequest(): void {
     if (this.pendingRequest) {
       this.panel.webview.postMessage({
@@ -267,6 +295,82 @@ export class RestifyPanel {
       environments: this.storageManager.getEnvironments(),
       activeEnvId: this.storageManager.getActiveEnvironment()?.id || null,
     });
+  }
+
+  // F44: Import an environment from a Postman or Restify environment JSON file.
+  private async _importEnvironment(): Promise<void> {
+    const uris = await showOpenDialog({
+      canSelectMany: false,
+      filters: { "Environment (Postman / Restify JSON)": ["json"] },
+      openLabel: "Import Environment",
+    });
+    if (!uris || !uris[0]) return;
+    const raw = Buffer.from(
+      await vscode.workspace.fs.readFile(uris[0]),
+    ).toString("utf8");
+
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      vscode.window.showErrorMessage("Import failed: file is not valid JSON.");
+      return;
+    }
+    const imported = parsePostmanEnvironment(data) || parseRestifyEnvironment(data);
+    if (!imported) {
+      vscode.window.showErrorMessage(
+        "Import failed: not a recognized Postman or Restify environment file.",
+      );
+      return;
+    }
+    await this.storageManager.saveEnvironment({
+      id: "",
+      name: imported.name,
+      variables: imported.variables.map((v) => ({
+        key: v.key,
+        value: v.value,
+        isSecret: v.isSecret,
+      })),
+    });
+    this._sendEnvironments();
+    vscode.window.showInformationMessage(
+      `\u2713 Imported environment "${imported.name}"`,
+    );
+  }
+
+  // F44: Export an environment as a Postman environment JSON file.
+  private async _exportEnvironment(env: any): Promise<void> {
+    if (!env || !env.name) return;
+    const safe =
+      env.name
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/gi, "-")
+        .replace(/-+/g, "-")
+        .replace(/(^-|-$)/g, "") || "environment";
+    const uri = await showSaveDialog({
+      defaultUri: vscode.Uri.joinPath(
+        vscode.workspace.workspaceFolders?.[0]?.uri ||
+          vscode.Uri.file(os.homedir()),
+        `${safe}.postman_environment.json`,
+      ),
+      filters: { "Postman Environment JSON": ["json"] },
+    });
+    if (!uri) return;
+    const out = environmentToPostman({
+      name: env.name,
+      variables: (env.variables || []).map((v: any) => ({
+        key: v.key,
+        value: v.value || "",
+        isSecret: !!v.isSecret,
+      })),
+    });
+    await vscode.workspace.fs.writeFile(
+      uri,
+      Buffer.from(JSON.stringify(out, null, 2), "utf8"),
+    );
+    vscode.window.showInformationMessage(
+      `\u2713 Environment exported to ${uri.fsPath}`,
+    );
   }
 
   private _shouldUseProxy(host: string, noProxyArray?: string[]): boolean {
@@ -313,192 +417,6 @@ export class RestifyPanel {
     return null;
   }
 
-  private _extractFilename(contentDisposition: string): string | undefined {
-    if (!contentDisposition) return undefined;
-
-    // Try UTF-8 RFC 5987 format: filename*=UTF-8''encoded-filename
-    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-    if (utf8Match?.[1]) {
-      try {
-        const decoded = decodeURIComponent(utf8Match[1].replace(/["']/g, "")).trim();
-        if (decoded.length > 0) return decoded;
-      } catch {
-        const fallback = utf8Match[1].replace(/["']/g, "").trim();
-        if (fallback.length > 0) return fallback;
-      }
-    }
-
-    // Try standard format: filename="name.ext" or filename=name.ext
-    const plainMatch = contentDisposition.match(/filename\s*=\s*"?([^";,\n]+)"?/i);
-    if (plainMatch?.[1]) {
-      const extracted = plainMatch[1].trim();
-      if (extracted.length > 0) return extracted;
-    }
-
-    // Try alternate format without quotes: filename=name.ext (with possible spaces)
-    const alternateMatch = contentDisposition.match(/filename=([^\s;,]+)/i);
-    if (alternateMatch?.[1]) {
-      const extracted = alternateMatch[1].trim();
-      if (extracted.length > 0) return extracted;
-    }
-
-    return undefined;
-  }
-
-  private _getExtensionFromFileName(fileName?: string): string {
-    if (!fileName || !fileName.includes(".")) return "";
-    return fileName.split(".").pop()?.toLowerCase() || "";
-  }
-
-  private _extractFilenameFromPath(pathOrUrl: string): string | undefined {
-    if (!pathOrUrl) return undefined;
-
-    try {
-      const parsed = new URL(pathOrUrl);
-      pathOrUrl = parsed.pathname;
-    } catch {
-      // Keep path as-is if it is not a full URL.
-    }
-
-    const cleanPath = pathOrUrl.split("?")[0].split("#")[0];
-    const last = cleanPath.split("/").pop();
-    if (!last || !last.includes(".")) return undefined;
-
-    try {
-      return decodeURIComponent(last);
-    } catch {
-      return last;
-    }
-  }
-
-  private _previewTypeFromExtension(
-    ext: string,
-  ): "text" | "csv" | "pdf" | "excel" | "none" {
-    if (!ext) return "none";
-    if (ext === "pdf") return "pdf";
-    if (ext === "csv") return "csv";
-    if (["xls", "xlsx", "xlsm", "ods"].includes(ext)) return "excel";
-    if (
-      [
-        "txt",
-        "log",
-        "md",
-        "json",
-        "xml",
-        "html",
-        "htm",
-        "yaml",
-        "yml",
-        "csv",
-      ].includes(ext)
-    )
-      return "text";
-    return "none";
-  }
-
-  private _guessExtension(mimeType: string): string {
-    const mime = mimeType.toLowerCase();
-    if (mime.includes("application/pdf")) return "pdf";
-    if (mime.includes("text/csv") || mime.includes("application/csv"))
-      return "csv";
-    if (mime.includes("spreadsheetml") || mime.includes("application/vnd.ms-excel"))
-      return "xlsx";
-    if (mime.includes("application/json")) return "json";
-    if (mime.includes("application/xml") || mime.includes("text/xml"))
-      return "xml";
-    if (mime.includes("text/plain")) return "txt";
-    return "bin";
-  }
-
-  private _isTextLike(contentType: string, fileName?: string): boolean {
-    const ct = contentType.toLowerCase();
-    const ext = this._getExtensionFromFileName(fileName);
-    return (
-      ct.startsWith("text/") ||
-      ct.includes("csv") ||
-      ct.includes("json") ||
-      ct.includes("xml") ||
-      ct.includes("javascript") ||
-      ct.includes("x-www-form-urlencoded") ||
-      this._previewTypeFromExtension(ext) === "text" ||
-      this._previewTypeFromExtension(ext) === "csv"
-    );
-  }
-
-  private _isFileLikeResponse(
-    contentType: string,
-    contentDisposition: string,
-    fileName?: string,
-  ): boolean {
-    const ct = contentType.toLowerCase();
-    const cd = contentDisposition.toLowerCase();
-    const ext = this._getExtensionFromFileName(fileName);
-
-    if (cd.includes("attachment") || cd.includes("filename=")) return true;
-    if (this._previewTypeFromExtension(ext) !== "none") return true;
-
-    return (
-      ct.includes("application/pdf") ||
-      ct.includes("text/csv") ||
-      ct.includes("application/csv") ||
-      ct.includes("application/octet-stream") ||
-      ct.includes("application/zip") ||
-      ct.includes("application/vnd") ||
-      ct.includes("spreadsheetml")
-    );
-  }
-
-  private _getFilePreviewType(
-    contentType: string,
-    fileName?: string,
-  ): "text" | "csv" | "pdf" | "excel" | "none" {
-    const ct = contentType.toLowerCase();
-    const ext = this._getExtensionFromFileName(fileName);
-
-    if (ct.includes("application/pdf")) return "pdf";
-    if (ct.includes("text/csv") || ct.includes("application/csv")) return "csv";
-    if (ct.includes("spreadsheetml") || ct.includes("application/vnd.ms-excel"))
-      return "excel";
-    if (
-      ct.startsWith("text/") ||
-      ct.includes("application/json") ||
-      ct.includes("application/xml") ||
-      ct.includes("text/xml")
-    )
-      return "text";
-
-    const byExt = this._previewTypeFromExtension(ext);
-    if (byExt !== "none") return byExt;
-
-    return "none";
-  }
-
-  private _getFileDetectionSource(
-    contentType: string,
-    contentDisposition: string,
-    fileName?: string,
-  ): "mime" | "filename" {
-    const ct = contentType.toLowerCase();
-    const cd = contentDisposition.toLowerCase();
-    const ext = this._getExtensionFromFileName(fileName);
-
-    const mimeSuggestsFile =
-      cd.includes("attachment") ||
-      cd.includes("filename=") ||
-      ct.includes("application/pdf") ||
-      ct.includes("text/csv") ||
-      ct.includes("application/csv") ||
-      ct.includes("application/octet-stream") ||
-      ct.includes("application/zip") ||
-      ct.includes("application/vnd") ||
-      ct.includes("spreadsheetml");
-
-    const filenameSuggestsFile = this._previewTypeFromExtension(ext) !== "none";
-
-    if (!mimeSuggestsFile && filenameSuggestsFile) return "filename";
-    return "mime";
-  }
-
   private _buildRequestResult(
     status: number,
     statusText: string,
@@ -517,10 +435,10 @@ export class RestifyPanel {
       normalizedHeaders,
       "Content-Disposition",
     );
-    const fromDisposition = this._extractFilename(contentDisposition);
-    const fromPath = this._extractFilenameFromPath(requestPathOrUrl);
+    const fromDisposition = extractFilename(contentDisposition);
+    const fromPath = extractFilenameFromPath(requestPathOrUrl);
     const inferredFileName = fromDisposition || fromPath;
-    const isFileResponse = this._isFileLikeResponse(
+    const isFileResponse = isFileLikeResponse(
       contentType,
       contentDisposition,
       inferredFileName,
@@ -539,15 +457,15 @@ export class RestifyPanel {
 
     const safeMimeType = contentType || "application/octet-stream";
     const safeFileName =
-      inferredFileName || `response.${this._guessExtension(safeMimeType)}`;
-    const filePreviewType = this._getFilePreviewType(safeMimeType, safeFileName);
-    const fileDetectionSource = this._getFileDetectionSource(
+      inferredFileName || `response.${guessExtension(safeMimeType)}`;
+    const filePreviewType = getFilePreviewType(safeMimeType, safeFileName);
+    const fileDetectionSource = getFileDetectionSource(
       contentType,
       contentDisposition,
       safeFileName,
     );
     const fileBase64 = data.toString("base64");
-    const textBody = this._isTextLike(safeMimeType, safeFileName)
+    const textBody = isTextLike(safeMimeType, safeFileName)
       ? data.toString("utf8")
       : "";
 
@@ -599,6 +517,15 @@ export class RestifyPanel {
         },
         cacheKey: oauth2CacheKey(config),
         openUrl: (url) => {
+          if (process.env.RESTIFY_TEST_OPEN_URL === "fetch") {
+            // Test hook: perform the redirect server-side instead of opening a
+            // browser. The mock auth server 302-redirects to the loopback
+            // listener, which captures the authorization code.
+            void fetch(url).catch((err) => {
+              console.error("OAuth test openUrl fetch failed:", err);
+            });
+            return;
+          }
           void vscode.env.openExternal(vscode.Uri.parse(url));
           this.activityProvider?.append(
             "OAuth 2.0",
@@ -632,6 +559,13 @@ export class RestifyPanel {
         this.updateMetadata();
         // Send any pending request data
         this._sendPendingRequest();
+        break;
+      case "currentRequest":
+        if (this.pendingRequestFetch) {
+          const resolve = this.pendingRequestFetch;
+          this.pendingRequestFetch = null;
+          resolve(msg.request);
+        }
         break;
       case "executeRequest":
         // msg.savedRequest is the original state (no injected auth headers) — used for history.
@@ -718,6 +652,12 @@ export class RestifyPanel {
         this._sendEnvironments();
         break;
       }
+      case "importEnvironment":
+        await this._importEnvironment();
+        break;
+      case "exportEnvironment":
+        await this._exportEnvironment(msg.env);
+        break;
       case "getEnvSecretValue": {
         const value = await this.storageManager.getSecretValue(
           msg.envId,
@@ -1011,7 +951,9 @@ export class RestifyPanel {
     const method = requestData.method || "GET";
     const headers: Record<string, string> = {};
 
-    (req.headers || []).forEach((h) => {
+    // Use requestData.headers (the clone the pre-script can mutate), so that
+    // header changes made by a pre-request script are actually sent.
+    (requestData.headers || []).forEach((h) => {
       if (h.key && h.enabled !== false) {
         headers[resolveVars(h.key)] = resolveVars(h.value);
       }
@@ -1955,7 +1897,7 @@ export class RestifyPanel {
       defaultUri = vscode.Uri.file(path.join(os.homedir(), fileName));
     }
 
-    const targetUri = await vscode.window.showSaveDialog({
+    const targetUri = await showSaveDialog({
       defaultUri,
       saveLabel: "Save Response File",
       title: "Save Response File",

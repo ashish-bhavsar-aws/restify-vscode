@@ -4,6 +4,8 @@ import { RestifyPanel } from './panels/RestifyPanel';
 import { SidebarProvider } from './panels/SidebarProvider';
 import { ActivityProvider } from './panels/ActivityProvider';
 import { parseCurl } from './core/curlParser';
+import { parseImportTextAuto, requestToHttpText } from './core/converters';
+import { showOpenDialog, showSaveDialog } from './panels/dialogStub';
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the extension's global storage path for file-backed history persistence
@@ -133,6 +135,92 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.openFromSidebar', (data) => {
       vscode.commands.executeCommand('restify.openMain', data);
+    })
+  );
+
+  // F51: Open REST Client `.http` files and load a request into the main panel
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.openHttpFile', async (uriArg?: vscode.Uri) => {
+      let uri = uriArg;
+      if (!uri) {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && editor.document.fileName.toLowerCase().endsWith('.http')) {
+          uri = editor.document.uri;
+        }
+      }
+      if (!uri) {
+        const picked = await showOpenDialog({
+          canSelectMany: false,
+          filters: { 'HTTP Files': ['http'] },
+        });
+        uri = picked?.[0];
+      }
+      if (!uri) return;
+
+      const text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+      const col = parseImportTextAuto(text, 'file.http');
+      if (!col || col.requests.length === 0) {
+        vscode.window.showWarningMessage('No requests found in the .http file.');
+        return;
+      }
+
+      const requests = col.requests;
+      if (requests.length === 1) {
+        vscode.commands.executeCommand('restify.openMain', requests[0]);
+        return;
+      }
+
+      const picks = requests.map((r, i) => ({
+        label: `${r.method?.toUpperCase() || 'GET'} ${r.url || ''}`,
+        description: r.name || `Request ${i + 1}`,
+        detail: String(i),
+      }));
+      const chosen = await vscode.window.showQuickPick(picks, {
+        placeHolder: 'Choose a request to open',
+        matchOnDescription: true,
+      });
+      if (!chosen) return;
+      vscode.commands.executeCommand('restify.openMain', requests[Number(chosen.detail)]);
+    })
+  );
+
+  // F51: Export the active panel's current request to a `.http` file
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.exportRequestToHttp', async () => {
+      const activePanel = Array.from(openPanels).pop();
+      if (!activePanel) {
+        vscode.window.showWarningMessage('No active Restify panel. Open a request first.');
+        return;
+      }
+      const req = await activePanel.getCurrentRequest();
+      if (!req || !req.url) {
+        vscode.window.showWarningMessage('The active request has no URL to export.');
+        return;
+      }
+      const text = requestToHttpText({
+        name: req.name,
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        queryParams: req.queryParams,
+        bodyType: req.bodyType,
+        body: req.body,
+        formData: req.formData,
+        urlencoded: req.urlencoded,
+      });
+
+      const defaultName = (req.name || req.method || 'request')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'request';
+      const base = vscode.workspace.workspaceFolders?.[0]?.uri || vscode.Uri.file(process.env.HOME || '/');
+      const uri = await showSaveDialog({
+        defaultUri: vscode.Uri.joinPath(base, `${defaultName}.http`),
+        filters: { 'HTTP Files': ['http'] },
+      });
+      if (!uri) return;
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
+      vscode.window.showInformationMessage(`Exported request to ${uri.fsPath}`);
     })
   );
 

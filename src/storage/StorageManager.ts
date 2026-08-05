@@ -29,6 +29,7 @@ export interface HistoryEntry {
   request?: any;
   response?: any;
   error?: string;
+  pinned?: boolean; // F57: pinned entries float to the top of history
   activeEnvironmentId?: string | null; // Environment used when this request was made
 }
 
@@ -512,6 +513,38 @@ export class StorageManager {
       }
     } catch {
       // ignore
+    }
+    this.notifyChange();
+  }
+
+  // F57: Toggle whether a history entry is pinned (pinned entries sort to the top).
+  toggleHistoryPin(id: string): void {
+    const entry = this.historyCache.find((h) => h.id === id);
+    if (!entry) return;
+    entry.pinned = !entry.pinned;
+
+    this.globalState.update("restify.history", this.historyCache).then(
+      () => {},
+      (err: any) => console.error("Failed to persist history pin:", err),
+    );
+    if (this.storageDir) this.enqueueOp({ type: "persistFile" });
+
+    if (this.db && typeof this.db.getCollection === "function") {
+      try {
+        const coll = this.db.getCollection("history");
+        if (coll) {
+          const item = coll.findOne({ id });
+          if (item) {
+            item.pinned = entry.pinned;
+            coll.update(item);
+            this.db.saveDatabase((err: any) => {
+              if (err) console.error("Loki save error:", err);
+            });
+          }
+        }
+      } catch (e) {
+        console.error("DB pin error:", e);
+      }
     }
     this.notifyChange();
   }

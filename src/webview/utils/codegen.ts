@@ -13,6 +13,12 @@ export const SUPPORTED_LANGS: Array<{ id: string; label: string }> = [
   { id: 'powershell', label: 'PowerShell (Invoke-RestMethod)' },
   { id: 'php-curl', label: 'PHP (cURL)' },
   { id: 'csharp-httpclient', label: 'C# (HttpClient)' },
+  { id: 'typescript-fetch', label: 'TypeScript (fetch)' },
+  { id: 'dart', label: 'Dart (http)' },
+  { id: 'ruby', label: 'Ruby (Net::HTTP)' },
+  { id: 'rust', label: 'Rust (reqwest)' },
+  { id: 'kotlin-okhttp', label: 'Kotlin (OkHttp)' },
+  { id: 'httpie', label: 'HTTPie (http CLI)' },
 ];
 
 function headerObj(headers: Array<{ key?: string; value?: string; enabled?: boolean }>) {
@@ -21,6 +27,11 @@ function headerObj(headers: Array<{ key?: string; value?: string; enabled?: bool
     if (h.key && h.enabled !== false) obj[h.key] = h.value || '';
   });
   return obj;
+}
+
+function objectLiteral(obj: Record<string, string>): string {
+  const parts = Object.entries(obj).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`);
+  return `{ ${parts.join(', ')} }`;
 }
 
 function resolveVariables(text: string | undefined, environment?: Environment | null): string {
@@ -135,6 +146,12 @@ const COMMENT_PREFIX: Record<string, string> = {
   powershell: '#',
   'php-curl': '//',
   'csharp-httpclient': '//',
+  'typescript-fetch': '//',
+  dart: '//',
+  ruby: '#',
+  rust: '//',
+  'kotlin-okhttp': '//',
+  httpie: '#',
 };
 
 function buildSubstitutionNote(
@@ -843,6 +860,262 @@ class Program {
     Console.WriteLine(text);
   }
 }
+`;
+    }
+
+    case 'typescript-fetch': {
+      if (req.bodyType === 'form' && enabledFormFields.length > 0) {
+        if (isMultipart) {
+          const formLines = enabledFormFields.map((field) => {
+            const key = JSON.stringify(field.key || 'field');
+            if ((field.formType || 'text') === 'file') {
+              return `form.append(${key}, fileInput.files[0]);`;
+            }
+            const comment = field.contentType ? ` // type=${field.contentType}` : '';
+            return `form.append(${key}, ${JSON.stringify(field.value || '')});${comment}`;
+          }).join('\n');
+          const headerLines = JSON.stringify(relevantHeaders, null, 2);
+          return `const form = new FormData();
+${formLines}
+
+const url = ${JSON.stringify(url)};
+const options: RequestInit = {
+  method: ${JSON.stringify(method)},
+  headers: ${headerLines},
+  body: form,
+};
+
+const res = await fetch(url, options);
+const text = await res.text();
+console.log(text);
+`;
+        }
+        const encodedBody = enabledFormFields.map((field) => `${encodeURIComponent(field.key || 'field')}=${encodeURIComponent(field.value || '')}`).join('&');
+        const headerLines = JSON.stringify(relevantHeaders, null, 2);
+        return `const url = ${JSON.stringify(url)};
+const options: RequestInit = {
+  method: ${JSON.stringify(method)},
+  headers: ${headerLines},
+  body: ${JSON.stringify(encodedBody)},
+};
+
+const res = await fetch(url, options);
+const text = await res.text();
+console.log(text);
+`;
+      }
+      const tsHasBody = body && method !== 'GET' && method !== 'HEAD';
+      const tsHeaderLines = JSON.stringify(relevantHeaders, null, 2);
+      return `const url = ${JSON.stringify(url)};
+const options: RequestInit = {
+  method: ${JSON.stringify(method)},
+  headers: ${tsHeaderLines},
+${tsHasBody ? `  body: ${JSON.stringify(body)},\n` : ''}};
+
+const res = await fetch(url, options);
+const text = await res.text();
+console.log(text);
+`;
+    }
+
+    case 'dart': {
+      const dartHeaders = objectLiteral(relevantHeaders);
+      if (req.bodyType === 'form' && enabledFormFields.length > 0) {
+        if (isMultipart) {
+          const fieldLines = enabledFormFields.filter((field) => (field.formType || 'text') !== 'file')
+            .map((field) => `request.fields[${JSON.stringify(field.key || 'field')}] = ${JSON.stringify(field.value || '')};`).join('\n  ');
+          const fileLines = enabledFormFields.filter((field) => (field.formType || 'text') === 'file')
+            .map((field) => `request.files.add(await http.MultipartFile.fromPath(${JSON.stringify(field.key || 'upload')}, ${JSON.stringify(field.fileName || '/path/to/file')}));`).join('\n  ');
+          return `import 'package:http/http.dart' as http;
+
+Future<void> main() async {
+  final request = http.MultipartRequest(${JSON.stringify(method)}, Uri.parse(${JSON.stringify(url)}));
+  request.headers.addAll(${dartHeaders});
+  ${fieldLines}
+  ${fileLines}
+  final streamed = await request.send();
+  final response = await http.Response.fromStream(streamed);
+  print(response.statusCode);
+  print(response.body);
+}
+`;
+        }
+        const encodedBody = enabledFormFields.map((field) => `${encodeURIComponent(field.key || 'field')}=${encodeURIComponent(field.value || '')}`).join('&');
+        return `import 'package:http/http.dart' as http;
+
+Future<void> main() async {
+  final request = http.Request(${JSON.stringify(method)}, Uri.parse(${JSON.stringify(url)}));
+  request.headers.addAll(${dartHeaders});
+  request.body = ${JSON.stringify(encodedBody)};
+  final streamed = await request.send();
+  final response = await http.Response.fromStream(streamed);
+  print(response.statusCode);
+  print(response.body);
+}
+`;
+      }
+      const dartBody = body && method !== 'GET' && method !== 'HEAD';
+      return `import 'package:http/http.dart' as http;
+
+Future<void> main() async {
+  final request = http.Request(${JSON.stringify(method)}, Uri.parse(${JSON.stringify(url)}));
+  request.headers.addAll(${dartHeaders});
+  ${dartBody ? `request.body = ${JSON.stringify(body)};` : ''}
+  final streamed = await request.send();
+  final response = await http.Response.fromStream(streamed);
+  print(response.statusCode);
+  print(response.body);
+}
+`;
+    }
+
+    case 'ruby': {
+      const rubyMethodClass = `Net::HTTP::${method.charAt(0).toUpperCase() + method.slice(1).toLowerCase()}`;
+      const rubyHeaders = Object.entries(relevantHeaders).map(([k, v]) => `request[${JSON.stringify(k)}] = ${JSON.stringify(v)}`).join('\n');
+      if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
+        const rubyFields = enabledFormFields.map((field) => `# ${field.key || 'field'} = ${(field.formType || 'text') === 'file' ? (field.fileName || 'file') : (field.value || '')}`).join('\n');
+        return `require 'uri'
+require 'net/http'
+
+uri = URI.parse("${url}")
+request = ${rubyMethodClass}.new(uri)
+${rubyHeaders}
+# Multipart upload: use the 'httparty' or 'faraday' gem for automatic multipart support.
+${rubyFields}
+response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+  http.request(request)
+end
+puts response.code
+puts response.body
+`;
+      }
+      const rubyBody = body && method !== 'GET' && method !== 'HEAD';
+      return `require 'uri'
+require 'net/http'
+
+uri = URI.parse("${url}")
+request = ${rubyMethodClass}.new(uri)
+${rubyHeaders}
+${rubyBody ? `request.body = ${JSON.stringify(body)}` : ''}
+response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+  http.request(request)
+end
+puts response.code
+puts response.body
+`;
+    }
+
+    case 'rust': {
+      const rustMethod = method.toUpperCase();
+      const rustHeaders = Object.entries(relevantHeaders).map(([k, v]) => `request = request.header(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n    ');
+      if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
+        const rustFields = enabledFormFields.map((field) => `// ${field.key || 'field'} = ${(field.formType || 'text') === 'file' ? (field.fileName || 'file') : (field.value || '')}`).join('\n    ');
+        return `use reqwest::blocking::Client;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+    let mut request = client.request(reqwest::Method::${rustMethod}, ${JSON.stringify(url)});
+    ${rustHeaders}
+    // Multipart upload: use reqwest::multipart::Form and client.request(...).multipart(form).
+    ${rustFields}
+    let response = request.send()?;
+    println!("{}", response.status());
+    println!("{}", response.text()?);
+    Ok(())
+}
+`;
+      }
+      const rustBody = body && method !== 'GET' && method !== 'HEAD';
+      return `use reqwest::blocking::Client;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+    let mut request = client.request(reqwest::Method::${rustMethod}, ${JSON.stringify(url)});
+    ${rustHeaders}
+    ${rustBody ? `request = request.body(${JSON.stringify(body)});` : ''}
+    let response = request.send()?;
+    println!("{}", response.status());
+    println!("{}", response.text()?);
+    Ok(())
+}
+`;
+    }
+
+    case 'kotlin-okhttp': {
+      const kotlinHeaders = Object.entries(relevantHeaders).map(([k, v]) => `.addHeader(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join('\n        ');
+      if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
+        const kotlinParts = enabledFormFields.map((field) => {
+          const key = JSON.stringify(field.key || 'field');
+          if ((field.formType || 'text') === 'file') {
+            return `builder.addFormDataPart(${key}, ${JSON.stringify(field.fileName || 'upload.bin')}, RequestBody.create(byteArrayOf(), MediaType.parse(${JSON.stringify(field.contentType || 'application/octet-stream')})))`;
+          }
+          if (field.contentType) {
+            return `builder.addFormDataPart(${key}, ${JSON.stringify(field.value || '')}, RequestBody.create(${JSON.stringify(field.value || '')}.toByteArray(), MediaType.parse(${JSON.stringify(field.contentType)})))`;
+          }
+          return `builder.addFormDataPart(${key}, ${JSON.stringify(field.value || '')})`;
+        }).join('\n        ');
+        return `import okhttp3.*
+import java.io.IOException
+
+fun main() {
+    val client = OkHttpClient()
+    val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+    ${kotlinParts}
+    val body: RequestBody = builder.build()
+    val request = Request.Builder()
+        .url(${JSON.stringify(url)})
+        .method(${JSON.stringify(method)}, body)
+        ${kotlinHeaders}
+        .build()
+
+    client.newCall(request).execute().use { response ->
+        println(response.body?.string())
+    }
+}
+`;
+      }
+      const kotlinHasBody = body && method !== 'GET' && method !== 'HEAD';
+      const kotlinBody = kotlinHasBody
+        ? `RequestBody.create(${JSON.stringify(body)}.toByteArray(), MediaType.parse(${JSON.stringify(headers['Content-Type'] || headers['content-type'] || 'text/plain')}))`
+        : 'null';
+      return `import okhttp3.*
+import java.io.IOException
+
+fun main() {
+    val client = OkHttpClient()
+    val body: RequestBody? = ${kotlinBody}
+    val request = Request.Builder()
+        .url(${JSON.stringify(url)})
+        .method(${JSON.stringify(method)}, body)
+        ${kotlinHeaders}
+        .build()
+
+    client.newCall(request).execute().use { response ->
+        println(response.body?.string())
+    }
+}
+`;
+    }
+
+    case 'httpie': {
+      if (req.bodyType === 'form' && enabledFormFields.length > 0 && isMultipart) {
+        const httpieFields = enabledFormFields.map((field) => {
+          const key = field.key || 'field';
+          if ((field.formType || 'text') === 'file') {
+            return `  ${key}@${(field.fileName || 'path/to/file').replace(/"/g, '\\"')}`;
+          }
+          return `  ${key}=${escapeShellArg(field.value || '')}`;
+        }).join(' \\\n');
+        const httpieHeaderLines = Object.entries(relevantHeaders).map(([k, v]) => `  ${JSON.stringify(`${k}: ${v}`)}`).join(' \\\n');
+        return `http ${method.toLowerCase()} ${JSON.stringify(url)} \\\n${httpieHeaderLines} \\\n${httpieFields}
+`;
+      }
+      const httpieBody = body && method !== 'GET' && method !== 'HEAD';
+      const httpieHeaderLines = Object.entries(relevantHeaders).map(([k, v]) => `  ${JSON.stringify(`${k}: ${v}`)}`).join(' \\\n');
+      const httpieCmd = [`http ${method.toLowerCase()} ${JSON.stringify(url)}`];
+      if (httpieHeaderLines) httpieCmd.push(httpieHeaderLines);
+      if (httpieBody) httpieCmd.push(`  data='${String(body).replace(/'/g, "'\\''")}'`);
+      return `${httpieCmd.join(' \\\n')}
 `;
     }
 

@@ -123,6 +123,18 @@
         "title": "Manage Environments",
         "category": "Restify",
         "icon": "$(gear)"
+      },
+      {
+        "command": "restify.openHttpFile",
+        "title": "Open .http File",
+        "category": "Restify",
+        "icon": "$(open-file)"
+      },
+      {
+        "command": "restify.exportRequestToHttp",
+        "title": "Export Request to .http",
+        "category": "Restify",
+        "icon": "$(export)"
       }
     ],
     "menus": {
@@ -146,6 +158,19 @@
           "command": "restify.importCurl",
           "when": "view == restify-collections",
           "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "restify.openHttpFile",
+          "when": "resourceExtname == .http",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "restify.openHttpFile",
+          "when": "resourceExtname == .http"
         }
       ]
     },

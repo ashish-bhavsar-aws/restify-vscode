@@ -229,6 +229,7 @@ export const MainPanel: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
 
   const requestRef = useRef<RequestState>(request);
+  const sendRef = useRef<() => void>(() => {});
   const savedCollectionNameRef = useRef<string | null>(null);
   const savedGroupIdRef = useRef<string | undefined>(undefined);
   const activeEnvIdRef = useRef<string | null>(null);
@@ -386,6 +387,12 @@ export const MainPanel: React.FC = () => {
           setThemeKind(msg.kind ?? 2);
           applyThemeClass(msg.kind ?? 2);
           break;
+        case "getCurrentRequest":
+          vscodeApi?.postMessage({ command: "currentRequest", request: requestRef.current });
+          break;
+        case "triggerSendRequest":
+          sendRef.current();
+          break;
         case "debugLog":
           try {
             const ts = new Date().toLocaleTimeString();
@@ -494,6 +501,10 @@ export const MainPanel: React.FC = () => {
 
   // Normal send handler
   const handleSendGuarded = handleSend;
+
+  useEffect(() => {
+    sendRef.current = handleSend;
+  }, [handleSend]);
 
   // Cancel the in-flight request
   const handleCancel = useCallback(() => {
@@ -630,6 +641,14 @@ export const MainPanel: React.FC = () => {
       }),
     []
   );
+
+  const handleImportEnvironment = () => {
+    post({ command: "importEnvironment" });
+  };
+
+  const handleExportEnvironment = (env: Environment) => {
+    post({ command: "exportEnvironment", env });
+  };
 
   const handleSaveSettings = (newSettings: SettingsState) => {
     setSettings(newSettings);
@@ -873,6 +892,8 @@ export const MainPanel: React.FC = () => {
         onSave={handleSaveEnvironment}
         onDelete={handleDeleteEnvironment}
         onRevealSecret={handleRevealSecret}
+        onImport={handleImportEnvironment}
+        onExport={handleExportEnvironment}
       />
 
       <CodeGenModal

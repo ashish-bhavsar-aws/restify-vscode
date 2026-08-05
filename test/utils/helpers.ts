@@ -1,6 +1,7 @@
 import type { Frame, Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 import {
   clickInFrame,
   waitForElement,
@@ -10,12 +11,26 @@ import {
   findMainPanelFrame,
   clickRestifyIcon,
   dismissOnboarding,
-  isSidebarVisible,
   log,
   logCheck,
   logError,
+  DIALOG_STUB_FILE,
   type VSCodeApp,
 } from './vscode';
+
+// ─── Native-dialog stubbing (e2e) ─────────────────────────────────
+
+export function stubOpenDialog(absPath: string): void {
+  fs.writeFileSync(DIALOG_STUB_FILE, JSON.stringify({ open: absPath }));
+}
+
+export function stubSaveDialog(absPath: string): void {
+  fs.writeFileSync(DIALOG_STUB_FILE, JSON.stringify({ save: absPath }));
+}
+
+export function clearDialogStub(): void {
+  if (fs.existsSync(DIALOG_STUB_FILE)) fs.unlinkSync(DIALOG_STUB_FILE);
+}
 
 const MOCK_SERVER = 'http://localhost:3000';
 

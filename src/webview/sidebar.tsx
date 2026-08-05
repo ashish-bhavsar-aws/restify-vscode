@@ -5,11 +5,11 @@ import {
   faMagnifyingGlass, faFloppyDisk, faTrash, faPen,
   faFileExport, faFileImport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
-  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark,
+  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark, faStar,
 } from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
   id: string; method: string; url: string; status: number;
-  duration?: number; name: string; timestamp?: string;
+  duration?: number; name: string; timestamp?: string; pinned?: boolean;
 }
 interface CollectionRequest { id?: string; method: string; url: string; name?: string; }
 interface CollectionGroup { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
@@ -159,6 +159,9 @@ const PrimaryButton = styled.button`
   font-family: inherit;
   white-space: nowrap;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
   box-shadow: 0 1px 0 ${({ theme }) => theme.innerHighlight} inset;
 
@@ -178,6 +181,9 @@ const GhostButton = styled.button`
   font-family: inherit;
   white-space: nowrap;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   transition: all 0.15s;
 
   &:hover {
@@ -209,6 +215,16 @@ const SaveHistoryBtn = styled(IconButton)`
 
   &:hover {
     color: ${({ theme }) => theme.accent} !important;
+  }
+`;
+
+const PinBtn = styled(IconButton)<{ $active?: boolean }>`
+  color: ${({ $active, theme }) => ($active ? theme.accent : theme.muted)};
+  opacity: ${({ $active }) => ($active ? 1 : 0.45)};
+
+  &:hover {
+    color: ${({ theme }) => theme.accent} !important;
+    opacity: 1;
   }
 `;
 
@@ -770,6 +786,7 @@ export const Sidebar: React.FC = () => {
           onLoad={(id) => post({ command: 'loadHistoryItem', id })}
           onDelete={(id) => post({ command: 'deleteHistoryItem', id })}
           onClear={() => post({ command: 'clearHistory' })}
+          onTogglePin={(id) => post({ command: 'toggleHistoryPin', id })}
           onSaveToCollection={(id, collectionName, groupId) => post({ command: 'saveHistoryToCollection', id, collectionName, groupId })} />
       )}
       {sidebarType === 'collections' && (
@@ -815,15 +832,18 @@ interface HistoryPanelProps {
   history: HistoryEntry[]; search: string; collections: Collection[];
   onSearch(q: string): void; onLoad(id: string): void;
   onDelete(id: string): void; onClear(): void;
+  onTogglePin(id: string): void;
   onSaveToCollection(id: string, collectionName: string, groupId?: string): void;
 }
-const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onSaveToCollection }) => {
+const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onTogglePin, onSaveToCollection }) => {
   const [saveTarget, setSaveTarget] = useState<HistoryEntry | null>(null);
   const [selectedCol, setSelectedCol] = useState('');
   const [newColName, setNewColName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('__none__');
-  const filtered = history.filter(h =>
-    !search || (h.name||'').toLowerCase().includes(search.toLowerCase()) || (h.url||'').toLowerCase().includes(search.toLowerCase()));
+  const filtered = history
+    .filter(h =>
+      !search || (h.name||'').toLowerCase().includes(search.toLowerCase()) || (h.url||'').toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
 
   const activeColl = collections.find((c) => c.name === selectedCol);
   const availableGroups: Array<{id: string; label: string}> = [];
@@ -867,7 +887,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
         : filtered.map(entry => {
             const sc = !entry.status || entry.status === 0 ? 'err' : entry.status < 300 ? 'ok' : entry.status < 400 ? 'warn' : 'err';
             return (
-              <Item key={entry.id} tabIndex={0} onClick={() => onLoad(entry.id)} onKeyDown={(e) => { if (e.key === 'Enter') onLoad(entry.id); }}>
+              <Item key={entry.id} data-testid="history-item" tabIndex={0} onClick={() => onLoad(entry.id)} onKeyDown={(e) => { if (e.key === 'Enter') onLoad(entry.id); }}>
                 <MethodBadge $method={entry.method}>{METHOD_SHORT[entry.method] || entry.method}</MethodBadge>
                 <ItemContent>
                   <ItemName title={entry.name || entry.url}>{entry.name || entry.url}</ItemName>
@@ -878,6 +898,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
                   {entry.duration != null && <Time>{entry.duration}ms</Time>}
                 </ItemRight>
                 <ItemActions>
+                  <PinBtn data-testid="history-pin" $active={!!entry.pinned} title={entry.pinned ? 'Unpin from history' : 'Pin to top of history'} onClick={e => { e.stopPropagation(); onTogglePin(entry.id); }}><Icon icon={faStar} size={12} /></PinBtn>
                   <SaveHistoryBtn title="Save to collection" onClick={e => { e.stopPropagation(); setSaveTarget(entry); setSelectedCol(collections[0]?.name || '__new__'); setNewColName(''); setSelectedGroup('__none__'); }}><Icon icon={faFloppyDisk} size={12} /></SaveHistoryBtn>
                 </ItemActions>
                 <IconButton title="Delete" onClick={e => { e.stopPropagation(); onDelete(entry.id); }}><Icon icon={faTrash} size={12} /></IconButton>
@@ -1332,7 +1353,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                   ))}
                   {showNewGroupFor === col.id && (
                     <NewGroupInline style={{ paddingLeft: 12 }}>
-                      <Icon icon={faFolder} size={11} style={{ color: 'var(--muted)', marginRight: 4 }} />
+                      <Icon icon={faFolder} size={11} style={{ color: 'var(--muted)' }} />
                       <InlineRename autoFocus placeholder="Folder name"
                         value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleCreateGroup(col.id); if (e.key === 'Escape') { setShowNewGroupFor(null); setNewGroupName(''); } }}
@@ -1550,7 +1571,7 @@ const RunnerResultsModal: React.FC<{
         </RunList>
         <ModalActions style={{ marginTop: 10, justifyContent: 'flex-end' }}>
           {runState?.running ? (
-            <PrimaryButton data-testid="runner-cancel-btn" onClick={onCancel}><Icon icon={faStop} size={11} style={{ marginRight: 4 }} />Cancel</PrimaryButton>
+            <PrimaryButton data-testid="runner-cancel-btn" onClick={onCancel}><Icon icon={faStop} size={11} />Cancel</PrimaryButton>
           ) : (
             <PrimaryButton data-testid="runner-done-close-btn" onClick={onClose}>Close</PrimaryButton>
           )}

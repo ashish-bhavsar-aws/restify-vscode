@@ -36,6 +36,12 @@ const LANGUAGES = [
   'PowerShell',
   'PHP (cURL)',
   'C# (HttpClient)',
+  'TypeScript (fetch)',
+  'Dart (http)',
+  'Ruby (Net::HTTP)',
+  'Rust (reqwest)',
+  'Kotlin (OkHttp)',
+  'HTTPie (http CLI)',
 ];
 
 let app: VSCodeApp;
@@ -76,7 +82,7 @@ test.describe('Code Generation', () => {
     await screenshot(app.window, 'codegen-open');
   });
 
-  test('All 11 languages are present', async () => {
+  test('All 17 languages are present', async () => {
     log('--- Verify languages ---');
     const modal = mainFrame!.locator('[data-testid="codegen-modal"]');
     const text = (await modal.textContent().catch(() => '')) ?? '';

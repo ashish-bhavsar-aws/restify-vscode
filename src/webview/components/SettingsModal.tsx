@@ -35,6 +35,31 @@ const Title = styled.h3`
   margin-bottom: 14px;
 `;
 
+const TabBar = styled.div`
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+`;
+
+const TabButton = styled.button<{ $active: boolean }>`
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid
+    ${({ $active, theme }) => ($active ? theme.accent : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.accent2 : theme.muted)};
+  font-size: 12px;
+  font-weight: ${({ $active }) => ($active ? 700 : 500)};
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.accent2};
+  }
+`;
+
 const Section = styled.div`
   border-bottom: 1px solid ${({ theme }) => theme.border};
   padding-bottom: 16px;
@@ -372,6 +397,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'proxy'>('general');
 
   useEffect(() => {
     if (initialSettings) {
@@ -512,244 +538,282 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <Modal onClick={(e) => e.stopPropagation()} data-testid="settings-modal">
         <Title>⚙️ Settings</Title>
 
-        <Section>
-          <h4>General</h4>
-          <CheckboxLabel data-testid="activity-log-toggle">
-            <input
-              type="checkbox"
-              checked={showActivityLog}
-              onChange={(e) => setShowActivityLog(e.target.checked)}
-            />
-            Show Activity Log
-          </CheckboxLabel>
-          <HelperText>
-            Enable or disable the activity log panel that records request events.
-          </HelperText>
+        <TabBar role="tablist" aria-label="Settings categories">
+          <TabButton
+            $active={activeTab === 'general'}
+            onClick={() => setActiveTab('general')}
+            data-testid="settings-tab-general"
+            role="tab"
+            aria-selected={activeTab === 'general'}
+          >
+            General
+          </TabButton>
+          <TabButton
+            $active={activeTab === 'ssl'}
+            onClick={() => setActiveTab('ssl')}
+            data-testid="settings-tab-ssl"
+            role="tab"
+            aria-selected={activeTab === 'ssl'}
+          >
+            SSL
+          </TabButton>
+          <TabButton
+            $active={activeTab === 'proxy'}
+            onClick={() => setActiveTab('proxy')}
+            data-testid="settings-tab-proxy"
+            role="tab"
+            aria-selected={activeTab === 'proxy'}
+          >
+            Proxy
+          </TabButton>
+        </TabBar>
 
-          <Label>Default Timeout (ms)</Label>
-          <Input
-            type="number"
-            min={1}
-            placeholder="30000"
-            value={defaultTimeout}
-            onChange={(e) => setDefaultTimeout(Number(e.target.value))}
-          />
-          <HelperText>
-            Default timeout applied to requests that don&apos;t specify one.
-          </HelperText>
-        </Section>
+        {activeTab === 'general' && (
+          <>
+            <Section>
+              <h4>General</h4>
+              <CheckboxLabel data-testid="activity-log-toggle">
+                <input
+                  type="checkbox"
+                  checked={showActivityLog}
+                  onChange={(e) => setShowActivityLog(e.target.checked)}
+                />
+                Show Activity Log
+              </CheckboxLabel>
+              <HelperText>
+                Enable or disable the activity log panel that records request events.
+              </HelperText>
 
-        <Section>
-          <h4>Default Headers</h4>
-          <HelperText>
-            Automatically inject these headers into every request, unless you
-            already set the same header explicitly.
-          </HelperText>
-          <CheckboxLabel data-testid="default-header-toggle-user-agent">
-            <input
-              type="checkbox"
-              checked={defaultHeaders.userAgent}
-              onChange={(e) =>
-                setDefaultHeaders({ ...defaultHeaders, userAgent: e.target.checked })
-              }
-            />
-            User-Agent: Restify/&lt;version&gt;
-          </CheckboxLabel>
-          <CheckboxLabel data-testid="default-header-toggle-request-id">
-            <input
-              type="checkbox"
-              checked={defaultHeaders.requestId}
-              onChange={(e) =>
-                setDefaultHeaders({ ...defaultHeaders, requestId: e.target.checked })
-              }
-            />
-            X-Request-Id (fresh value per request)
-          </CheckboxLabel>
-          <CheckboxLabel data-testid="default-header-toggle-correlation-id">
-            <input
-              type="checkbox"
-              checked={defaultHeaders.correlationId}
-              onChange={(e) =>
-                setDefaultHeaders({ ...defaultHeaders, correlationId: e.target.checked })
-              }
-            />
-            X-Correlation-Id (fresh value per request)
-          </CheckboxLabel>
-          <CheckboxLabel data-testid="default-header-toggle-date">
-            <input
-              type="checkbox"
-              checked={defaultHeaders.date}
-              onChange={(e) =>
-                setDefaultHeaders({ ...defaultHeaders, date: e.target.checked })
-              }
-            />
-            Date (current HTTP date)
-          </CheckboxLabel>
-        </Section>
-
-        <Section>
-          <h4>Proxy Settings (Optional)</h4>
-
-          <ProxyRow>
-            <ProxyField>
-              <Label>Host</Label>
-              <Input
-                placeholder="proxy.example.com"
-                value={proxyHost}
-                onChange={(e) => { setProxyHost(e.target.value); setProxyError(null); }}
-              />
-            </ProxyField>
-            <ProxyField>
-              <Label>Port</Label>
+              <Label>Default Timeout (ms)</Label>
               <Input
                 type="number"
-                placeholder="8080"
-                value={proxyPort}
-                onChange={(e) => { setProxyPort(e.target.value); setProxyError(null); }}
+                min={1}
+                placeholder="30000"
+                value={defaultTimeout}
+                onChange={(e) => setDefaultTimeout(Number(e.target.value))}
               />
-            </ProxyField>
-          </ProxyRow>
-          {proxyError && <ErrorBanner>⚠️ {proxyError}</ErrorBanner>}
+              <HelperText>
+                Default timeout applied to requests that don&apos;t specify one.
+              </HelperText>
+            </Section>
 
-          <CheckboxLabel>
-            <input
-              type="checkbox"
-              checked={useProxyAuth}
-              onChange={(e) => setUseProxyAuth(e.target.checked)}
-            />
-            Use Proxy Authentication
-          </CheckboxLabel>
+            <Section>
+              <h4>Default Headers</h4>
+              <HelperText>
+                Automatically inject these headers into every request, unless you
+                already set the same header explicitly.
+              </HelperText>
+              <CheckboxLabel data-testid="default-header-toggle-user-agent">
+                <input
+                  type="checkbox"
+                  checked={defaultHeaders.userAgent}
+                  onChange={(e) =>
+                    setDefaultHeaders({ ...defaultHeaders, userAgent: e.target.checked })
+                  }
+                />
+                User-Agent: Restify/&lt;version&gt;
+              </CheckboxLabel>
+              <CheckboxLabel data-testid="default-header-toggle-request-id">
+                <input
+                  type="checkbox"
+                  checked={defaultHeaders.requestId}
+                  onChange={(e) =>
+                    setDefaultHeaders({ ...defaultHeaders, requestId: e.target.checked })
+                  }
+                />
+                X-Request-Id (fresh value per request)
+              </CheckboxLabel>
+              <CheckboxLabel data-testid="default-header-toggle-correlation-id">
+                <input
+                  type="checkbox"
+                  checked={defaultHeaders.correlationId}
+                  onChange={(e) =>
+                    setDefaultHeaders({ ...defaultHeaders, correlationId: e.target.checked })
+                  }
+                />
+                X-Correlation-Id (fresh value per request)
+              </CheckboxLabel>
+              <CheckboxLabel data-testid="default-header-toggle-date">
+                <input
+                  type="checkbox"
+                  checked={defaultHeaders.date}
+                  onChange={(e) =>
+                    setDefaultHeaders({ ...defaultHeaders, date: e.target.checked })
+                  }
+                />
+                Date (current HTTP date)
+              </CheckboxLabel>
+            </Section>
+          </>
+        )}
 
-          {useProxyAuth && (
-            <ProxyAuthSection>
-              <Label>Username</Label>
-              <Input
-                placeholder="username"
-                value={proxyUsername}
-                onChange={(e) => setProxyUsername(e.target.value)}
-              />
-              <Label>Password</Label>
-              <Input
-                type="password"
-                placeholder="password"
-                value={proxyPassword}
-                onChange={(e) => setProxyPassword(e.target.value)}
-              />
-            </ProxyAuthSection>
-          )}
+        {activeTab === 'ssl' && (
+          <Section>
+            <h4>Client Certificates (Optional)</h4>
 
-          <Label>No Proxy Hosts (press Enter to add)</Label>
-          <HelperText>
-            Exact domain match only: Add ubstest.com to bypass proxy only for ubstest.com (not subdomains)
-          </HelperText>
-          <Input
-            placeholder="localhost"
-            value={noProxyInput}
-            onChange={(e) => setNoProxyInput(e.target.value)}
-            onKeyDown={handleAddNoProxyTag}
-          />
-
-          {noProxyTags.length > 0 && (
-            <TagsContainer>
-              {noProxyTags.map((tag, idx) => (
-                <Tag key={idx}>
-                  {tag}
-                  <TagRemove onClick={() => handleRemoveNoProxyTag(idx)} title="Remove">
-                    ✕
-                  </TagRemove>
-                </Tag>
-              ))}
-            </TagsContainer>
-          )}
-        </Section>
-
-        <Section>
-          <h4>Client Certificates (Optional)</h4>
-
-          {certificates.length > 0 && (
-            <CertList>
-              {certificates.map((cert, index) => (
-                <CertEntry_ key={index}>
-                  <CertHeader
-                    onClick={() =>
-                      setExpandedCert(expandedCert === index ? null : index)
-                    }
-                  >
-                    <CertToggle $open={expandedCert === index}>▶</CertToggle>
-                    <CertHostname>{cert.hostname}</CertHostname>
-                    <RemoveBtn
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeCertificate(index);
-                      }}
-                      title="Remove certificate"
+            {certificates.length > 0 && (
+              <CertList>
+                {certificates.map((cert, index) => (
+                  <CertEntry_ key={index}>
+                    <CertHeader
+                      onClick={() =>
+                        setExpandedCert(expandedCert === index ? null : index)
+                      }
                     >
+                      <CertToggle $open={expandedCert === index}>▶</CertToggle>
+                      <CertHostname>{cert.hostname}</CertHostname>
+                      <RemoveBtn
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeCertificate(index);
+                        }}
+                        title="Remove certificate"
+                      >
+                        ✕
+                      </RemoveBtn>
+                    </CertHeader>
+
+                    {expandedCert === index && (
+                      <CertContent>
+                        <Label>Certificate Path</Label>
+                        <Input
+                          placeholder="/path/to/cert.pem"
+                          value={cert.certPath}
+                          onChange={(e) =>
+                            updateCertificate(index, 'certPath', e.target.value)
+                          }
+                        />
+                        <Label>Key Path</Label>
+                        <Input
+                          placeholder="/path/to/key.pem"
+                          value={cert.keyPath}
+                          onChange={(e) =>
+                            updateCertificate(index, 'keyPath', e.target.value)
+                          }
+                        />
+                        <Label>CA Path (Optional)</Label>
+                        <Input
+                          placeholder="/path/to/ca.pem"
+                          value={cert.caPath}
+                          onChange={(e) =>
+                            updateCertificate(index, 'caPath', e.target.value)
+                          }
+                        />
+                      </CertContent>
+                    )}
+                  </CertEntry_>
+                ))}
+              </CertList>
+            )}
+
+            <CertForm>
+              <h5>Add New Certificate</h5>
+              <Label>Hostname</Label>
+              <Input
+                placeholder="api.example.com"
+                value={newCert.hostname}
+                onChange={(e) => setNewCert({ ...newCert, hostname: e.target.value })}
+              />
+              <Label>Certificate Path</Label>
+              <Input
+                placeholder="/path/to/cert.pem"
+                value={newCert.certPath}
+                onChange={(e) => setNewCert({ ...newCert, certPath: e.target.value })}
+              />
+              <Label>Key Path</Label>
+              <Input
+                placeholder="/path/to/key.pem"
+                value={newCert.keyPath}
+                onChange={(e) => setNewCert({ ...newCert, keyPath: e.target.value })}
+              />
+              <Label>CA Path (Optional)</Label>
+              <Input
+                placeholder="/path/to/ca.pem"
+                value={newCert.caPath}
+                onChange={(e) => setNewCert({ ...newCert, caPath: e.target.value })}
+              />
+              <SecondaryButton onClick={addCertificate}>+ Add Certificate</SecondaryButton>
+            </CertForm>
+          </Section>
+        )}
+
+        {activeTab === 'proxy' && (
+          <Section>
+            <h4>Proxy Settings (Optional)</h4>
+
+            <ProxyRow>
+              <ProxyField>
+                <Label>Host</Label>
+                <Input
+                  placeholder="proxy.example.com"
+                  value={proxyHost}
+                  onChange={(e) => { setProxyHost(e.target.value); setProxyError(null); }}
+                />
+              </ProxyField>
+              <ProxyField>
+                <Label>Port</Label>
+                <Input
+                  type="number"
+                  placeholder="8080"
+                  value={proxyPort}
+                  onChange={(e) => { setProxyPort(e.target.value); setProxyError(null); }}
+                />
+              </ProxyField>
+            </ProxyRow>
+            {proxyError && <ErrorBanner>⚠️ {proxyError}</ErrorBanner>}
+
+            <CheckboxLabel>
+              <input
+                type="checkbox"
+                checked={useProxyAuth}
+                onChange={(e) => setUseProxyAuth(e.target.checked)}
+              />
+              Use Proxy Authentication
+            </CheckboxLabel>
+
+            {useProxyAuth && (
+              <ProxyAuthSection>
+                <Label>Username</Label>
+                <Input
+                  placeholder="username"
+                  value={proxyUsername}
+                  onChange={(e) => setProxyUsername(e.target.value)}
+                />
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  placeholder="password"
+                  value={proxyPassword}
+                  onChange={(e) => setProxyPassword(e.target.value)}
+                />
+              </ProxyAuthSection>
+            )}
+
+            <Label>No Proxy Hosts (press Enter to add)</Label>
+            <HelperText>
+              Exact domain match only: Add ubstest.com to bypass proxy only for ubstest.com (not subdomains)
+            </HelperText>
+            <Input
+              placeholder="localhost"
+              value={noProxyInput}
+              onChange={(e) => setNoProxyInput(e.target.value)}
+              onKeyDown={handleAddNoProxyTag}
+            />
+
+            {noProxyTags.length > 0 && (
+              <TagsContainer>
+                {noProxyTags.map((tag, idx) => (
+                  <Tag key={idx}>
+                    {tag}
+                    <TagRemove onClick={() => handleRemoveNoProxyTag(idx)} title="Remove">
                       ✕
-                    </RemoveBtn>
-                  </CertHeader>
-
-                  {expandedCert === index && (
-                    <CertContent>
-                      <Label>Certificate Path</Label>
-                      <Input
-                        placeholder="/path/to/cert.pem"
-                        value={cert.certPath}
-                        onChange={(e) =>
-                          updateCertificate(index, 'certPath', e.target.value)
-                        }
-                      />
-                      <Label>Key Path</Label>
-                      <Input
-                        placeholder="/path/to/key.pem"
-                        value={cert.keyPath}
-                        onChange={(e) =>
-                          updateCertificate(index, 'keyPath', e.target.value)
-                        }
-                      />
-                      <Label>CA Path (Optional)</Label>
-                      <Input
-                        placeholder="/path/to/ca.pem"
-                        value={cert.caPath}
-                        onChange={(e) =>
-                          updateCertificate(index, 'caPath', e.target.value)
-                        }
-                      />
-                    </CertContent>
-                  )}
-                </CertEntry_>
-              ))}
-            </CertList>
-          )}
-
-          <CertForm>
-            <h5>Add New Certificate</h5>
-            <Label>Hostname</Label>
-            <Input
-              placeholder="api.example.com"
-              value={newCert.hostname}
-              onChange={(e) => setNewCert({ ...newCert, hostname: e.target.value })}
-            />
-            <Label>Certificate Path</Label>
-            <Input
-              placeholder="/path/to/cert.pem"
-              value={newCert.certPath}
-              onChange={(e) => setNewCert({ ...newCert, certPath: e.target.value })}
-            />
-            <Label>Key Path</Label>
-            <Input
-              placeholder="/path/to/key.pem"
-              value={newCert.keyPath}
-              onChange={(e) => setNewCert({ ...newCert, keyPath: e.target.value })}
-            />
-            <Label>CA Path (Optional)</Label>
-            <Input
-              placeholder="/path/to/ca.pem"
-              value={newCert.caPath}
-              onChange={(e) => setNewCert({ ...newCert, caPath: e.target.value })}
-            />
-            <SecondaryButton onClick={addCertificate}>+ Add Certificate</SecondaryButton>
-          </CertForm>
-        </Section>
+                    </TagRemove>
+                  </Tag>
+                ))}
+              </TagsContainer>
+            )}
+          </Section>
+        )}
 
         {message && (
           message.type === 'success'

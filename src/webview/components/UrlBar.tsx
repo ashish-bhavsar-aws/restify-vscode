@@ -176,6 +176,9 @@ const SaveBtn = styled.button`
   white-space: nowrap;
   font-family: inherit;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   transition: all 0.15s;
 
   &:hover {
@@ -355,7 +358,17 @@ export const UrlBar: React.FC<UrlBarProps> = ({
     return `${baseUrl}${queryString ? '?' + queryString : ''}`;
   }, [url, queryParams]);
 
-  const urlSuggestions = urlFocused ? getDynamicVarSuggestions(displayUrl) : [];
+  // Query-string values are stored percent-encoded in displayUrl (handleUrlChange
+  // parses them into queryParams), so decode before matching trailing `{{$` tokens.
+  const urlForSuggestions = useMemo(() => {
+    try {
+      return decodeURIComponent(displayUrl);
+    } catch {
+      return displayUrl;
+    }
+  }, [displayUrl]);
+
+  const urlSuggestions = urlFocused ? getDynamicVarSuggestions(urlForSuggestions) : [];
 
   const handleUrlKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!urlSuggestions.length) {
@@ -371,7 +384,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const idx = urlActiveIndex >= 0 ? urlActiveIndex : 0;
-      onUrlChange(applyDynamicVarSuggestion(displayUrl, urlSuggestions[idx]));
+      onUrlChange(applyDynamicVarSuggestion(urlForSuggestions, urlSuggestions[idx]));
       setUrlActiveIndex(-1);
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -405,7 +418,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
                 data-testid="url-suggestion-item"
                 $active={idx === urlActiveIndex}
                 onMouseDown={() => {
-                  onUrlChange(applyDynamicVarSuggestion(displayUrl, token));
+                  onUrlChange(applyDynamicVarSuggestion(urlForSuggestions, token));
                   setUrlActiveIndex(-1);
                 }}
                 onMouseEnter={() => setUrlActiveIndex(idx)}
@@ -419,7 +432,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
       </UrlInputWrapper>
 
       <SaveBtn data-testid="save-btn" onClick={onSave} title="Save to Collection">
-        <Icon icon={faFloppyDisk} size={13} style={{ marginRight: 5 }} />
+        <Icon icon={faFloppyDisk} size={13} />
         Save
       </SaveBtn>
 

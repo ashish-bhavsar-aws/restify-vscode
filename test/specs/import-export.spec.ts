@@ -4,7 +4,7 @@ import {
   closeVSCode,
   screenshot,
   injectCursorOverlay,
-  clickRestifyIcon,
+  ensureSidebarOpen,
   findCollectionsFrame,
   clickWithCursor,
   selectQuickPick,
@@ -15,7 +15,7 @@ import {
   logError,
   type VSCodeApp,
 } from '../utils/vscode';
-import { stubOpenDialog, clearDialogStub } from '../utils/helpers';
+import { stubOpenDialog } from '../utils/helpers';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -66,8 +66,7 @@ test.describe('Import / Export', () => {
   test.beforeAll(async () => {
     app = await launchVSCode();
     await injectCursorOverlay(app.window);
-    await clickRestifyIcon(app.window);
-    await app.window.waitForTimeout(3000);
+    await ensureSidebarOpen(app.window);
     collectionsFrame = await findCollectionsFrame(app.window);
     expect(collectionsFrame).not.toBeNull();
   });

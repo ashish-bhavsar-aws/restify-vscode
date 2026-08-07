@@ -30,6 +30,23 @@ import {
 
 const vscodeApi = (window as any).acquireVsCodeApi?.();
 
+/**
+ * Window session id for request chaining. Generated once per webview window and
+ * set on `window`; script-extracted chain variables are scoped to it. The same
+ * window chains across unlimited requests; a new window (new id) terminates the
+ * scope.
+ */
+const SESSION_ID: string = (() => {
+  const w = window as any;
+  if (!w.__restifySessionId) {
+    w.__restifySessionId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `session-${Math.random().toString(36).slice(2)}`;
+  }
+  return w.__restifySessionId as string;
+})();
+
 /* ─── Styled Components ───────────────────────────────────── */
 
 const Container = styled.div`
@@ -212,7 +229,7 @@ export const MainPanel: React.FC = () => {
   const [codeGenOpen, setCodeGenOpen] = useState(false);
   const [codeGenEnabled, setCodeGenEnabled] = useState(false);
   const [varsHelpOpen, setVarsHelpOpen] = useState(false);
-  const [responseVarsTokens, setResponseVarsTokens] = useState<string[]>([]);
+  const [chainVars, setChainVars] = useState<Record<string, string>>({});
   const [oauthFetching, setOauthFetching] = useState(false);
   const [oauthStatus, setOauthStatus] = useState<{
     state: 'success' | 'error' | 'none';
@@ -299,8 +316,8 @@ export const MainPanel: React.FC = () => {
             networkLogs: [],
           });
           break;
-        case "responseVarsUpdated":
-          setResponseVarsTokens(msg.tokens ?? []);
+        case "sessionChainVarsUpdated":
+          setChainVars(msg.variables ?? {});
           break;
         case "oauthTokenResult":
           setOauthFetching(false);
@@ -388,7 +405,7 @@ export const MainPanel: React.FC = () => {
           applyThemeClass(msg.kind ?? 2);
           break;
         case "getCurrentRequest":
-          vscodeApi?.postMessage({ command: "currentRequest", request: requestRef.current });
+          post({ command: "currentRequest", request: requestRef.current });
           break;
         case "triggerSendRequest":
           sendRef.current();
@@ -411,7 +428,7 @@ export const MainPanel: React.FC = () => {
     window.addEventListener("message", handler);
 
     // Signal that the webview is ready to receive messages
-    vscodeApi?.postMessage({ command: "webviewReady" });
+    post({ command: "webviewReady" });
 
     return () => window.removeEventListener("message", handler);
   }, []);
@@ -431,7 +448,8 @@ export const MainPanel: React.FC = () => {
   }, [activeEnvId]);
 
   /* ── Helpers ─────────────────────────────────────── */
-  const post = (message: any) => vscodeApi?.postMessage(message);
+  const post = (message: any) =>
+    vscodeApi?.postMessage({ ...message, sessionId: SESSION_ID });
 
   const updateRequest = (updates: Partial<RequestState>) => {
     setRequest((prev: RequestState) => {
@@ -518,7 +536,7 @@ export const MainPanel: React.FC = () => {
         e.preventDefault();
         const colName = savedCollectionNameRef.current;
         if (colName) {
-          vscodeApi?.postMessage({
+          post({
             command: "saveToCollection",
             request: {
               ...requestRef.current,
@@ -670,11 +688,32 @@ export const MainPanel: React.FC = () => {
   const activeEnvironment =
     environments.find((env) => env.id === activeEnvId) || null;
 
+  // Merge the active environment's variables with the window session's chain
+  // variables so `{{token}}` (script-extracted) renders resolved + hoverable.
+  const displayVariables = React.useMemo(() => {
+    const envVars = activeEnvironment?.variables ?? [];
+    const chainEntries = Object.entries(chainVars).map(([key, value]) => ({
+      key,
+      value,
+    }));
+    if (chainEntries.length === 0) return envVars;
+    return [...envVars, ...chainEntries];
+  }, [activeEnvironment, chainVars]);
+
+  const displayEnvironment = React.useMemo(
+    () =>
+      activeEnvironment
+        ? { ...activeEnvironment, variables: displayVariables }
+        : { id: "chain-only", name: "", variables: displayVariables },
+    [activeEnvironment, displayVariables],
+  );
+
   // Compute which env variables are referenced in the current request
   const usedVars = React.useMemo(() => {
     const allVarKeys = new Set(
-      activeEnvironment?.variables?.map((v) => v.key) ?? [],
+      (activeEnvironment?.variables ?? []).map((v) => v.key),
     );
+    Object.keys(chainVars).forEach((k) => allVarKeys.add(k));
     const searchText = [
       request.url,
       request.body || "",
@@ -699,6 +738,7 @@ export const MainPanel: React.FC = () => {
     request.headers,
     request.queryParams,
     activeEnvironment,
+    chainVars,
   ]);
 
   return (
@@ -737,7 +777,7 @@ export const MainPanel: React.FC = () => {
         url={request.url}
         loading={loading}
         queryParams={request.queryParams}
-        environment={activeEnvironment}
+        environment={displayEnvironment}
         onMethodChange={(method) => updateRequest({ method })}
         onUrlChange={handleUrlChange}
         onSend={handleSendGuarded}
@@ -840,7 +880,7 @@ export const MainPanel: React.FC = () => {
             request={request}
             onUpdate={updateRequest}
             themeKind={themeKind}
-            environment={activeEnvironment}
+            environment={displayEnvironment}
             oauthFetching={oauthFetching}
             oauthStatus={oauthStatus}
             onGetOAuthToken={handleGetOAuthToken}
@@ -852,7 +892,6 @@ export const MainPanel: React.FC = () => {
             request={requestInfo}
             onDownloadFile={handleDownloadFile}
             post={post}
-            responseVarsTokens={responseVarsTokens}
           />
         </SplitPane>
       </MainArea>
@@ -899,7 +938,7 @@ export const MainPanel: React.FC = () => {
       <CodeGenModal
         open={codeGenOpen}
         request={buildPayload()}
-        environment={activeEnvironment}
+        environment={displayEnvironment}
         defaultHeaders={settings.defaultHeaders}
         onClose={() => setCodeGenOpen(false)}
       />

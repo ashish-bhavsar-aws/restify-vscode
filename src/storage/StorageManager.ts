@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
-import { resolveDynamicVariables, resolveResponseVariables } from "../core";
-import type { OAuth2Token, ResponseVarsContext } from "../core";
+import { resolveDynamicVariables } from "../core";
+import type { OAuth2Token } from "../core";
 
 export interface EnvVariable {
   key: string;
@@ -84,7 +84,9 @@ export class StorageManager {
   private readonly DEFAULT_GLOBAL_ENV_NAME = "Global";
   private readonly SECRET_KEY_PREFIX = "restify.env";
   private secretCache = new Map<string, string>();
-  private lastResponse: ResponseVarsContext | undefined;
+  /** Per-window chain variables (Postman-style). Keyed by the window session id;
+   *  a new window gets a new id → the previous scope is terminated. */
+  private sessionChainVars = new Map<string, Record<string, string>>();
 
   // storageDir: optional file-system directory to persist history to a file
   constructor(
@@ -1009,7 +1011,7 @@ export class StorageManager {
   }
 
   // ─── Variable resolution ──────────────────────────────────
-  resolveVariables(text: string): string {
+  resolveVariables(text: string, sessionId?: string): string {
     let resolved = text;
     const activeEnv = this.getActiveEnvironment();
     if (activeEnv && activeEnv.variables) {
@@ -1025,27 +1027,41 @@ export class StorageManager {
       }
     }
     resolved = resolveDynamicVariables(resolved);
-    return resolveResponseVariables(resolved, this.lastResponse);
+    if (sessionId) {
+      const chainVars = this.sessionChainVars.get(sessionId);
+      if (chainVars) {
+        for (const [key, value] of Object.entries(chainVars)) {
+          if (!key) continue;
+          resolved = resolved.replace(
+            new RegExp(`\\{\\{${key}\\}\\}`, "g"),
+            value,
+          );
+        }
+      }
+    }
+    return resolved;
   }
 
-  // ─── Request chaining (last response) ─────────────────────
-  /** Store the last response so `{{response.*}}` tokens resolve in later requests. */
-  setLastResponse(response: {
-    status?: number;
-    statusText?: string;
-    headers?: Record<string, string | string[] | undefined>;
-    body?: string;
-  }): void {
-    this.lastResponse = {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers || undefined,
-      body: response.body || undefined,
-    };
+  // ─── Request chaining (per-window session) ────────────────
+  /** Store script-extracted variables for a window session. A single window
+   *  chains across unlimited requests; a new window (new sessionId) starts
+   *  with an empty scope. */
+  setSessionChainVars(sessionId: string, variables: Record<string, unknown>): void {
+    const current = this.sessionChainVars.get(sessionId) ?? {};
+    for (const [key, value] of Object.entries(variables)) {
+      if (!key) continue;
+      current[key] = typeof value === "string" ? value : JSON.stringify(value);
+    }
+    this.sessionChainVars.set(sessionId, current);
   }
 
-  getLastResponse(): ResponseVarsContext | undefined {
-    return this.lastResponse;
+  getSessionChainVars(sessionId: string): Record<string, string> {
+    return { ...(this.sessionChainVars.get(sessionId) ?? {}) };
+  }
+
+  /** Terminate a window session's chain scope (called when the window closes). */
+  clearSessionChainVars(sessionId: string): void {
+    this.sessionChainVars.delete(sessionId);
   }
 
   /**

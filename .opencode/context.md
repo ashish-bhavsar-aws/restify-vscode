@@ -32,7 +32,7 @@ Located in `test/`. Uses `@vscode/test-electron` to download VS Code, then Playw
 
 ### Key files
 - `test/utils/vscode.ts` — launch/close, frame discovery, click helpers, quick pick helpers, debug logging
-- `test/specs/demo.spec.ts` — 17-step demo automation spec (serial, fail-fast)
+- `test/specs/feature1-6.spec.ts` — consolidated E2E suites (serial, fail-fast), plus `auth.spec.ts`, `codegen.spec.ts`, `import-export.spec.ts`, `palette-commands.spec.ts`, `save-modal-dropdown.spec.ts`, `settings.spec.ts`
 - `test/playwright.config.ts` — 180s timeout, workers=1
 
 ### VS Code launch args

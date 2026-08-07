@@ -161,7 +161,6 @@ interface ResponsePaneProps {
   request?: any;
   onDownloadFile?: (payload: { fileName: string; mimeType: string; fileBase64: string }) => void;
   post?: (msg: any) => void;
-  responseVarsTokens?: string[];
 }
 
 type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'logs' | 'raw';
@@ -273,55 +272,6 @@ const ResponseActions = styled.div`
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-`;
-
-const VarsPickerWrap = styled.div`
-  position: relative;
-`;
-
-const VarsPickerMenu = styled.div`
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 260px;
-  max-height: 320px;
-  overflow-y: auto;
-  background: ${({ theme }) => theme.surface};
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 6px;
-  box-shadow: 0 8px 24px ${({ theme }) => theme.shadowMd};
-  z-index: 9999;
-  padding: 4px;
-`;
-
-const VarsPickerTitle = styled.div`
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: ${({ theme }) => theme.muted};
-  padding: 6px 8px 4px;
-`;
-
-const VarsPickerItem = styled.button`
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  color: ${({ theme }) => theme.fg};
-  padding: 6px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: inherit;
-
-  code {
-    font-size: 11px;
-    font-family: ${({ theme }) => theme.monoFamily};
-  }
-
-  &:hover {
-    background: ${({ theme }) => theme.hover};
-  }
 `;
 
 const CopyBtn = styled.button<{ $active?: boolean }>`
@@ -1515,18 +1465,15 @@ const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (m
 
 /* ─── Main Component ──────────────────────────────────── */
 
-export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, onDownloadFile, post, responseVarsTokens }) => {
+export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, onDownloadFile, post }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
-  const [copiedVar, setCopiedVar] = useState('');
-  const [showVarsPicker, setShowVarsPicker] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [bodySearch, setBodySearch] = useState('');
   const [showRawForLarge, setShowRawForLarge] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  const varsPickerRef = useRef<HTMLDivElement>(null);
 
   const send = post;
 
@@ -1583,24 +1530,6 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
       setCopiedCurl(true);
       setTimeout(() => setCopiedCurl(false), 1500);
     }
-  };
-
-  useEffect(() => {
-    if (!showVarsPicker) return;
-    const onDown = (e: MouseEvent) => {
-      if (varsPickerRef.current && !varsPickerRef.current.contains(e.target as Node)) {
-        setShowVarsPicker(false);
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [showVarsPicker]);
-
-  const handleCopyVar = (token: string) => {
-    navigator.clipboard.writeText(`{{${token}}}`);
-    setCopiedVar(token);
-    setTimeout(() => setCopiedVar(''), 1500);
-    setShowVarsPicker(false);
   };
 
   const handleDownloadFile = () => {
@@ -1683,24 +1612,6 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           </MetaChip>
         )}
         <ResponseActions>
-          {responseVarsTokens && responseVarsTokens.length > 0 && (
-            <VarsPickerWrap ref={varsPickerRef}>
-              <CopyBtn data-testid="response-vars-picker-btn" $active={!!copiedVar} onClick={() => setShowVarsPicker(s => !s)} title="Copy a {{response.*}} variable token">
-                <Icon icon={faCode} size={12} />
-                {copiedVar ? `{{${copiedVar}}} ✓` : '{{ }}'}
-              </CopyBtn>
-              {showVarsPicker && (
-                <VarsPickerMenu data-testid="response-vars-picker-menu">
-                  <VarsPickerTitle>Use in next request</VarsPickerTitle>
-                  {(responseVarsTokens || []).map((token) => (
-                    <VarsPickerItem key={token} data-testid={`response-vars-token-${token}`} onClick={() => handleCopyVar(token)} title={`Copy {{${token}}}`}>
-                      <code>{`{{${token}}}`}</code>
-                    </VarsPickerItem>
-                  ))}
-                </VarsPickerMenu>
-              )}
-            </VarsPickerWrap>
-          )}
           {request && (
             <CopyBtn onClick={handleCopyCurlStatus} title="Copy as cURL command">
               <Icon icon={faTerminal} size={12} />

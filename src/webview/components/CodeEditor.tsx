@@ -15,6 +15,7 @@ interface CodeEditorProps {
   placeholder?: string;
   readOnly?: boolean;
   minHeight?: string;
+  dataTestId?: string;
 }
 
 const Wrapper = styled.div`
@@ -231,6 +232,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   placeholder = 'Enter content...',
   readOnly = false,
   minHeight = '200px',
+  dataTestId,
 }) => {
   void _themeKind;
 
@@ -494,7 +496,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [editorValue, measureWrappedLineHeights, minHeight]);
 
   return (
-    <Wrapper>
+    <Wrapper data-testid={dataTestId}>
       <Toolbar>
         <ToolbarButtons>
           {canFormat && (
@@ -553,6 +555,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
+            data-testid={dataTestId ? `${dataTestId}-textarea` : undefined}
             onChange={(e) => updateValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onClick={updateCursorFromSelection}

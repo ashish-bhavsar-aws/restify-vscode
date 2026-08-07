@@ -39,8 +39,8 @@ Extract into `src/core/` when the logic:
 - **Is pure or framework-free** — no DOM, no React state, no `vscode` API, no
   `window`/`document` access. Examples: body serialization, header
   canonicalization, URL/query merging, cookie matching, dynamic-variable
-  resolution, response-variable path parsing, collection-runner aggregation,
-  OAuth token caching, cURL parsing, codegen.
+  resolution, script execution and chain-variable merging, collection-runner
+  aggregation, OAuth token caching, cURL parsing, codegen.
 - **Is shared between the host (panel) and webview** or between multiple
   components/commands.
 - **Is complex enough to unit test in isolation** (more than a couple of

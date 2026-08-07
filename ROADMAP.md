@@ -46,7 +46,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F19 | **Basic Auth via URL** | 🟡 P2 | Support `https://user:pass@host/` URL form and carry it into Authorization header. |
 | F20 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
 | F61 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
-| F21 | **Request chaining** | 🟠 P1 | ✅ Reference previous response values in the next request (`{{response.<method>.<path>}}`) with a selector UI. *(done — `src/core/responseVars.ts` + picker; E2E in `feature3.spec.ts`)* |
+| F21 | **Request chaining** | 🟠 P1 | ✅ Post-response scripts store values with `set('key', value)` and they are scoped to the current window session, available in every later request as `{{key}}`; a new window starts a fresh scope. *(done — per-window session chain variables in `StorageManager` + script `set()`; E2E in `feature3.spec.ts`)* |
 
 ### 1.3 Response Viewer
 
@@ -67,7 +67,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
 | F31 | **Collection runner** | 🟠 P1 | ✅ Run all requests in a collection/folder sequentially; show per-request pass/fail + timing results grid. *(done — `src/core/collectionRunner.ts` + sidebar runner modal; E2E in `feature4.spec.ts`)* |
-| F32 | **Data-driven runs** | 🟡 P2 | Iterate a collection against CSV/JSON data files (each row injects variables). |
+| F32 | **Data-driven runs** | 🟡 P2 | ✅ Iterate a collection against CSV/JSON data files (each row injects variables). *(done — `iterationData` in `collectionRunner.ts` + `_pickIterationData` file picker in `SidebarProvider.ts`; unit-tested)* |
 | F33 | **Test/assertion scripts** | 🟠 P1 | Postman-style `tests` tab: assertions render as pass/fail badges in the response pane (builds on existing script engine). |
 | F34 | **Export to OpenAPI / HAR / .http** | 🟡 P2 | Reverse of the importers. Postman export already supported via `importCollection`. |
 | F35 | **Import HAR / Insomnia / .http** | 🟡 P2 | Extend importers beyond Postman + OpenAPI. |
@@ -167,7 +167,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 > Short, cheap, high-confidence changes. Do first; everything builds on this.
 
 - [x] F2 Flip `rejectUnauthorized` default to `true`; keep per-request checkbox; show a warning badge when disabled. *(done — default now `true`, badge shown when `!== true`)*
-- [x] F9 Scaffold unit tests (Vitest/Jest, no heavy webpack) for: variable resolution, body serialization, URL/query merging, multipart builder, auth injection, import parsers. *(scaffolded — Vitest 4 + 87 tests covering body serialization incl. GraphQL, URL/query merging, multipart builder, redirects, decompression, cookies)*
+- [x] F9 Scaffold unit tests (Vitest/Jest, no heavy webpack) for: variable resolution, body serialization, URL/query merging, multipart builder, auth injection, import parsers. *(scaffolded — Vitest 4 + 261 tests covering body serialization incl. GraphQL, URL/query merging, multipart builder, redirects, decompression, cookies, scripts, collection runner)*
 - [x] Extract the request engine (`_doRequest`, body serialization, header canonicalization) into `src/core/` so it's unit-testable and shared. *(done — `src/core/{constants,headers,body,decompress,redirects,url}.ts`)*
 
 ### Phase 1 — Core Networking (P0 fixes)
@@ -178,7 +178,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F4 **Decompression**: inflate `Content-Encoding: gzip/deflate/br` (`zlib`); fall back to raw bytes on decode failure; only set `Accept-Encoding` when handled.
 - [x] F5 **Cookie jar**: persist cookies per domain in storage; send stored cookies for matching host/path; honor `Secure`, `Domain`, `Path`, `Expires`, `HttpOnly`; surface `Set-Cookie` in response headers (already preserved). *(done — `src/core/cookies.ts`, globalState persistence, engine injection + per-hop capture; 29 tests. Cookie Manager view deferred to a later polish pass.)*
 - [x] F7 **Proxy size cap**: apply `MAX_RESPONSE_SIZE` + size counting to the proxy path.
-- [x] F6 **Cancellation**: `AbortController`-style signal through the engine; Cancel button in the panel; history entry marked `cancelled`. *(done — `AbortController` wired through `src/core/http.ts`, cancel button + cancelled history state; covered by `features.spec.ts` F6 and unit tests)*
+- [x] F6 **Cancellation**: `AbortController`-style signal through the engine; Cancel button in the panel; history entry marked `cancelled`. *(done — `AbortController` wired through `src/core/http.ts`, cancel button + cancelled history state; covered by `feature1.spec.ts` F6 and unit tests)*
 - [x] F8 **Timeouts**: `timeout` on RequestState (per-request) + default in Settings; wire both direct and proxy paths.
 
 **Exit criteria:** unit tests for redirects, decompression, cookie matching, GraphQL body, proxy cap. Full E2E suite green. *(status: redirects ✅, decompression ✅, cookie matching ✅, GraphQL body ✅, proxy cap covered by engine tests; cancellation ✅; HTTP + Settings E2E suites green.)*
@@ -189,10 +189,10 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F10 **Pre-request scripts**: extend `scriptExecutor.ts` to a generic pipeline (pre → request → post); API parity (`vars`, `request`, `log`). *(done — `preScript` on RequestState, run host-side via `src/core/script.ts` before the request; `src/core/http.ts` shared engine)*
 - [x] F33 **Test/assertion scripts**: post-request `tests` object (`tests["status is 200"] = response.status === 200`); render pass/fail badges in response pane; store results in history. *(done — `tests` object in `src/core/script.ts` sandbox, wired through `_runScript` in RestifyPanel, `TestResults` component in ResponsePane with pass/fail badges + summary bar; unit-tested)*
 - [x] F16 **Dynamic variables**: `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$randomHex}}`, `{{$processEnv:NAME}}`, `{{$localDateTime}}` resolved host-side before request. *(done — `src/core/dynamicVars.ts`, wired into `StorageManager.resolveVariables`, unit-tested; codegen substitutes dynamic tokens with samples/placeholders — see F53 correctness pass below)*
-- [x] F21 **Request chaining**: after each run, expose response as `{{response.<method>.<jsonpath>}}` style or via script `set()`; picker UI in Save/history flow. *(done — `src/core/responseVars.ts` resolves `{{response.<method>.<path>}}` tokens, `response-vars` picker surfaced in the response pane, chained values resolved host-side before the request; unit-tested + E2E in `feature3.spec.ts`)*
+- [x] F21 **Request chaining**: post-response scripts store values with `set('key', value)`; values are scoped to the current window session and resolve as `{{key}}` in every later request (unlimited chaining in one window, fresh scope on a new window). *(done — per-window session chain variables in `StorageManager.setSessionChainVars`, resolution in `resolveVariables`, chain vars merged into the webview display env for hover previews; unit-tested + E2E in `feature3.spec.ts`)*
 - [x] F41 **Secret variables**: add `secret` flag to `KVItem`; store secret values in `context.secrets`/`SecretStorage`; mask in UI (dot display + reveal). *(done — `secret: true` on env KV items, values persisted to VS Code `SecretStorage`, masked `type="password"` inputs with reveal toggle, `{{secret_key}}` resolves to the decrypted value; unit-tested + E2E in `feature5.spec.ts`)*
 - [x] F31 **Collection runner** (first slice): run a folder/collection sequentially, reusing the single-request engine; results grid with status/time/test badges; cancel support. *(done — `src/core/collectionRunner.ts` sequential runner + cancel, results grid in sidebar modal; unit-tested + E2E in `feature4.spec.ts`)*
-- [ ] F32 **Data-driven runs**: CSV/JSON rows as iteration variables for the runner.
+- [x] F32 **Data-driven runs**: CSV/JSON rows as iteration variables for the runner. *(done — `parseIterationData` for CSV/JSON, `iterationData` options in `runCollectionRequests`, per-row passes with `entry.iteration`, `Run without data` / `Run with data file...` picker in the sidebar runner; unit-tested)*
 - [x] F60 **Code size and maintainability guardrails**: file-size limits, component boundaries, shared-utility placement rules. *(done — `scripts/check-guardrails.mjs` + `npm run guardrails`; rules in `GUARDRAILS.md`)*
 
 **Exit criteria:** script pipeline covered by unit tests (incl. test assertions ✅); runner E2E (2–3 request collection) passing. *(status: F21/F41/F31 E2E all passing.)*
@@ -314,7 +314,7 @@ Focus: more advanced API workflows and long-term differentiation.
 
 ## Suggested First Sprint (highest value, smallest risk)
 
-> ✅ **Complete** — all six items shipped in one sprint (see commit history); build + lint + 87 unit tests + HTTP/Settings E2E suites green.
+> ✅ **Complete** — all six items shipped in one sprint (see commit history); build + lint + 261 unit tests + HTTP/Settings E2E suites green.
 
 1. **F2** — SSL default on (one-line default + warning badge)
 2. **F1** — send GraphQL bodies

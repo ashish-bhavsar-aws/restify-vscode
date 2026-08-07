@@ -276,42 +276,6 @@ export async function screenshot(page: Page, name: string): Promise<string> {
 // Playwright video capture records DOM pixels, NOT the OS cursor.
 // We must render the pointer as a DOM element to appear in the recording.
 
-const CURSOR_OVERLAY_STYLES = `
-  *, *::before, *::after { cursor: none !important; }
-
-    #restify-dot {
-      position: fixed;
-      width: 8px; height: 8px;
-      margin-left: -4px; margin-top: -4px;
-      top: -100px; left: -100px;
-      background: radial-gradient(circle, #ff3b3b 40%, rgba(255,59,59,0.4) 70%, transparent 100%);
-      border: 1.5px solid #fff;
-      border-radius: 50%;
-      box-shadow: 0 0 4px 1px rgba(255,59,59,0.5);
-      pointer-events: none;
-      z-index: 2147483647;
-      will-change: top, left;
-    }
-    #restify-ring {
-      position: fixed;
-      width: 24px; height: 24px;
-      margin-left: -12px; margin-top: -12px;
-    top: -200px; left: -200px;
-    border: 2px solid rgba(255,59,59,0.85);
-    border-radius: 50%;
-    pointer-events: none;
-    z-index: 2147483647;
-    opacity: 0;
-  }
-  #restify-ring.flash {
-    animation: restify-ring-pop 400ms ease-out forwards;
-  }
-  @keyframes restify-ring-pop {
-    0%   { transform: scale(0.4); opacity: 1; }
-    100% { transform: scale(2.2); opacity: 0; }
-  }
-`;
-
 function injectCursorOverlayJS(): void {
   const w = window as any;
   if (w.__restifyDotInjected) {
@@ -605,26 +569,46 @@ export async function findSidebarWebviewFrames(page: Page): Promise<Frame[]> {
   return sidebarFrames;
 }
 
-export async function findCollectionsFrame(page: Page): Promise<Frame | null> {
-  log('Searching for collections sidebar frame...');
-  const allFrames = page.frames().filter(f => f.url().includes('vscode-webview://'));
-
-  for (const frame of allFrames) {
-    const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"], [class*="expand"], [class*="collapse"]').count().catch(() => 0);
-    const hasCollectionName = await frame.locator('text=Swagger Petstore, text=Petstore').count().catch(() => 0);
-    if (hasExpandAll > 0 || hasCollectionName > 0) {
-      log(`  ✓ Found collections frame: ${frame.url().slice(0, 60)}`);
-      return frame;
+export async function findCollectionsFrame(page: Page, timeoutMs = 20_000): Promise<Frame | null> {
+  log(`Searching for collections sidebar frame (timeout=${timeoutMs}ms)...`);
+  // The collections webview view is only materialized when its sidebar header
+  // is expanded. Expand it first so the frame reliably exists.
+  const sidebar = page.locator('.part.sidebar').first();
+  const collHeader = sidebar
+    .getByRole('button', { name: /Collections/i })
+    .or(sidebar.locator('[class*="pane-header"], .view-header').filter({ hasText: /Collections/i }))
+    .first();
+  if (await collHeader.count().catch(() => 0) > 0) {
+    const expanded = await collHeader.getAttribute('aria-expanded').catch(() => null);
+    if (expanded !== 'true') {
+      await collHeader.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(1000);
     }
   }
 
-  // Fallback: find frame with "Filter..." textbox (sidebar filter)
-  for (const frame of allFrames) {
-    const hasFilter = await frame.locator('input[placeholder*="Filter"]').count().catch(() => 0);
-    if (hasFilter > 0) {
-      log(`  Fallback: using frame with filter input: ${frame.url().slice(0, 60)}`);
-      return frame;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const allFrames = page.frames().filter(f => f.url().includes('vscode-webview://'));
+
+    for (const frame of allFrames) {
+      const hasExpandAll = await frame.locator('button[title*="Expand"], button[title*="Collapse"], [class*="expand"], [class*="collapse"]').count().catch(() => 0);
+      const hasCollectionName = await frame.locator('text=Swagger Petstore, text=Petstore').count().catch(() => 0);
+      if (hasExpandAll > 0 || hasCollectionName > 0) {
+        log(`  ✓ Found collections frame: ${frame.url().slice(0, 60)}`);
+        return frame;
+      }
     }
+
+    // Fallback: find frame with "Filter..." textbox (sidebar filter)
+    for (const frame of allFrames) {
+      const hasFilter = await frame.locator('input[placeholder*="Filter"]').count().catch(() => 0);
+      if (hasFilter > 0) {
+        log(`  Fallback: using frame with filter input: ${frame.url().slice(0, 60)}`);
+        return frame;
+      }
+    }
+
+    await page.waitForTimeout(500);
   }
 
   logError('No collections sidebar frame found');
@@ -634,6 +618,21 @@ export async function findCollectionsFrame(page: Page): Promise<Frame | null> {
 /** Find the history sidebar webview frame (identified by its "Filter history..." input). */
 export async function findHistoryFrame(page: Page, timeoutMs = 20_000): Promise<Frame | null> {
   log(`Searching for history sidebar frame (timeout=${timeoutMs}ms)...`);
+  // The history webview view is only materialized when its sidebar header is
+  // expanded. Expand it first so a fresh VS Code session reliably has the frame.
+  const sidebar = page.locator('.part.sidebar').first();
+  const historyHeader = sidebar
+    .getByRole('button', { name: /History/i })
+    .or(sidebar.locator('[class*="pane-header"], .view-header').filter({ hasText: /History/i }))
+    .first();
+  if (await historyHeader.count().catch(() => 0) > 0) {
+    const expanded = await historyHeader.getAttribute('aria-expanded').catch(() => null);
+    if (expanded !== 'true') {
+      await historyHeader.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(1000);
+    }
+  }
+
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -771,67 +770,109 @@ export async function selectQuickPick(page: Page, label: string): Promise<void> 
     return;
   }
 
-  await item.first().click();
-  log('  Quick pick item clicked');
+  // Select via keyboard instead of mouse. A synthetic click's mouseup/click can
+  // land outside the widget that the picker immediately opens (e.g. the
+  // showInputBox for the import source prompt) and VS Code treats it as a
+  // click-outside, cancelling the prompt before the test can type into it.
+  const targetIndex = await entries
+    .evaluateAll((els, lbl) => els.findIndex((e) => (e.textContent || '').includes(lbl)), label)
+    .catch(() => -1);
+  await page
+    .evaluate(() => {
+      const inp = document.querySelector<HTMLInputElement>('.quick-input-widget input, .quick-input-box input');
+      inp?.focus();
+    })
+    .catch(() => {});
+  await page.waitForTimeout(200);
+  for (let i = 0; i < Math.max(targetIndex, 0); i++) {
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter');
+  log(`  Quick pick item selected via keyboard (index ${targetIndex})`);
   await page.waitForTimeout(400);
 }
 
 export async function typeInQuickInput(page: Page, text: string): Promise<void> {
   log(`Typing in quick input: "${text}"...`);
-  // Wait for the quick input widget to be attached. After a quick pick
-  // closes and showInputBox opens, VS Code reuses the same container —
-  // the widget is always attached, but may briefly hide during transition.
+
+  // After a quick pick closes and showInputBox opens, VS Code reuses the same
+  // widget container — a stale (hidden) widget from the quick pick can remain
+  // in the DOM alongside the new prompt. Always target the *visible* widget's
+  // input so we never type into a closing/stale one.
+  const input = page.locator('.quick-input-widget:visible input, .quick-input-box:visible input');
+
+  // Wait for the visible input to appear. This ensures the showInputBox prompt
+  // (or the quick-pick filter) has rendered and is actionable.
+  let inputVisible = false;
   try {
-    await page.locator('.quick-input-widget').waitFor({ state: 'attached', timeout: 10_000 });
+    await input.first().waitFor({ state: 'visible', timeout: 4_000 });
+    log('  Input visible');
+    inputVisible = true;
   } catch {
-    log('  .quick-input-widget not attached, trying .quick-input-box...');
-    await page.locator('.quick-input-box').waitFor({ state: 'attached', timeout: 5_000 });
+    log('  Input not visible within timeout');
   }
 
-  const input = page.locator('.quick-input-widget input, .quick-input-box input');
-
-  // Wait for the actual input element to be visible inside the widget.
-  // This ensures the showInputBox input has rendered (not a stale quick-pick filter).
-  try {
-    await input.first().waitFor({ state: 'visible', timeout: 5_000 });
-  } catch {
-    log('  Input not visible within timeout, continuing anyway...');
-  }
-
-  // Strategy 1: click to focus, select all, then type via keyboard.
-  // This simulates real user interaction and is the most reliable with
-  // VS Code's quick input widget which may not react to synthetic events.
-  try {
-    await input.first().click({ force: true, timeout: 3_000 });
-    await page.waitForTimeout(100);
-    await page.keyboard.press('Meta+a');
-    await page.waitForTimeout(50);
-    await page.keyboard.type(text, { delay: 15 });
-    log('  Input filled via click + keyboard type');
-    await page.waitForTimeout(200);
-    return;
-  } catch {
-    log('  click+keyboard failed, trying fill()...');
-  }
-
-  // Strategy 2: try Playwright fill
-  const count = await input.count();
-  logCheck('Quick input field found', count);
-  if (count > 0) {
-    try {
-      await input.first().fill(text, { timeout: 3_000 });
-      log('  Input filled via fill()');
-      await page.waitForTimeout(200);
-      return;
-    } catch {
-      log('  fill() failed, trying evaluate...');
+  if (!inputVisible) {
+    // VS Code can leave a freshly-opened showInputBox display:none (a race with
+    // the quick-pick that was closing when the prompt opened). Detect a hidden
+    // prompt widget — an input box whose widget has NO quick-pick list — and
+    // force-show it so we can type into it.
+    const forced = await page
+      .evaluate(() => {
+        const widgets = Array.from(document.querySelectorAll<HTMLElement>('.quick-input-widget'));
+        const prompt = widgets.find((w) => w.querySelector('input') && !w.querySelector('.quick-input-list'));
+        if (!prompt) return false;
+        prompt.style.removeProperty('display');
+        prompt.classList.remove('hidden');
+        const inp = prompt.querySelector('input') as HTMLInputElement | null;
+        if (inp) inp.focus();
+        return true;
+      })
+      .catch(() => false);
+    if (forced) {
+      log('  Force-shown hidden prompt widget');
+      await page.waitForTimeout(300);
     }
   }
 
-  // Strategy 3: use evaluate to directly set the input value + dispatch events
+  // Strategy 1: focus the input, select all, then type via keyboard. VS Code's
+  // quick input only reacts to real key events, so this is the most reliable.
+  try {
+    await input.first().click({ force: true, timeout: 3_000 });
+  } catch {
+    try {
+      await input.first().evaluate((el) => (el as HTMLElement).focus());
+    } catch { /* focus is best-effort */ }
+  }
+  await page.waitForTimeout(100);
+
+  let value = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.keyboard.press('Meta+a');
+    await page.waitForTimeout(50);
+    await page.keyboard.type(text, { delay: 10 });
+    await page.waitForTimeout(300);
+    value = await input.first().inputValue({ timeout: 3_000 }).catch(() => '');
+    if (value === text) break;
+    log(`  Keyboard attempt ${attempt + 1} mismatch ("${value.slice(0, 40)}"), retrying...`);
+  }
+
+  if (value === text) {
+    log('  Input filled via keyboard');
+    return;
+  }
+  log('  Keyboard typing failed, trying native setter on the visible widget...');
+
+  // Strategy 2: use evaluate to directly set the input value + dispatch events,
+  // targeting the *visible* widget so we never hit a closing/stale one.
   try {
     const set = await page.evaluate((t) => {
-      const inp = document.querySelector('.quick-input-widget input, .quick-input-box input') as HTMLInputElement | null;
+      const widgets = Array.from(document.querySelectorAll<HTMLElement>('.quick-input-widget'));
+      const visible = widgets.find((w) => w.offsetParent !== null);
+      const inp = (visible?.querySelector('input') ||
+        document.querySelector('.quick-input-widget input, .quick-input-box input')) as HTMLInputElement | null;
       if (!inp) return false;
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
       if (nativeSetter) {
@@ -844,15 +885,29 @@ export async function typeInQuickInput(page: Page, text: string): Promise<void> 
       return true;
     }, text);
     if (set) {
-      log('  Input value set via evaluate');
+      log('  Input value set via native setter');
       await page.waitForTimeout(200);
       return;
     }
   } catch (e) {
-    log(`  evaluate set failed: ${e}`);
+    log(`  Native setter failed: ${e}`);
   }
 
-  // Strategy 4: just type via keyboard (last resort)
+  // Strategy 3: try Playwright fill
+  const count = await input.count();
+  logCheck('Quick input field found', count);
+  if (count > 0) {
+    try {
+      await input.first().fill(text, { timeout: 3_000 });
+      log('  Input filled via fill()');
+      await page.waitForTimeout(200);
+      return;
+    } catch {
+      log('  fill() failed');
+    }
+  }
+
+  // Strategy 4: blind keyboard typing (last resort)
   await page.keyboard.type(text, { delay: 20 });
   log('  Text filled via keyboard (last resort)');
   await page.waitForTimeout(200);

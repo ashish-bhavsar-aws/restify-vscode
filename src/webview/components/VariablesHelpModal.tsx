@@ -137,38 +137,23 @@ export const VariablesHelpModal: React.FC<VariablesHelpModalProps> = ({ open, on
           </Row>
         ))}
 
-        <Title style={{ margin: '14px 0 8px', fontSize: 13 }}>Response chaining</Title>
+        <Title style={{ margin: '14px 0 8px', fontSize: 13 }}>Request chaining</Title>
         <Intro>
-          After a request completes, its response is exposed as variables you can reference in the
-          <strong> next</strong> request — no post-script needed. Use the{' '}
-          <strong>{'{{ }}'}</strong> button in the response toolbar to copy a token, or type them
-          manually.
+          Post-response scripts can extract values from a response and store them as
+          variables scoped to this window. Reference them in later requests with{' '}
+          <strong>{'{{varName}}'}</strong> — chain across unlimited requests in the
+          same window. A new window starts a fresh scope.
         </Intro>
         <Row>
-          <Token>{'{{response.status}}'}</Token>
-          <Desc>HTTP status code of the last response</Desc>
-          <Example>{'{{response.status}}'}</Example>
-        </Row>
-        <Row>
-          <Token>{'{{response.body}}'}</Token>
-          <Desc>Raw response body (string)</Desc>
-          <Example>{'{{response.body}}'}</Example>
-        </Row>
-        <Row>
-          <Token>{'{{response.headers.X}}'}</Token>
-          <Desc>Response header (case-insensitive)</Desc>
-          <Example>{'{{response.headers.content-type}}'}</Example>
-        </Row>
-        <Row>
-          <Token>{'{{response.$.path}}'}</Token>
-          <Desc>JSONPath into the parsed JSON body</Desc>
-          <Example>{'{{response.$.token}}'}</Example>
+          <Token>{'{{token}}'}</Token>
+          <Desc>Value stored by a post-response script (e.g. <strong>{'set(\'token\', response.body.access_token)'}</strong>)</Desc>
+          <Example>{'Authorization: Bearer {{token}}'}</Example>
         </Row>
 
         <Note>
           Tip: type <strong>{'{{$'}</strong> in the URL or a header value to autocomplete.
           Environment variables use the <strong>{'{{envVar}}'}</strong> syntax and come from
-          your active environment.
+          your active environment. Hover a variable token to preview its resolved value.
         </Note>
       </Modal>
     </Overlay>

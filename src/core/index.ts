@@ -11,6 +11,5 @@ export * from "./headers";
 export * from "./http";
 export * from "./oauth2";
 export * from "./redirects";
-export * from "./responseVars";
 export * from "./script";
 export * from "./url";

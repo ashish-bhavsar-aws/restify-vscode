@@ -23,7 +23,6 @@ import {
 } from "./redirects";
 import { DEFAULT_TIMEOUT_MS, DEFAULT_MAX_REDIRECTS } from "./constants";
 import { getCookieHeader, parseSetCookies, storeCookies, StoredCookie } from "./cookies";
-import { resolveResponseVariables, ResponseVarsContext } from "./responseVars";
 
 /**
  * Collection runner — sequential execution of a folder/collection reusing the
@@ -96,8 +95,6 @@ export interface CollectionRunnerOptions {
   onCookiesChanged?: (cookies: StoredCookie[]) => void;
   /** Called after each request completes (or errors). */
   onProgress?: (entry: CollectionRunEntry, index: number, total: number) => void;
-  /** Last response to seed `{{response.*}}` tokens before the run starts. */
-  lastResponse?: ResponseVarsContext;
   /**
    * Data-driven iterations (F32). Each row is injected as variables on top of
    * `variables` for a full pass over `requests`. When set, every emitted entry
@@ -109,9 +106,9 @@ export interface CollectionRunnerOptions {
 export interface ExecuteRunnerResult {
   entry: CollectionRunEntry;
   extractedVariables: Record<string, any>;
-  /** Decompressed response body (text) so callers can build a chaining context. */
+  /** Decompressed response body (text). */
   bodyText?: string;
-  /** Normalized response headers for chaining. */
+  /** Normalized response headers. */
   responseHeaders?: Record<string, string | string[]>;
 }
 
@@ -369,8 +366,7 @@ export async function executeRunnerRequest(
 ): Promise<ExecuteRunnerResult> {
   const startTime = Date.now();
   const method = (req.method || "GET").toUpperCase();
-  const resolve = (s: string) =>
-    resolveResponseVariables(resolveVars(s, variables), options.lastResponse);
+  const resolve = (s: string) => resolveVars(s, variables);
 
   const entry: CollectionRunEntry = {
     requestId: req.id,
@@ -535,8 +531,7 @@ export async function executeRunnerRequest(
 
 /**
  * Run a list of requests sequentially, sharing a mutable environment so script
- * variables set by one request are available to the next. Each response is also
- * exposed as `{{response.*}}` tokens for the next request (request chaining).
+ * variables set by one request are available to the next (request chaining).
  * Aborting the signal stops execution after the in-flight request.
  *
  * When `iterationData` is provided, a full pass over `requests` runs for each
@@ -560,25 +555,16 @@ export async function runCollectionRequests(
       ...(options.variables || {}),
       ...(row || {}),
     };
-    let lastResponse = options.lastResponse;
     const baseIndex = results.length;
 
     for (let i = 0; i < requests.length; i++) {
       if (options.signal?.aborted) break;
-      const { entry, extractedVariables, bodyText, responseHeaders } =
-        await executeRunnerRequest(requests[i], variables, {
-          ...options,
-          lastResponse,
-        });
+      const { entry, extractedVariables } = await executeRunnerRequest(
+        requests[i],
+        variables,
+        { ...options },
+      );
       mergeExtractedVariables(variables, extractedVariables);
-      if (entry.status > 0) {
-        lastResponse = {
-          status: entry.status,
-          statusText: entry.statusText,
-          headers: responseHeaders,
-          body: bodyText,
-        };
-      }
       if (row) entry.iteration = iter;
       results.push(entry);
       options.onProgress?.(entry, baseIndex + i, perIterationTotal);

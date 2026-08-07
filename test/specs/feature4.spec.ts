@@ -8,6 +8,7 @@ import {
   resetLog,
   log,
   logCheck,
+  selectQuickPick,
   type VSCodeApp,
 } from '../utils/vscode';
 import {
@@ -20,7 +21,6 @@ import {
   waitForResponse,
   getStatusCode,
   getResponseText,
-  clickResponseTab,
   openSaveModal,
   selectCollectionDropdown,
 } from '../utils/helpers';
@@ -48,16 +48,6 @@ test.describe('Feature 4 (F31-F40) — Collections & Workflow', () => {
     await closeVSCode(app);
   });
 
-  async function waitForResponseText(frame: Frame, pattern: RegExp, timeout = 20_000): Promise<string> {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      const text = await getResponseText(frame);
-      if (pattern.test(text)) return text;
-      await frame.waitForTimeout(300);
-    }
-    return getResponseText(frame);
-  }
-
   async function clickResponsePaneTab(frame: Frame, tab: string): Promise<void> {
     await clickInFrame(frame, `[data-testid="res-tab-${tab}"]`);
   }
@@ -70,7 +60,7 @@ test.describe('Feature 4 (F31-F40) — Collections & Workflow', () => {
     await clickRequestTab(frame, 'script');
     await frame.waitForTimeout(300);
 
-    const codeEditor = frame.locator('.monaco-editor, textarea, [role="textbox"]').first();
+    const codeEditor = frame.locator('textarea[data-testid="code-editor-post-script-textarea"]');
     if (await codeEditor.count() > 0) {
       await codeEditor.click();
       await frame.waitForTimeout(200);
@@ -163,8 +153,8 @@ test.describe('Feature 4 (F31-F40) — Collections & Workflow', () => {
       `tests["assertion 5"] = true;`,
     );
     await mainFrame!.waitForTimeout(300);
-    const codeEditor = mainFrame!.locator('.monaco-editor, textarea, [role="textbox"]').first();
-    const editorText = await codeEditor.textContent();
+    const codeEditor = mainFrame!.locator('textarea[data-testid="code-editor-post-script-textarea"]');
+    const editorText = await codeEditor.inputValue();
     logCheck('All 5 assertions accepted', editorText !== null && editorText.length > 0);
     expect(editorText).not.toBeNull();
     expect(editorText!.length).toBeGreaterThan(0);
@@ -327,7 +317,9 @@ test.describe('Feature 4 (F31-F40) — Collections & Workflow', () => {
     await runBtn.evaluate((el) => {
       (el as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
     });
-    await collFrame!.waitForTimeout(800);
+    await collFrame!.waitForTimeout(500);
+
+    await selectQuickPick(app.window, 'Run without data');
 
     const modal = collFrame!.locator('[data-testid="runner-modal"]');
     await modal.waitFor({ state: 'visible', timeout: 10_000 });
@@ -362,5 +354,102 @@ test.describe('Feature 4 (F31-F40) — Collections & Workflow', () => {
     await collFrame!.locator('[data-testid="runner-modal"]').waitFor({ state: 'hidden', timeout: 5_000 });
     logCheck('Runner modal closed', true);
     await screenshot(app.window, 'f31-runner-closed');
+  });
+
+  // ── F33: Post-response script — error handling (merged from scripts.spec) ──
+
+  test('F33 - erroring post-response script is handled gracefully', async () => {
+    log('--- F33: error script ---');
+    await writeTestScript(mainFrame!, 'throw new Error("intentional error");');
+    await mainFrame!.waitForTimeout(200);
+
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    await setUrlAndSend(mainFrame!, mockUrl('/'));
+    const ok = await waitForResponse(mainFrame!, 20_000);
+    expect(ok).toBe(true);
+    await mainFrame!.waitForTimeout(2000);
+
+    await clickResponsePaneTab(mainFrame!, 'logs');
+    await mainFrame!.waitForTimeout(500);
+    const body = await getResponseText(mainFrame!);
+    const hasError = body.includes('Error') || body.includes('error') || body.includes('intentional');
+    logCheck('Error script handled', hasError);
+    expect(hasError).toBe(true);
+
+    const badge = mainFrame!.locator('[class*="ScriptBadge"]').last();
+    const badgeText = (await badge.textContent().catch(() => '')) ?? '';
+    logCheck('Badge shows Error state', badgeText.includes('Error') || badgeText.includes('error'));
+    await screenshot(app.window, 'f33-error-script');
+  });
+
+  // ── F31: Collection sidebar CRUD (merged from collections.spec) ──
+
+  test('F31 - create a group inside the collection', async () => {
+    log('--- F31: create group ---');
+    const collFrame = await findCollectionsFrame(app.window);
+    expect(collFrame).not.toBeNull();
+    if (!collFrame) return;
+    const groupBtn = collFrame.locator('button[title="New folder"]').first();
+    if (await groupBtn.count() > 0) {
+      await groupBtn.click();
+      await app.window.waitForTimeout(500);
+    }
+    const groupInput = collFrame.locator('input[placeholder="Folder name"]');
+    if (await groupInput.count() > 0) {
+      await groupInput.fill('Test Group');
+      await app.window.keyboard.press('Enter');
+      await app.window.waitForTimeout(500);
+    }
+    const bodyText = (await collFrame.locator('body').textContent().catch(() => '')) ?? '';
+    logCheck('Group visible in sidebar', bodyText.includes('Test Group'));
+    await screenshot(app.window, 'f31-group-created');
+  });
+
+  test('F31 - rename the collection from the sidebar', async () => {
+    log('--- F31: rename collection ---');
+    const collFrame = await findCollectionsFrame(app.window);
+    expect(collFrame).not.toBeNull();
+    if (!collFrame) return;
+    const headers = collFrame.locator('[data-testid="collection-header"]');
+    expect(await headers.count()).toBeGreaterThan(0);
+    await headers.first().hover();
+    await app.window.waitForTimeout(300);
+    const renameBtn = collFrame.locator('button[title="Rename"]').first();
+    if (await renameBtn.count() > 0) {
+      await renameBtn.click();
+      await app.window.waitForTimeout(300);
+      const input = collFrame.locator('input[type="text"]:not([placeholder])');
+      if (await input.count() > 0) {
+        await input.first().fill('Renamed Collection');
+        await app.window.keyboard.press('Enter');
+        await app.window.waitForTimeout(500);
+      }
+    }
+    const bodyText = (await collFrame.locator('body').textContent().catch(() => '')) ?? '';
+    logCheck('Renamed collection visible', bodyText.includes('Renamed Collection'));
+    await screenshot(app.window, 'f31-collection-renamed');
+  });
+
+  test('F31 - delete the collection from the sidebar', async () => {
+    log('--- F31: delete collection ---');
+    const collFrame = await findCollectionsFrame(app.window);
+    expect(collFrame).not.toBeNull();
+    if (!collFrame) return;
+    const headers = collFrame.locator('[data-testid="collection-header"]');
+    expect(await headers.count()).toBeGreaterThan(0);
+    await headers.first().hover();
+    await app.window.waitForTimeout(300);
+    const deleteBtn = collFrame.locator('button').filter({ hasText: /delete|trash/i });
+    if (await deleteBtn.count() > 0) {
+      await deleteBtn.first().click();
+      await app.window.waitForTimeout(300);
+      const confirmBtn = collFrame.locator('button').filter({ hasText: /delete|confirm|yes/i });
+      if (await confirmBtn.count() > 0) {
+        await confirmBtn.first().click();
+        await app.window.waitForTimeout(500);
+      }
+    }
+    await screenshot(app.window, 'f31-collection-deleted');
   });
 });

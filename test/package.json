@@ -10,8 +10,8 @@
     "test:debug": "npm run prebuild && npx playwright test --debug",
     "test:ui": "npm run prebuild && npx playwright test --ui",
     "test:report": "npx playwright show-report",
-    "demo": "npm run prebuild && npx playwright test specs/demo.spec.ts --project=vscode",
-    "demo:headed": "npm run prebuild && npx playwright test specs/demo.spec.ts --project=vscode --headed"
+    "feature3": "npm run prebuild && npx playwright test specs/feature3.spec.ts --project=vscode",
+    "feature3:headed": "npm run prebuild && npx playwright test specs/feature3.spec.ts --project=vscode --headed"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

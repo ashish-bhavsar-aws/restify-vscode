@@ -8,7 +8,6 @@ import {
   resetLog,
   log,
   logCheck,
-  waitForElement,
   type VSCodeApp,
 } from '../utils/vscode';
 import {
@@ -16,15 +15,12 @@ import {
   mockUrl,
   setupMainPanel,
   setMethod,
-  setUrl,
-  sendRequest,
   setUrlAndSend,
   waitForResponse,
   getStatusCode,
   getResponseText,
   setBodyType,
   fillBody,
-  addHeader,
   clickResponseTab,
 } from '../utils/helpers';
 import type { Frame } from '@playwright/test';
@@ -244,7 +240,7 @@ test.describe('Feature 1 (F1-F10) — Core Networking & Request Builder', () => 
     await clickRequestTab(mainFrame!, 'script');
     await mainFrame!.waitForTimeout(300);
 
-    const codeEditor = mainFrame!.locator('.monaco-editor, textarea, [role="textbox"]').first();
+    const codeEditor = mainFrame!.locator('textarea[data-testid="code-editor-pre-script-textarea"]');
     if (await codeEditor.count() > 0) {
       // The CodeEditor's textarea is transparent under a highlight overlay, so
       // click() hits the overlay — use focus() to target the real textarea.

@@ -500,7 +500,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         variables: this.storageManager.getActiveEnvironmentVariables(),
         signal: controller.signal,
         cookies,
-        lastResponse: this.storageManager.getLastResponse(),
         iterationData,
         onCookiesChanged: (next) => {
           cookies = next;

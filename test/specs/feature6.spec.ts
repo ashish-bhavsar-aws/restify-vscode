@@ -7,7 +7,6 @@ import {
   resetLog,
   log,
   logCheck,
-  logError,
   runCommand,
   findMainPanelFrame,
   findHistoryFrame,
@@ -19,11 +18,8 @@ import {
   setupMainPanel,
   setUrl,
   getUrl,
-  sendRequest,
   waitForResponse,
   setUrlAndSend,
-  openCodegen,
-  closeCodegen,
   stubOpenDialog,
   stubSaveDialog,
   clearDialogStub,
@@ -32,8 +28,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Frame } from '@playwright/test';
-
-const NEW_LANGUAGES = ['TypeScript (fetch)', 'Dart (http)', 'Ruby (Net::HTTP)', 'Rust (reqwest)', 'Kotlin (OkHttp)', 'HTTPie (http CLI)'];
 
 let app: VSCodeApp;
 let mainFrame: Frame | null = null;
@@ -104,36 +98,6 @@ test.describe('Feature 6 (F51-F60) — .http Files, Codegen, Palette, History Pi
     await screenshot(window, 'feature6-f51-import');
   });
 
-  test('F53 - codegen lists the newly added languages', async () => {
-    log('--- F53: new codegen languages ---');
-    const freshFrame = await findMainPanelFrame(app.window);
-    if (!freshFrame) throw new Error('No main frame');
-    mainFrame = freshFrame;
-    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
-    await waitForResponse(mainFrame!, 15_000);
-    await openCodegen(mainFrame);
-    const modal = mainFrame.locator('[data-testid="codegen-modal"]');
-    const text = (await modal.textContent().catch(() => '')) ?? '';
-    for (const lang of NEW_LANGUAGES) {
-      const found = text.includes(lang);
-      logCheck(`Language: ${lang}`, found);
-      expect(found).toBe(true);
-    }
-    await closeCodegen(mainFrame);
-    await screenshot(app.window, 'feature6-f53-codegen');
-  });
-
-  test('F54 - Send Request palette command sends the active request', async () => {
-    log('--- F54: palette send ---');
-    const { window } = app;
-    await setUrl(mainFrame!, mockUrl('/api/echo'));
-    await runCommand(window, 'Restify: Send Request');
-    const got = await waitForResponse(mainFrame!, 15_000);
-    logCheck('Response received after palette send', got);
-    expect(got).toBe(true);
-    await screenshot(window, 'feature6-f54-palette');
-  });
-
   test('F57 - pin a history entry and verify it stays on top', async () => {
     log('--- F57: history pins ---');
     const { window } = app;
@@ -151,7 +115,6 @@ test.describe('Feature 6 (F51-F60) — .http Files, Codegen, Palette, History Pi
     expect(countBefore).toBeGreaterThan(0);
 
     const pinBtn = items.first().locator('[data-testid="history-pin"]');
-    const titleBefore = (await pinBtn.getAttribute('title').catch(() => '')) || '';
     await items.first().hover();
     await pinBtn.click();
     await window.waitForTimeout(800);

@@ -272,14 +272,18 @@ describe("collectionRunner", () => {
     expect(results[0].status).toBe(200);
   });
 
-  it("chains response tokens ({{response.$.x}}) into the next request", async () => {
+  it("chains script-extracted variables into the next request", async () => {
     const results = await runCollectionRequests({
       requests: [
-        req({ id: "a", url: baseUrl("/set-token") }),
+        req({
+          id: "a",
+          url: baseUrl("/set-token"),
+          script: `set('token', JSON.parse(response.body).token);`,
+        }),
         req({
           id: "b",
           url: baseUrl("/require-auth"),
-          headers: [{ key: "Authorization", value: "Bearer {{response.$.token}}" }],
+          headers: [{ key: "Authorization", value: "Bearer {{token}}" }],
         }),
       ],
       timeout: 5000,
@@ -288,14 +292,18 @@ describe("collectionRunner", () => {
     expect(results[1].status).toBe(200);
   });
 
-  it("chains response tokens into a later URL and query params", async () => {
+  it("chains script-extracted variables into a later URL and query params", async () => {
     const results = await runCollectionRequests({
       requests: [
-        req({ id: "a", url: baseUrl("/set-token") }),
+        req({
+          id: "a",
+          url: baseUrl("/set-token"),
+          script: `set('token', JSON.parse(response.body).token);`,
+        }),
         req({
           id: "b",
           url: baseUrl("/echo"),
-          queryParams: [{ key: "token", value: "{{response.$.token}}", enabled: true }],
+          queryParams: [{ key: "token", value: "{{token}}", enabled: true }],
         }),
       ],
       timeout: 5000,

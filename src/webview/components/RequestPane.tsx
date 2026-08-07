@@ -1362,6 +1362,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               language={'javascript'}
               themeKind={themeKind}
               placeholder={'// Example: vars[\'authToken\'] = \'abc123\';'}
+              dataTestId="code-editor-pre-script"
             />
           </div>
 
@@ -1389,6 +1390,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               language={'javascript'}
               themeKind={themeKind}
               placeholder={'// Example: vars[\'token\'] = response.body.access_token;'}
+              dataTestId="code-editor-post-script"
             />
           </div>
         </TabPanel>

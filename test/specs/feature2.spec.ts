@@ -9,7 +9,6 @@ import {
   log,
   logCheck,
   waitForElement,
-  typeInQuickInput,
   confirmQuickInput,
   runCommand,
   waitForPromptInput,
@@ -325,6 +324,40 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     await screenshot(app.window, 'f16-vars-help');
   });
 
+  test('F16 - dynamic variable shows preview tooltip and info color', async () => {
+    log('--- F16: dynamic var hover display ---');
+    await setMethod(mainFrame!, 'GET');
+    await setBodyType(mainFrame!, 'none');
+    await setUrl(mainFrame!, mockUrl('/api/echo?id={{$guid}}'));
+    // Blur the URL input to switch VariableTextInput back to display mode
+    await mainFrame!.evaluate(() => {
+      const input = document.querySelector('.url-input [data-testid="variable-text-input"]') as HTMLInputElement | null;
+      if (input) input.blur();
+    });
+    await mainFrame!.waitForTimeout(600);
+
+    // Find the dynamic variable tag (VariableTag with title containing "dynamic variable")
+    const dynamicTag = mainFrame!.locator('[title*="dynamic variable"]').first();
+    const tagCount = await dynamicTag.count();
+    logCheck('Dynamic variable tag found', tagCount > 0);
+    expect(tagCount).toBeGreaterThan(0);
+
+    // Verify tooltip text contains preview value
+    const title = await dynamicTag.getAttribute('title');
+    logCheck('Tooltip mentions "dynamic variable"', title?.includes('dynamic variable') ?? false);
+    expect(title).toContain('dynamic variable');
+    logCheck('Tooltip contains a UUID preview', /[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(title || ''));
+    expect(title).toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+
+    // Verify the element has the info color (theme.info = #3794ff in Default Dark Modern)
+    const color = await dynamicTag.evaluate((el) => getComputedStyle(el).color);
+    logCheck('Dynamic var tag has info color', color);
+    expect(color).not.toContain('220'); // not error red (#cd3131)
+    expect(color).not.toContain('181'); // not success green (#89d185)
+
+    await screenshot(app.window, 'f16-dynamic-var-hover');
+  });
+
   // ── F17: Default dynamic headers ──────────────────────────────────
 
   async function setDefaultHeader(
@@ -375,6 +408,60 @@ test.describe('Feature 2 (F11-F20) — Request Builder Advanced', () => {
     expect(body).toMatch(/"date":\s*"[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT"/);
     await screenshot(app.window, 'f17-default-headers');
 
+    await openSettings(mainFrame!);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-user-agent', false);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-request-id', false);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-correlation-id', false);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-date', false);
+    await saveAndCloseSettings(mainFrame!);
+  });
+
+  test('F17 - default headers refresh per request and respect explicit headers', async () => {
+    log('--- F17: fresh per request + explicit override ---');
+    await openSettings(mainFrame!);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-user-agent', true);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-request-id', true);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-correlation-id', true);
+    await setDefaultHeader(mainFrame!, 'default-header-toggle-date', true);
+    await saveAndCloseSettings(mainFrame!);
+
+    // Capture a fresh X-Request-Id so we can verify re-resolution.
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    let ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    const firstBody = await waitForResponseText(mainFrame!, /x-request-id/i, 15_000);
+    const firstUuid = firstBody.match(/"x-request-id":\s*"([0-9a-f-]{36})"/i);
+    expect(firstUuid).not.toBeNull();
+
+    // Re-send — X-Request-Id must be a fresh value
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    const start = Date.now();
+    let secondUuid: string | null = null;
+    while (Date.now() - start < 15_000) {
+      await mainFrame!.waitForTimeout(500);
+      const text = await getResponseText(mainFrame!);
+      const m = text.match(/"x-request-id":\s*"([0-9a-f-]{36})"/i);
+      if (m && m[1] !== firstUuid![1]) {
+        secondUuid = m[1];
+        break;
+      }
+    }
+    logCheck('X-Request-Id refreshed on next request', !!secondUuid);
+    expect(secondUuid).not.toBeNull();
+    if (secondUuid) expect(secondUuid).not.toBe(firstUuid![1]);
+
+    // An explicitly-set header must not be overridden by the default
+    await addHeader(mainFrame!, 'X-Request-Id', 'my-explicit-id');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/echo'));
+    ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    await clickResponseTab(mainFrame!, 'body');
+    const body = await waitForResponseText(mainFrame!, /"x-request-id":\s*"my-explicit-id"/i);
+    logCheck('Explicit header not overridden', /"x-request-id":\s*"my-explicit-id"/i.test(body));
+    expect(body).toMatch(/"x-request-id":\s*"my-explicit-id"/i);
+    await screenshot(app.window, 'f17-default-headers-override');
+
+    // Cleanup: disable default headers again to leave a clean state
     await openSettings(mainFrame!);
     await setDefaultHeader(mainFrame!, 'default-header-toggle-user-agent', false);
     await setDefaultHeader(mainFrame!, 'default-header-toggle-request-id', false);

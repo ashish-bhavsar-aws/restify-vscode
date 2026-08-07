@@ -12,8 +12,6 @@ import {
   clickRestifyIcon,
   dismissOnboarding,
   log,
-  logCheck,
-  logError,
   DIALOG_STUB_FILE,
   type VSCodeApp,
 } from './vscode';
@@ -517,12 +515,36 @@ export async function deleteEnvironment(
   await closeEnvManager(frame);
 }
 
+export async function openEnvDropdown(frame: Frame, timeoutMs = 5_000): Promise<void> {
+  const triggerBtn = frame.locator('button:has([data-testid="env-trigger-label"])');
+  if ((await triggerBtn.count().catch(() => 0)) === 0) return;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const expanded = await triggerBtn.getAttribute('aria-expanded').catch(() => null);
+    if (expanded === 'true') return;
+    await clickInFrame(frame, '[data-testid="env-trigger-label"]');
+    await frame.waitForTimeout(300);
+    const nowExpanded = await triggerBtn.getAttribute('aria-expanded').catch(() => null);
+    if (nowExpanded === 'true') return;
+    await frame.waitForTimeout(300);
+  }
+}
+
+export async function closeEnvDropdown(frame: Frame): Promise<void> {
+  const triggerBtn = frame.locator('button:has([data-testid="env-trigger-label"])');
+  if ((await triggerBtn.count().catch(() => 0)) === 0) return;
+  const expanded = await triggerBtn.getAttribute('aria-expanded').catch(() => null);
+  if (expanded === 'true') {
+    await clickInFrame(frame, '[data-testid="env-trigger-label"]');
+    await frame.waitForTimeout(300);
+  }
+}
+
 export async function selectEnvironment(
   frame: Frame,
   name: string,
 ): Promise<void> {
-  await clickInFrame(frame, '[data-testid="env-trigger-label"]');
-  await frame.waitForTimeout(300);
+  await openEnvDropdown(frame);
   const option = frame.locator('li').filter({ hasText: name });
   if (await option.count() > 0) {
     await option.first().click();

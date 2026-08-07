@@ -96,7 +96,7 @@ export const restifyTheme: RestifyTheme = {
   accent2: 'var(--vscode-textLink-foreground, #388bfd)',
 
   /* Semantic colors — all from VS Code theme tokens */
-  muted: 'var(--vscode-descriptionForeground, rgba(128,128,128,0.8))',
+  muted: 'color-mix(in srgb, var(--vscode-descriptionForeground, rgba(128,128,128,0.8)) 60%, #000000)',
   error: 'var(--vscode-errorForeground, #cf222e)',
   warning: 'var(--vscode-warningForeground, #9a6700)',
   success: 'var(--vscode-charts-green, #2da44e)',

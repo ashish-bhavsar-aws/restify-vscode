@@ -47,6 +47,28 @@ const SESSION_ID: string = (() => {
   return w.__restifySessionId as string;
 })();
 
+/**
+ * Suggested display name for an unsaved request, derived from method + URL
+ * path. Returns "" when no usable URL is present.
+ */
+const suggestedRequestName = (req: RequestState): string => {
+  if (!req.url) return "";
+  try {
+    const urlObj = new URL(
+      req.url.startsWith("http") ? req.url : `https://${req.url}`,
+    );
+    return `${req.method} ${urlObj.pathname || "/"}`;
+  } catch {
+    return "";
+  }
+};
+
+/** True when the request still carries its default placeholder name. */
+const hasRealName = (req: RequestState): boolean => {
+  const n = req.name?.trim();
+  return Boolean(n) && n !== "New Request";
+};
+
 /* ─── Styled Components ───────────────────────────────────── */
 
 const Container = styled.div`
@@ -568,23 +590,10 @@ export const MainPanel: React.FC = () => {
     }
   };
 
-  // Sync query params from a typed URL back to the params tab
+  // Sync query params from a typed URL back to the params tab.
+  // Note: typing a URL must NOT rename the request — the suggested name is
+  // only shown (and applied) when the user saves the request.
   const handleUrlChange = (rawUrl: string) => {
-    // Auto-fill request name from URL when still at default
-    if (request.name === "New Request" || request.name === "") {
-      try {
-        const urlObj = new URL(
-          rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`,
-        );
-        const path = urlObj.pathname || "/";
-        setRequest((prev: RequestState) => ({
-          ...prev,
-          name: `${prev.method} ${path}`,
-        }));
-      } catch {
-        /* invalid URL — skip */
-      }
-    }
     const qIdx = rawUrl.indexOf("?");
     if (qIdx === -1) {
       // If the user removed the query string entirely from the URL input,
@@ -898,7 +907,7 @@ export const MainPanel: React.FC = () => {
 
       <SaveModal
         open={saveModalOpen}
-        requestName={request.name}
+        requestName={hasRealName(request) ? request.name : suggestedRequestName(request)}
         collections={collections}
         onSave={handleSave}
         onClose={() => setSaveModalOpen(false)}

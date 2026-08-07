@@ -548,6 +548,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           id: 'swagger-file',
         },
         {
+          label: '$(globe) WSDL / SOAP Service',
+          description: 'Import SOAP operations from a WSDL document',
+          id: 'wsdl',
+        },
+        {
+          label: '$(cloud-download) WSDL / SOAP Service URL',
+          description: 'Fetch and import SOAP operations from a WSDL URL',
+          id: 'wsdl-url',
+        },
+        {
           label: '$(cloud-download) OpenAPI / Swagger URL',
           description: 'Fetch and import endpoints from a Swagger / OpenAPI URL',
           id: 'swagger-url',
@@ -584,6 +594,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         break;
       case 'postman':
         await this._importPostmanCollection();
+        break;
+      case 'wsdl':
+        await this._importWsdlFile();
+        break;
+      case 'wsdl-url':
+        await this._importWsdlUrl();
         break;
       case 'swagger-file':
         await this._importSwaggerFile();
@@ -689,6 +705,66 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       );
     } catch {
       vscode.window.showErrorMessage('Import failed: invalid or unsupported Postman Collection file');
+    }
+  }
+
+  private async _importWsdlFile(): Promise<void> {
+    const uris = await showOpenDialog({
+      canSelectMany: false,
+      filters: { 'WSDL / SOAP Service': ['wsdl', 'xml'] },
+      openLabel: 'Import WSDL / SOAP Service',
+    });
+    if (!uris || !uris[0]) return;
+
+    const raw = Buffer.from(await vscode.workspace.fs.readFile(uris[0])).toString('utf8');
+    const collection = parseImportText(raw, 'wsdl');
+    if (!collection) {
+      vscode.window.showErrorMessage('Import failed: file does not look like a valid WSDL document');
+      return;
+    }
+    await this._saveImportedCollection(collection);
+    const total = _countImportedRequests(collection);
+    vscode.window.showInformationMessage(
+      `\u2713 Imported "${collection.name}" with ${total} request(s)`,
+    );
+  }
+
+  private async _importWsdlUrl(): Promise<void> {
+    const url = await vscode.window.showInputBox({
+      prompt: 'Enter the WSDL / SOAP Service URL',
+      placeHolder: 'https://example.com/service?wsdl',
+      validateInput: (v) => {
+        try {
+          const u = new URL(v);
+          if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+            return 'URL must use http or https';
+          }
+          return undefined;
+        } catch {
+          return 'Enter a valid URL';
+        }
+      },
+    });
+    if (!url) return;
+
+    try {
+      const { statusCode, body } = await _httpGet(url);
+      if (statusCode < 200 || statusCode >= 300) {
+        vscode.window.showErrorMessage(`Import failed: server responded with ${statusCode}`);
+        return;
+      }
+      const collection = parseImportText(body, 'wsdl');
+      if (!collection) {
+        vscode.window.showErrorMessage('Import failed: URL did not return a valid WSDL document');
+        return;
+      }
+      await this._saveImportedCollection(collection);
+      const total = _countImportedRequests(collection);
+      vscode.window.showInformationMessage(
+        `\u2713 Imported "${collection.name}" with ${total} request(s)`,
+      );
+    } catch {
+      vscode.window.showErrorMessage('Import failed: could not fetch the WSDL from the URL');
     }
   }
 

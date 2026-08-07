@@ -96,7 +96,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F48 | **HTTP/2 support** | ⚪ P3 | `http2` module for h2 endpoints. |
 | F49 | **Request compression** | ⚪ P3 | Compress request body (gzip/deflate) with `Content-Encoding`. |
 | F50 | **Interceptors / middleware** | ⚪ P3 | Pipeline hooks around request/response lifecycle. |
-| F61 | **SOAP/WSDL import and SOAP body generation** | 🟡 P2 | Import a SOAP service definition (WSDL), generate method-specific SOAP request envelopes, set proper SOAP headers, and prefill body templates for each operation. |
+| F61 | **SOAP/WSDL import and SOAP body generation** | 🟡 P2 | ✅ Import a SOAP service definition (WSDL), generate method-specific SOAP request envelopes, set proper SOAP headers, and prefill body templates for each operation. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included — settings-driven by hostname via Settings → SOAP Security)* |
 
 ### 1.7 Editor Integration & UX
 
@@ -137,6 +137,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F60 — Code size and maintainability guardrails ✅
 
 ### Nice-to-have
+- F61 — SOAP/WSDL import + WS-Security ✅
 - F13 — cURL command import ✅
 - F14 — Bulk editor for headers/params
 - F15 — Clipboard paste into KV tables
@@ -202,15 +203,15 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 - [x] F13 **cURL import**: robust `curl` → RequestState parser (flags, quoted args, `--data-raw`, `-H 'Header: value'`, `-u`, `-F`). *(done — `src/core/curlParser.ts` tokenizer + parser; `restify.importCurl` command with input box + clipboard auto-detect; 17 unit tests + E2E in `feature2.spec.ts` and `palette-commands.spec.ts`)*
 - [x] F34/F35 **Import HAR / Insomnia / Restify / Postman / OpenAPI / .http** — all formats parse via `src/core/converters.ts`; E2E covers Postman, OpenAPI file+URL, HAR, Insomnia, Restify, `.http` in `import-export.spec.ts` + `feature6.spec.ts`. Export to OpenAPI / HAR / `.http` / Postman implemented and unit-tested.
-- [ ] F61 **SOAP/WSDL import and SOAP body generation**: parse WSDL, list operations, generate SOAP envelopes, populate request bodies, and auto-add SOAP headers.
+- [x] F61 **SOAP/WSDL import and SOAP body generation**: parse WSDL, list operations, generate SOAP envelopes, populate request bodies, and auto-add SOAP headers. *(done — `src/core/wsdl.ts` WSDL 1.1 parser (document/rpc, literal/encoded, inline+named types, imports, wsse:Security header parts, SOAP 1.1/1.2 bindings), `parseImportText(..., 'wsdl')` in `src/core/converters.ts`, sidebar **Import → WSDL / SOAP Service** flow in `SidebarProvider._importWsdlFile`, SOAP operation picker + WS-Security panel in `RequestPane.tsx`, host-side WS-Security (UsernameToken + AES-256-CBC/RSA-OAEP encryption + response decryption) in `src/core/wsse.ts`/`RestifyPanel._resolveWsSecurity`; 33 unit tests across `wsdl.test.ts` + `wsse.test.ts` + `default-headers.test.ts`)*
   - Implementation steps:
-    1. Add a WSDL importer that reads local/remote WSDL files and extracts services, ports, bindings, operations, and message schemas.
-    2. Normalize SOAP namespaces, operation names, input/output message definitions, and default bodies into `RequestState` metadata.
-    3. Populate the request UI with a SOAP operation picker when a WSDL import is active.
-    4. Generate a SOAP envelope template per operation, including required XML elements and sample values for primitive types.
-    5. Set appropriate headers: `Content-Type: text/xml; charset=utf-8` and `SOAPAction` when applicable.
-    6. Allow overriding generated XML body and keep the original template in the body editor for easy modification.
-    7. Add tests covering WSDL parsing, operation selection, envelope generation, and SOAP header injection.
+    1. ✅ Add a WSDL importer that reads local/remote WSDL files and extracts services, ports, bindings, operations, and message schemas. *(`parseWsdl` in `src/core/wsdl.ts` + `_importWsdlFile` in `SidebarProvider.ts`)*
+    2. ✅ Normalize SOAP namespaces, operation names, input/output message definitions, and default bodies into `RequestState` metadata. *(per-operation `SoapRequestMeta` with `operations[]` picklist, namespace maps, qualified/unqualified element forms)*
+    3. ✅ Populate the request UI with a SOAP operation picker when a WSDL import is active. *(`soap-operation-select` in `RequestPane.tsx`, swaps SOAPAction/Content-Type headers per operation)*
+    4. ✅ Generate a SOAP envelope template per operation, including required XML elements and sample values for primitive types. *(`buildSoapEnvelope` in `src/core/wsdl.ts`)*
+    5. ✅ Set appropriate headers: `Content-Type: text/xml; charset=utf-8` (SOAP 1.1) or `application/soap+xml` (SOAP 1.2) and `SOAPAction` when applicable. *(`soapContentType` in `src/core/wsdl.ts`)*
+    6. ✅ Allow overriding generated XML body and keep the original template in the body editor for easy modification. *(generated envelope becomes the editable body; switching operations re-seeds it)*
+     7. ✅ Add tests covering WSDL parsing, operation selection, envelope generation, and SOAP header injection. *(unit tests in `test/unit/wsdl.test.ts` + E2E spec `test/specs/soap.spec.ts`: sidebar WSDL file import, WSDL **URL** import (`_importWsdlUrl`), SOAP operation load, header/body capture against the mock server, WS-Security settings-driven response decryption against `server/certs/soap-key.pem` (encrypted mode without a matching settings entry), and live calls to the Beeceptor `CountryInfoService` (`ListOfContinentsByName`/`ListOfCountryNamesByName`))*
 - [ ] F18 **Variable autocomplete** in URL/headers/body inputs (debounced suggestions from active env + globals).
 - [ ] F15 **Clipboard paste** into KV tables; F14 **bulk editor** for Params/Headers.
 - [x] F53 **Codegen correctness pass** *(done — GraphQL body serialization, `urlencoded` + text-only-form fields, disabled header/param filtering, API-key-in-query, dynamic-var substitution incl. `{{$processEnv:NAME}}`, Python/Go/Swift multipart fixes; 27 codegen unit tests)*
@@ -229,7 +230,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [ ] F46 **WebSocket client** (read-only connection viewer first).
 - [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
-- [ ] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. 
+- [x] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included)*
 
 ### Phase 5 — Experimental / Long-term (P3)
 - [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.

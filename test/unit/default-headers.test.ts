@@ -12,6 +12,7 @@ const ALL_OFF: DefaultHeadersConfig = {
   requestId: false,
   correlationId: false,
   date: false,
+  custom: [],
 };
 
 const ALL_ON: DefaultHeadersConfig = {
@@ -19,6 +20,7 @@ const ALL_ON: DefaultHeadersConfig = {
   requestId: true,
   correlationId: true,
   date: true,
+  custom: [],
 };
 
 const FIXED_NOW = () => new Date("2026-08-03T21:00:00.000Z");
@@ -78,5 +80,64 @@ describe("applyDefaultHeaders", () => {
     const headers: Record<string, string> = { "x-request-id": "existing-id" };
     applyDefaultHeaders(headers, ALL_ON, "1.0.0", FIXED_NOW);
     expect(headers["x-request-id"]).toBe("existing-id");
+  });
+
+  it("injects enabled custom headers", () => {
+    const headers: Record<string, string> = {};
+    applyDefaultHeaders(
+      headers,
+      {
+        ...ALL_OFF,
+        custom: [
+          { key: "X-Trace-Id", value: "trace-123", enabled: true },
+          { key: "X-Env", value: "prod" },
+        ],
+      },
+      "1.0.0",
+      FIXED_NOW,
+    );
+    expect(headers["X-Trace-Id"]).toBe("trace-123");
+    expect(headers["X-Env"]).toBe("prod");
+  });
+
+  it("skips disabled or keyless custom headers", () => {
+    const headers: Record<string, string> = {};
+    applyDefaultHeaders(
+      headers,
+      {
+        ...ALL_OFF,
+        custom: [
+          { key: "X-Off", value: "no", enabled: false },
+          { key: "", value: "no-key" },
+        ],
+      },
+      "1.0.0",
+      FIXED_NOW,
+    );
+    expect(headers).toEqual({});
+  });
+
+  it("does not inject a custom header already set explicitly (case-insensitive)", () => {
+    const headers: Record<string, string> = { "x-env": "staging" };
+    applyDefaultHeaders(
+      headers,
+      { ...ALL_OFF, custom: [{ key: "X-Env", value: "prod" }] },
+      "1.0.0",
+      FIXED_NOW,
+    );
+    expect(headers["x-env"]).toBe("staging");
+    expect(Object.keys(headers).filter((k) => k.toLowerCase() === "x-env")).toHaveLength(1);
+  });
+
+  it("resolves variables in custom header values", () => {
+    const headers: Record<string, string> = {};
+    applyDefaultHeaders(
+      headers,
+      { ...ALL_OFF, custom: [{ key: "X-Api-Key", value: "{{apiKey}}" }] },
+      "1.0.0",
+      FIXED_NOW,
+      (v) => v.replace("{{apiKey}}", "secret-value"),
+    );
+    expect(headers["X-Api-Key"]).toBe("secret-value");
   });
 });

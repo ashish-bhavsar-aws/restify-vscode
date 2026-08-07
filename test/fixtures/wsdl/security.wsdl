@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://example.com/secure"
+  xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+  targetNamespace="http://example.com/secure"
+  name="SecureService">
+  <types>
+    <xsd:schema targetNamespace="http://example.com/secure" elementFormDefault="qualified">
+      <xsd:element name="Ping" type="xsd:string"/>
+      <xsd:element name="PingResponse" type="xsd:string"/>
+    </xsd:schema>
+  </types>
+  <message name="PingMsg">
+    <part name="parameters" element="tns:Ping"/>
+  </message>
+  <message name="PingRespMsg">
+    <part name="parameters" element="tns:PingResponse"/>
+  </message>
+  <message name="SecurityHeaderMsg">
+    <part name="security" element="wsse:Security"/>
+  </message>
+  <portType name="SecurePortType">
+    <operation name="Ping">
+      <input message="tns:PingMsg"/>
+      <output message="tns:PingRespMsg"/>
+    </operation>
+  </portType>
+  <binding name="SecureSoapBinding" type="tns:SecurePortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Ping">
+      <soap:operation soapAction="http://example.com/secure/Ping"/>
+      <input>
+        <soap:body use="literal"/>
+        <soap:header message="tns:SecurityHeaderMsg" part="security" use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="SecureService">
+    <port name="SecurePort" binding="tns:SecureSoapBinding">
+      <soap:address location="http://example.com/secure"/>
+    </port>
+  </service>
+</definitions>

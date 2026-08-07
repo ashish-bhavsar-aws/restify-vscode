@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const zlib = require('zlib');
+const crypto = require('crypto');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
@@ -1122,6 +1123,110 @@ app.use((err, req, res, next) => {
     error: 'Internal server error',
     message: err.message,
   });
+});
+
+// ─── SOAP / WS-Security endpoints for the SOAP feature tests ────────────────
+
+const XENC_NS = 'http://www.w3.org/2001/04/xmlenc#';
+const DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
+const ENCRYPTED_DATA_TYPE = `${XENC_NS}Element`;
+
+function indent(xml, spaces) {
+  const pad = ' '.repeat(spaces);
+  return xml
+    .split('\n')
+    .map((l) => (l.trim() ? pad + l : l))
+    .join('\n');
+}
+
+/** Mirror of the extension's `buildEncryptedData` (AES-256-CBC + RSA-OAEP sha1)
+ *  so the WS-Security response-decryption path can be exercised end-to-end. */
+function buildSoapEncryptedData(plaintext, publicKeyPem) {
+  const aesKey = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', aesKey, iv);
+  const encrypted = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+  const cipherValueB64 = Buffer.concat([iv, encrypted]).toString('base64');
+
+  const encryptedKey = crypto.publicEncrypt(
+    {
+      key: publicKeyPem,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha1',
+    },
+    aesKey,
+  );
+  const encryptedKeyB64 = encryptedKey.toString('base64');
+
+  return [
+    `<xenc:EncryptedData xmlns:xenc="${XENC_NS}" xmlns:ds="${DS_NS}" Type="${ENCRYPTED_DATA_TYPE}">`,
+    `  <xenc:EncryptionMethod Algorithm="${XENC_NS}aes256-cbc"/>`,
+    `  <ds:KeyInfo>`,
+    `    <xenc:EncryptedKey>`,
+    `      <xenc:EncryptionMethod Algorithm="${XENC_NS}rsa-oaep-mgf1p"/>`,
+    `      <xenc:CipherData>`,
+    `        <xenc:CipherValue>${encryptedKeyB64}</xenc:CipherValue>`,
+    `      </xenc:CipherData>`,
+    `    </xenc:EncryptedKey>`,
+    `  </ds:KeyInfo>`,
+    `  <xenc:CipherData>`,
+    `    <xenc:CipherValue>${cipherValueB64}</xenc:CipherValue>`,
+    `  </xenc:CipherData>`,
+    `</xenc:EncryptedData>`,
+  ].join('\n');
+}
+
+/**
+ * @swagger
+ * /api/soap/capture:
+ *   post:
+ *     summary: Captures a raw SOAP request (method, url, body, headers)
+ *     tags:
+ *       - SOAP
+ *     responses:
+ *       200:
+ *         description: Echoed request details
+ */
+app.post('/api/soap/capture', (req, res) => {
+  res.json({
+    method: req.method,
+    url: req.originalUrl,
+    body: req.body,
+    headers: req.headers,
+  });
+});
+
+/**
+ * @swagger
+ * /api/soap/encrypted:
+ *   post:
+ *     summary: Returns a WS-Security encrypted SOAP response (encrypted to server/certs/soap-pub.pem)
+ *     tags:
+ *       - SOAP
+ *     responses:
+ *       200:
+ *         description: Encrypted SOAP envelope
+ */
+app.post('/api/soap/encrypted', (req, res) => {
+  const pubPath = path.join(__dirname, 'certs', 'soap-pub.pem');
+  if (!fs.existsSync(pubPath)) {
+    return res.status(500).json({ error: 'server/certs/soap-pub.pem not found' });
+  }
+  const publicKeyPem = fs.readFileSync(pubPath, 'utf8');
+  const plain =
+    '<tns:AddResponse xmlns:tns="http://example.com/calc"><sum>3</sum></tns:AddResponse>';
+  const enc = buildSoapEncryptedData(plain, publicKeyPem);
+  const envelope = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">`,
+    `  <soapenv:Header/>`,
+    `  <soapenv:Body>`,
+    indent(enc, 4),
+    `  </soapenv:Body>`,
+    `</soapenv:Envelope>`,
+  ].join('\n');
+  res.setHeader('Content-Type', 'text/xml; charset=utf-8');
+  res.send(envelope);
 });
 
 // Start server

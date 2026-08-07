@@ -1,4 +1,5 @@
 import { hasHeader, setHeader } from "./headers";
+import { soapContentType } from "./wsdl";
 
 /**
  * Serializable subset of a request needed to produce a wire body. Kept free of
@@ -27,6 +28,7 @@ export interface CoreRequestForBody {
   urlencoded?: CoreUrlEncodedItem[];
   gqlQuery?: string;
   gqlVars?: string;
+  soapMeta?: { isSoap12: boolean };
 }
 
 export interface SerializedBody {
@@ -68,9 +70,12 @@ export function serializeRequestBody(
   if (req.bodyType === "text" || req.bodyType === "xml") {
     const headers: Record<string, string> = {};
     if (req.bodyType === "xml") {
-      headers["Content-Type"] = "application/xml";
+      headers["Content-Type"] = req.soapMeta
+        ? soapContentType(req.soapMeta.isSoap12)
+        : "application/xml";
     }
-    return { body: resolve(req.body || ""), headers };
+    const forceHeaders = req.soapMeta ? ["Content-Type"] : undefined;
+    return { body: resolve(req.body || ""), headers, forceHeaders };
   }
 
   return {};

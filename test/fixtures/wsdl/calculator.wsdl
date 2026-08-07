@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://example.com/calc"
+  xmlns:auth="http://example.com/auth"
+  targetNamespace="http://example.com/calc"
+  name="CalculatorService">
+  <types>
+    <xsd:schema targetNamespace="http://example.com/calc" elementFormDefault="qualified">
+      <xsd:element name="Add" type="tns:AddRequest"/>
+      <xsd:complexType name="AddRequest">
+        <xsd:sequence>
+          <xsd:element name="a" type="xsd:int"/>
+          <xsd:element name="b" type="xsd:int"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:element name="AddResponse" type="tns:AddResponse"/>
+      <xsd:complexType name="AddResponse">
+        <xsd:sequence>
+          <xsd:element name="sum" type="xsd:int"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+    <xsd:schema targetNamespace="http://example.com/auth" elementFormDefault="qualified">
+      <xsd:element name="AuthToken" type="auth:AuthTokenType"/>
+      <xsd:complexType name="AuthTokenType">
+        <xsd:sequence>
+          <xsd:element name="token" type="xsd:string"/>
+          <xsd:element name="expires" type="xsd:dateTime"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="AddRequestMsg">
+    <part name="parameters" element="tns:Add"/>
+  </message>
+  <message name="AddResponseMsg">
+    <part name="parameters" element="tns:AddResponse"/>
+  </message>
+  <message name="AuthHeaderMsg">
+    <part name="auth" element="auth:AuthToken"/>
+  </message>
+  <portType name="CalculatorPortType">
+    <operation name="Add">
+      <input message="tns:AddRequestMsg"/>
+      <output message="tns:AddResponseMsg"/>
+    </operation>
+  </portType>
+  <binding name="CalculatorSoapBinding" type="tns:CalculatorPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Add">
+      <soap:operation soapAction="http://example.com/calc/Add"/>
+      <input>
+        <soap:body use="literal"/>
+        <soap:header message="tns:AuthHeaderMsg" part="auth" use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="CalculatorService">
+    <port name="CalculatorPort" binding="tns:CalculatorSoapBinding">
+      <soap:address location="http://example.com/calc"/>
+    </port>
+  </service>
+</definitions>

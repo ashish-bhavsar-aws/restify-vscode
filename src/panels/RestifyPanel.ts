@@ -9,28 +9,17 @@ import { StorageManager } from "../storage/StorageManager";
 import { getMainPanelHtml } from "../webview/mainPanelHtml";
 import { ActivityProvider } from "./ActivityProvider";
 import {
-  extractFilename,
-  extractFilenameFromPath,
-  getFileDetectionSource,
-  getFilePreviewType,
-  guessExtension,
-  isFileLikeResponse,
-  isTextLike,
-} from "./responsePreview";
-import {
   DEFAULT_MAX_REDIRECTS,
   DEFAULT_TIMEOUT_MS,
   applyDefaultHeaders,
   applyHeadersToRequest,
   applyQueryParams,
-  decompressBody,
   executeUserScript,
   getHeaderValue,
   getHeaderArray,
   getCookieHeader,
   hasHeader,
   isRedirectStatus,
-  normalizeResponseHeaders,
   parseSetCookies,
   removeHeader,
   resolveRedirectUrl,
@@ -43,8 +32,15 @@ import {
   storeCookies,
   getOAuth2Token,
   oauth2CacheKey,
+  applyWsseSecurity,
+  decryptSoapMessage,
+  looksEncrypted,
+  resolveSoapSecurity,
+  buildRequestResult,
   type CoreRequestForBody,
   type OAuth2Config,
+  type ResolvedSoapSecurity,
+  type RequestResult,
 } from "../core";
 import {
   parsePostmanEnvironment,
@@ -137,20 +133,7 @@ interface RequestData {
   followRedirects?: boolean;
   timeout?: number;
   activeEnvironmentId?: string;
-}
-
-interface RequestResult {
-  status: number;
-  statusText: string;
-  headers: Record<string, string | string[]>;
-  body: string;
-  bodySize: number;
-  isFileResponse?: boolean;
-  fileDetectionSource?: "mime" | "filename";
-  fileName?: string;
-  fileMimeType?: string;
-  fileBase64?: string;
-  filePreviewType?: "text" | "csv" | "pdf" | "excel" | "none";
+  soapMeta?: { isSoap12: boolean };
 }
 
 export class RestifyPanel {
@@ -433,73 +416,6 @@ export class RestifyPanel {
       }
     }
     return null;
-  }
-
-  private _buildRequestResult(
-    status: number,
-    statusText: string,
-    headers: http.IncomingHttpHeaders,
-    rawData: Buffer,
-    requestPathOrUrl: string,
-  ): RequestResult {
-    // Decompress the wire bytes so the viewer receives decoded content.
-    const data = decompressBody(
-      rawData,
-      headers["content-encoding"] as string | string[] | undefined,
-    );
-    const normalizedHeaders = normalizeResponseHeaders(headers);
-    const contentType = getHeaderValue(normalizedHeaders, "Content-Type");
-    const contentDisposition = getHeaderValue(
-      normalizedHeaders,
-      "Content-Disposition",
-    );
-    const fromDisposition = extractFilename(contentDisposition);
-    const fromPath = extractFilenameFromPath(requestPathOrUrl);
-    const inferredFileName = fromDisposition || fromPath;
-    const isFileResponse = isFileLikeResponse(
-      contentType,
-      contentDisposition,
-      inferredFileName,
-    );
-
-    if (!isFileResponse) {
-      return {
-        status,
-        statusText,
-        headers: normalizedHeaders,
-        body: data.toString("utf8"),
-        bodySize: data.length,
-        isFileResponse: false,
-      };
-    }
-
-    const safeMimeType = contentType || "application/octet-stream";
-    const safeFileName =
-      inferredFileName || `response.${guessExtension(safeMimeType)}`;
-    const filePreviewType = getFilePreviewType(safeMimeType, safeFileName);
-    const fileDetectionSource = getFileDetectionSource(
-      contentType,
-      contentDisposition,
-      safeFileName,
-    );
-    const fileBase64 = data.toString("base64");
-    const textBody = isTextLike(safeMimeType, safeFileName)
-      ? data.toString("utf8")
-      : "";
-
-    return {
-      status,
-      statusText,
-      headers: normalizedHeaders,
-      body: textBody,
-      bodySize: data.length,
-      isFileResponse: true,
-      fileDetectionSource,
-      fileName: safeFileName,
-      fileMimeType: safeMimeType,
-      fileBase64,
-      filePreviewType,
-    };
   }
 
   private _captureCookies(
@@ -837,6 +753,27 @@ export class RestifyPanel {
     }
   }
 
+  /**
+   * Display name for a history entry. A nameless request (empty name or the
+   * default "New Request" placeholder) is labelled from method + URL path only
+   * (no protocol/host/query — the full URL is already shown on the history
+   * item's meta line).
+   */
+  private _historyName(
+    req: RequestData,
+    method: string,
+    url: string,
+  ): string {
+    const n = req?.name?.trim();
+    if (n && n !== "New Request") return n;
+    try {
+      const parsed = new URL(url);
+      return `${method} ${parsed.pathname || "/"}`;
+    } catch {
+      return method;
+    }
+  }
+
   private async _initializeProxySettings(): Promise<void> {
     const config = vscode.workspace.getConfiguration("restify");
     const existingProxy = config.get("proxy");
@@ -918,7 +855,7 @@ export class RestifyPanel {
         this.storageManager.addToHistory({
           method: req.method || "GET",
           url: req.url || "",
-          name: historyReq.name || `${req.method || "GET"} ${req.url || ""}`,
+          name: this._historyName(historyReq, req.method || "GET", req.url || ""),
           status: 0,
           error: `Pre-request script failed: ${scriptResult.error}`,
           duration,
@@ -965,6 +902,46 @@ export class RestifyPanel {
     }
     applyHeadersToRequest(headers, serialized.headers, serialized.forceHeaders);
 
+    // WS-Security: inject UsernameToken credentials and/or encrypt the body
+    // before sending (host-side only — Node `crypto` is unavailable in the
+    // webview). The global settings entries are matched by hostname
+    // (Settings → SOAP Security), like SSL certs.
+    let resolvedWs: ResolvedSoapSecurity | null = null;
+    try {
+      resolvedWs = resolveSoapSecurity(
+        rawUrl,
+        this.storageManager.getSettings().soapSecurity || [],
+        (path) => fs.readFileSync(path),
+        (s) => this.storageManager.resolveVariables(s || "", this.sessionId),
+      );
+    } catch (wsseLoadErr) {
+      this.activityProvider?.append(
+        "WS-Security key load failed",
+        wsseLoadErr instanceof Error ? wsseLoadErr.message : String(wsseLoadErr),
+        "error",
+      );
+    }
+    if (resolvedWs && typeof body === "string") {
+      try {
+        const wsse = applyWsseSecurity(body, {
+          username: resolvedWs.username,
+          password: resolvedWs.password,
+          encrypt: resolvedWs.encrypt,
+          publicKeyPem: resolvedWs.publicKeyPem,
+        });
+        body = wsse.xml;
+        if (wsse.encrypted) {
+          setHeader(headers, "Content-Type", "text/xml; charset=utf-8");
+        }
+      } catch (wsseErr) {
+        this.activityProvider?.append(
+          "WS-Security failed",
+          `Error: ${wsseErr instanceof Error ? wsseErr.message : String(wsseErr)}`,
+          "error",
+        );
+      }
+    }
+
     // Ask the server for compressed responses only when we can decode them.
     if (!hasHeader(headers, "Accept-Encoding")) {
       setHeader(headers, "Accept-Encoding", "gzip, deflate, br");
@@ -993,7 +970,7 @@ export class RestifyPanel {
     const parsedUrl = new URL(finalUrl);
 
     const settings = this.storageManager.getSettings();
-    applyDefaultHeaders(headers, settings.defaultHeaders, this.extensionVersion);
+    applyDefaultHeaders(headers, settings.defaultHeaders, this.extensionVersion, undefined, resolveVars);
     let proxyOpts: { proxy: string; auth?: string } | null = null;
 
     if (settings.proxy) {
@@ -1108,13 +1085,50 @@ export class RestifyPanel {
       timings.network = Date.now() - netStart;
 
       const duration = Date.now() - startTime;
+      // WS-Security: decrypt an encrypted SOAP response when a matching
+      // settings entry provides a private key. Without valid decryption
+      // material the encrypted body is shown as-is.
+      let responseBody = result.body;
+      let decrypted = false;
+      if (
+        resolvedWs?.decrypt &&
+        resolvedWs?.privateKeyPem &&
+        typeof result.body === "string"
+      ) {
+        try {
+          if (looksEncrypted(result.body)) {
+            const plain = decryptSoapMessage(result.body, resolvedWs.privateKeyPem);
+            if (plain) {
+              responseBody = plain;
+              decrypted = true;
+            }
+          }
+        } catch (wsseErr) {
+          this.activityProvider?.append(
+            "WS-Security decrypt failed",
+            wsseErr instanceof Error ? wsseErr.message : String(wsseErr),
+            "error",
+          );
+        }
+      }
+      if (
+        !decrypted &&
+        typeof result.body === "string" &&
+        looksEncrypted(result.body)
+      ) {
+        this.activityProvider?.append(
+          "Encrypted response",
+          "Response body is WS-Security encrypted; configure a decrypt keystore for this host in Settings → SOAP Security to view it decrypted.",
+          "warning",
+        );
+      }
       const responseData = {
         status: result.status,
         statusText: result.statusText,
         headers: result.headers,
-        body: result.body,
+        body: responseBody,
         duration,
-        size: result.bodySize || Buffer.byteLength(result.body || "", "utf8"),
+        size: result.bodySize || Buffer.byteLength(String(responseBody || ""), "utf8"),
         isFileResponse: result.isFileResponse,
         fileDetectionSource: result.fileDetectionSource,
         fileName: result.fileName,
@@ -1257,7 +1271,7 @@ export class RestifyPanel {
         this.storageManager.addToHistory({
           method,
           url: finalUrl,
-          name: historyReq.name || `${method} ${finalUrl}`,
+          name: this._historyName(historyReq, method, finalUrl),
           status: result.status,
           duration,
           request: historyReq,
@@ -1324,7 +1338,7 @@ export class RestifyPanel {
         this.storageManager.addToHistory({
           method,
           url: finalUrl,
-          name: historyReq.name || `${method} ${finalUrl}`,
+          name: this._historyName(historyReq, method, finalUrl),
           status: 0,
           error: "Cancelled",
           duration,
@@ -1365,7 +1379,7 @@ export class RestifyPanel {
       this.storageManager.addToHistory({
         method,
         url: finalUrl,
-        name: historyReq.name || `${method} ${finalUrl}`,
+        name: this._historyName(historyReq, method, finalUrl),
         status: 0,
         error: err.message,
         duration,
@@ -1645,7 +1659,7 @@ export class RestifyPanel {
               }
             },
           );
-          return this._buildRequestResult(
+          return buildRequestResult(
             raw.status,
             raw.statusText,
             raw.headers,
@@ -1704,7 +1718,7 @@ export class RestifyPanel {
             }
           },
         );
-        return this._buildRequestResult(
+        return buildRequestResult(
           raw.status,
           raw.statusText,
           raw.headers,
@@ -1765,7 +1779,7 @@ export class RestifyPanel {
         }
       },
     );
-    return this._buildRequestResult(
+    return buildRequestResult(
       raw.status,
       raw.statusText,
       raw.headers,

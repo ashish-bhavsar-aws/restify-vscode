@@ -11,6 +11,22 @@ export interface FormDataItem extends KVItem {
   contentType?: string;
 }
 
+export interface SoapOperationMeta {
+  name: string;
+  soapAction: string;
+  location?: string;
+  isSoap12: boolean;
+  body: string;
+}
+
+export interface SoapRequestMeta {
+  wsdl: string;
+  operation: string;
+  targetNamespace: string;
+  isSoap12: boolean;
+  operations: SoapOperationMeta[];
+}
+
 export interface RequestState {
   name: string;
   method: string;
@@ -55,6 +71,7 @@ export interface RequestState {
   preScript?: string; // JavaScript to run before the request is sent
   script?: string; // JavaScript to extract variables from response
   urlencoded?: KVItem[]; // URL-encoded form parameters (application/x-www-form-urlencoded)
+  soapMeta?: SoapRequestMeta;
 }
 
 export interface ResponseState {
@@ -114,11 +131,41 @@ export interface CertEntry {
   caPath: string;
 }
 
+/** Global WS-Security defaults stored in settings (Settings → SOAP Security),
+ *  keyed by hostname exactly like the SSL client-certificate entries.
+ *
+ *  Mirrors the SoapUI WS-Security model: outgoing actions (UsernameToken,
+ *  body encryption) and incoming actions (response decryption) are independent
+ *  and combinable — not mutually exclusive "types". */
+export interface SoapSecurityEntry {
+  hostname: string;   // '*' for all hosts, or exact host / subdomain match
+  username: string;
+  password: string;
+  /** Outgoing: inject a WS-Security UsernameToken. */
+  useUsername?: boolean;
+  /** Outgoing: XML-encrypt the request body. */
+  encrypt?: boolean;
+  /** Incoming: decrypt an encrypted response body. */
+  decrypt?: boolean;
+  /** Truststore: recipient certificate (PEM) — public key source for encryption. */
+  certPath?: string;
+  /** Keystore: private key file (PEM) for response decryption. */
+  keyPath?: string;
+  /** Keystore: PKCS#12 (.p12/.pfx) bundle with cert + private key. */
+  p12Path?: string;
+  p12Password?: string;
+  /** For decryption: where the keystore private key comes from. */
+  keystore?: 'p12' | 'pem';
+}
+
 export interface DefaultHeadersConfig {
   userAgent: boolean;
   requestId: boolean;
   correlationId: boolean;
   date: boolean;
+  /** Arbitrary header name/value pairs injected into every request unless the
+   *  same header is set explicitly (case-insensitive). */
+  custom?: KVItem[];
 }
 
 export interface SettingsState {
@@ -129,6 +176,7 @@ export interface SettingsState {
   showActivityLog: boolean;
   defaultTimeout: number;   // default request timeout in ms
   defaultHeaders: DefaultHeadersConfig;
+  soapSecurity: SoapSecurityEntry[]; // global WS-Security defaults by hostname
 }
 
 export interface OAuth2ConfigPayload {
@@ -157,7 +205,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
     requestId: false,
     correlationId: false,
     date: false,
+    custom: [],
   },
+  soapSecurity: [],
 };
 
 export const DEFAULT_REQUEST: RequestState = {

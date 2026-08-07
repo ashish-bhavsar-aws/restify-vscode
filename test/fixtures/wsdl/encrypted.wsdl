@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://example.com/secure12"
+  xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"
+  targetNamespace="http://example.com/secure12"
+  name="EncryptedService">
+  <message name="SecureRequestMsg">
+    <part name="parameters" element="xenc:EncryptedData"/>
+  </message>
+  <message name="SecureResponseMsg">
+    <part name="parameters" element="xenc:EncryptedData"/>
+  </message>
+  <portType name="EncryptedPortType">
+    <operation name="SubmitSecure">
+      <input message="tns:SecureRequestMsg"/>
+      <output message="tns:SecureResponseMsg"/>
+    </operation>
+  </portType>
+  <binding name="EncryptedSoap12Binding" type="tns:EncryptedPortType">
+    <soap12:binding style="document" transport="http://www.w3.org/2003/05/soap/bindings/HTTP/"/>
+    <operation name="SubmitSecure">
+      <soap12:operation soapAction="http://example.com/secure12/SubmitSecure"/>
+      <input>
+        <soap12:body use="literal"/>
+      </input>
+      <output>
+        <soap12:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="EncryptedService">
+    <port name="EncryptedPort" binding="tns:EncryptedSoap12Binding">
+      <soap12:address location="http://example.com/secure12"/>
+    </port>
+  </service>
+</definitions>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { SettingsState, CertEntry } from '../types';
+import { SettingsState, CertEntry, SoapSecurityEntry, KVItem } from '../types';
+import { KeyValueTable } from './KeyValueTable';
 
 interface SettingsModalProps {
   open: boolean;
@@ -116,14 +117,40 @@ const CheckboxLabel = styled.label`
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin: 4px 0 12px;
   cursor: pointer;
   font-size: 12px;
+  line-height: 1.4;
   color: ${({ theme }) => theme.fg};
 
   input {
     cursor: pointer;
   }
+`;
+
+const Select = styled.select`
+  width: 100%;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.fg};
+  padding: 7px 10px;
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 10px;
+  font-family: inherit;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const CustomHeaderBox = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  background: ${({ theme }) => theme.inputBg};
+  margin: 4px 0 16px;
+  overflow: hidden;
 `;
 
 const ProxyAuthSection = styled.div`
@@ -134,13 +161,22 @@ const ProxyAuthSection = styled.div`
   border: 1px solid color-mix(in srgb, ${({ theme }) => theme.accent} 25%, transparent);
 `;
 
+const HeaderNote = styled.p`
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: ${({ theme }) => theme.fg};
+  margin: 2px 0 14px;
+  line-height: 1.5;
+`;
+
 const HelperText = styled.p`
   display: block;
   font-size: 10px;
   color: ${({ theme }) => theme.muted};
-  margin-bottom: 8px;
-  opacity: 0.8;
-  margin-top: -6px;
+  margin: 2px 0 14px;
+  line-height: 1.55;
+  opacity: 0.85;
 `;
 
 const TagsContainer = styled.div`
@@ -393,11 +429,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     requestId: false,
     correlationId: false,
     date: false,
+    custom: [],
+  });
+
+  const updateCustomDefaultHeader = (index: number, field: keyof KVItem, value: any) => {
+    const items = [...(defaultHeaders.custom || [])];
+    items[index] = { ...items[index], [field]: value };
+    setDefaultHeaders({ ...defaultHeaders, custom: items });
+  };
+
+  const addCustomDefaultHeader = () => {
+    setDefaultHeaders({
+      ...defaultHeaders,
+      custom: [...(defaultHeaders.custom || []), { key: '', value: '', enabled: true }],
+    });
+  };
+
+  const removeCustomDefaultHeader = (index: number) => {
+    const items = [...(defaultHeaders.custom || [])];
+    items.splice(index, 1);
+    setDefaultHeaders({ ...defaultHeaders, custom: items });
+  };
+
+  const [soapEntries, setSoapEntries] = useState<SoapSecurityEntry[]>([]);
+  const [expandedSoap, setExpandedSoap] = useState<number | null>(null);
+  const [newSoap, setNewSoap] = useState<SoapSecurityEntry>({
+    hostname: '',
+    username: '',
+    password: '',
+    useUsername: false,
+    encrypt: false,
+    decrypt: false,
+    certPath: '',
+    keyPath: '',
+    p12Path: '',
+    p12Password: '',
+    keystore: 'p12',
   });
 
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'proxy'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'proxy' | 'soap'>('general');
 
   useEffect(() => {
     if (initialSettings) {
@@ -448,8 +520,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           requestId: false,
           correlationId: false,
           date: false,
+          custom: [],
         },
       );
+
+      setSoapEntries(initialSettings.soapSecurity || []);
     }
 
     if (!open) {
@@ -493,7 +568,132 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ? defaultTimeout
           : 30000,
       defaultHeaders,
+      soapSecurity: soapEntries,
     });
+  };
+
+  const addSoapEntry = () => {
+    if (!newSoap.hostname.trim()) return;
+    setSoapEntries([...soapEntries, { ...newSoap, hostname: newSoap.hostname.trim() }]);
+    setNewSoap({ hostname: '', username: '', password: '', useUsername: false, encrypt: false, decrypt: false, certPath: '', keyPath: '', p12Path: '', p12Password: '', keystore: 'p12' });
+  };
+
+  const removeSoapEntry = (index: number) => {
+    setSoapEntries(soapEntries.filter((_, i) => i !== index));
+    if (expandedSoap === index) setExpandedSoap(null);
+  };
+
+  const updateSoapEntry = (index: number, field: keyof SoapSecurityEntry, value: string | boolean) => {
+    const updated = [...soapEntries];
+    updated[index] = { ...updated[index], [field]: value } as SoapSecurityEntry;
+    setSoapEntries(updated);
+  };
+
+  const renderSecurityFields = (
+    entry: SoapSecurityEntry,
+    onChange: (field: keyof SoapSecurityEntry, value: string | boolean) => void,
+    testidPrefix: string,
+  ) => {
+    return (
+      <>
+        <CheckboxLabel data-testid={`${testidPrefix}-use-username`}>
+          <input
+            type="checkbox"
+            checked={entry.useUsername === true}
+            onChange={(e) => onChange('useUsername', e.target.checked)}
+          />
+          UsernameToken (outgoing)
+        </CheckboxLabel>
+        {entry.useUsername && (
+          <>
+            <Label>Username</Label>
+            <Input
+              placeholder="UsernameToken username"
+              value={entry.username}
+              data-testid={`${testidPrefix}-username`}
+              onChange={(e) => onChange('username', e.target.value)}
+            />
+            <Label>Password</Label>
+            <Input
+              type="password"
+              placeholder="UsernameToken password"
+              value={entry.password}
+              data-testid={`${testidPrefix}-password`}
+              onChange={(e) => onChange('password', e.target.value)}
+            />
+          </>
+        )}
+        <CheckboxLabel data-testid={`${testidPrefix}-encrypt`}>
+          <input
+            type="checkbox"
+            checked={entry.encrypt === true}
+            onChange={(e) => onChange('encrypt', e.target.checked)}
+          />
+          Encrypt Body (outgoing)
+        </CheckboxLabel>
+        {entry.encrypt && (
+          <>
+            <Label>Truststore — Recipient Certificate (PEM) Path</Label>
+            <Input
+              placeholder="/path/to/recipient-cert.pem"
+              value={entry.certPath || ''}
+              data-testid={`${testidPrefix}-cert`}
+              onChange={(e) => onChange('certPath', e.target.value)}
+            />
+          </>
+        )}
+        <CheckboxLabel data-testid={`${testidPrefix}-decrypt`}>
+          <input
+            type="checkbox"
+            checked={entry.decrypt === true}
+            onChange={(e) => onChange('decrypt', e.target.checked)}
+          />
+          Decrypt Response (incoming)
+        </CheckboxLabel>
+        {entry.decrypt && (
+          <>
+            <Label>Keystore Source</Label>
+            <Select
+              value={entry.keystore || 'p12'}
+              data-testid={`${testidPrefix}-keystore`}
+              onChange={(e) => onChange('keystore', e.target.value)}
+            >
+              <option value="p12">PKCS#12 file (.p12/.pfx)</option>
+              <option value="pem">PEM private key</option>
+            </Select>
+            {entry.keystore === 'pem' ? (
+              <>
+                <Label>Keystore — Private Key (PEM) Path</Label>
+                <Input
+                  placeholder="/path/to/private-key.pem"
+                  value={entry.keyPath || ''}
+                  data-testid={`${testidPrefix}-key`}
+                  onChange={(e) => onChange('keyPath', e.target.value)}
+                />
+              </>
+            ) : (
+              <>
+                <Label>Keystore — PKCS#12 File (.p12/.pfx) Path</Label>
+                <Input
+                  placeholder="/path/to/keystore.p12"
+                  value={entry.p12Path || ''}
+                  data-testid={`${testidPrefix}-p12`}
+                  onChange={(e) => onChange('p12Path', e.target.value)}
+                />
+                <Label>Keystore Password</Label>
+                <Input
+                  type="password"
+                  placeholder="keystore password"
+                  value={entry.p12Password || ''}
+                  data-testid={`${testidPrefix}-p12-password`}
+                  onChange={(e) => onChange('p12Password', e.target.value)}
+                />
+              </>
+            )}
+          </>
+        )}
+      </>
+    );
   };
 
   const handleAddNoProxyTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -566,6 +766,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             Proxy
           </TabButton>
+          <TabButton
+            $active={activeTab === 'soap'}
+            onClick={() => setActiveTab('soap')}
+            data-testid="settings-tab-soap"
+            role="tab"
+            aria-selected={activeTab === 'soap'}
+          >
+            SOAP Security
+          </TabButton>
         </TabBar>
 
         {activeTab === 'general' && (
@@ -599,10 +808,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             <Section>
               <h4>Default Headers</h4>
-              <HelperText>
+              <HeaderNote>
                 Automatically inject these headers into every request, unless you
                 already set the same header explicitly.
-              </HelperText>
+              </HeaderNote>
               <CheckboxLabel data-testid="default-header-toggle-user-agent">
                 <input
                   type="checkbox"
@@ -643,6 +852,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 Date (current HTTP date)
               </CheckboxLabel>
+              <Label style={{ marginTop: 12 }}>Custom Headers</Label>
+              <HelperText>
+                Add your own header name/value pairs below. Each enabled header
+                is injected into every request unless you set it explicitly on a
+                request (values may use {`{{variables}}`}).
+              </HelperText>
+              <CustomHeaderBox>
+                <KeyValueTable
+                  items={defaultHeaders.custom || []}
+                  addLabel="+ Add Custom Header"
+                  onAdd={addCustomDefaultHeader}
+                  onUpdate={updateCustomDefaultHeader}
+                  onRemove={removeCustomDefaultHeader}
+                  isHeaderTable
+                />
+              </CustomHeaderBox>
             </Section>
           </>
         )}
@@ -812,6 +1037,84 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 ))}
               </TagsContainer>
             )}
+          </Section>
+        )}
+
+        {activeTab === 'soap' && (
+          <Section>
+            <h4>WS-Security (Optional)</h4>
+            <HelperText>
+              Applied automatically to SOAP requests by hostname (exact host, *.subdomain,
+              or {'*'} for all hosts), like SSL client certificates. Outgoing actions
+              (UsernameToken, body encryption) and incoming actions (response decryption)
+              are independent and can be combined. Keystore = your private key (.p12/.pfx or
+              PEM); Truststore = the recipient&apos;s certificate (PEM) used as the public-key source
+              for body encryption. When no entry with valid decryption keys matches a host,
+              encrypted responses are shown as-is.
+            </HelperText>
+
+            {soapEntries.length > 0 && (
+              <CertList>
+                {soapEntries.map((entry, index) => (
+                  <CertEntry_ key={index} data-testid="soap-entry">
+                    <CertHeader
+                      onClick={() =>
+                        setExpandedSoap(expandedSoap === index ? null : index)
+                      }
+                    >
+                      <CertToggle $open={expandedSoap === index}>▶</CertToggle>
+                      <CertHostname>{entry.hostname}</CertHostname>
+                      {entry.useUsername && entry.username && <CertHostname style={{ fontWeight: 400, opacity: 0.7 }}>{entry.username}</CertHostname>}
+                      {entry.encrypt && <CertHostname style={{ fontWeight: 400, opacity: 0.7 }}>encrypt</CertHostname>}
+                      {entry.decrypt && <CertHostname style={{ fontWeight: 400, opacity: 0.7 }}>decrypt</CertHostname>}
+                      <RemoveBtn
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeSoapEntry(index);
+                        }}
+                        title="Remove WS-Security entry"
+                      >
+                        ✕
+                      </RemoveBtn>
+                    </CertHeader>
+
+                    {expandedSoap === index && (
+                      <CertContent>
+                        <Label>Hostname</Label>
+                        <Input
+                          placeholder="api.example.com (or * for all hosts)"
+                          value={entry.hostname}
+                          data-testid="soap-entry-hostname"
+                          onChange={(e) => updateSoapEntry(index, 'hostname', e.target.value)}
+                        />
+                        {renderSecurityFields(
+                          entry,
+                          (field, value) => updateSoapEntry(index, field, value),
+                          'soap-entry',
+                        )}
+                      </CertContent>
+                    )}
+                  </CertEntry_>
+                ))}
+              </CertList>
+            )}
+
+            <CertForm>
+              <h5>Add WS-Security Entry</h5>
+              <Label>Hostname</Label>
+              <Input
+                placeholder="api.example.com (or * for all hosts)"
+                value={newSoap.hostname}
+                data-testid="soap-add-hostname"
+                onChange={(e) => setNewSoap({ ...newSoap, hostname: e.target.value })}
+              />
+              {renderSecurityFields(
+                newSoap,
+                (field, value) => setNewSoap({ ...newSoap, [field]: value } as SoapSecurityEntry),
+                'soap-add',
+              )}
+              <SecondaryButton onClick={addSoapEntry} data-testid="soap-entry-add">+ Add WS-Security Entry</SecondaryButton>
+            </CertForm>
           </Section>
         )}
 

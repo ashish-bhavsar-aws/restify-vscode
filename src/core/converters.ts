@@ -1,3 +1,5 @@
+import { buildSoapEnvelope, looksLikeWsdl, parseWsdl, soapContentType } from "./wsdl";
+
 /**
  * Pure import/export converters for Restify collections, environments, and
  * `.http` files. Kept free of vscode/webview dependencies so it is
@@ -40,6 +42,7 @@ export type ImportSource =
   | "har"
   | "insomnia"
   | "http"
+  | "wsdl"
   | null;
 
 function _uuid(): string {
@@ -127,6 +130,8 @@ export function parseImportText(
     }
     case "http":
       return parseHttpFileText(text);
+    case "wsdl":
+      return parseWsdlCollection(text);
     case "restify": {
       try {
         const data = JSON.parse(text);
@@ -152,6 +157,8 @@ export function parseImportTextAuto(text: string, filename?: string): ImportedCo
       source = "http";
     } else if (/^\s*(###|#)\s/.test(text) || /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+/im.test(text)) {
       source = "http";
+    } else if (looksLikeWsdl(text)) {
+      source = "wsdl";
     } else {
       try {
         data = parseYaml(text);
@@ -162,6 +169,7 @@ export function parseImportTextAuto(text: string, filename?: string): ImportedCo
     }
   }
   if (source === "http") return parseHttpFileText(text);
+  if (source === "wsdl") return parseWsdlCollection(text);
   if (!source) return null;
   return parseImportText(text, source);
 }
@@ -194,6 +202,52 @@ function _sanitizeGroups(groups: any[] | undefined): any[] {
     requests: Array.isArray(g.requests) ? g.requests.map(_sanitizeRequest) : [],
     groups: _sanitizeGroups(g.groups),
   }));
+}
+
+function parseWsdlCollection(xml: string): ImportedCollection | null {
+  const wsdl = parseWsdl(xml);
+  if (!wsdl || !wsdl.operations.length) return null;
+
+  const operations = wsdl.operations.filter((op) => Boolean(op.location));
+  if (!operations.length) return null;
+
+  const requests = operations.map((op) => {
+    const body = buildSoapEnvelope(wsdl, op.name);
+    const contentType = soapContentType(op.isSoap12);
+    const headers = [
+      { key: "Content-Type", value: contentType, enabled: true },
+      { key: "SOAPAction", value: op.soapAction || "", enabled: true },
+    ];
+    return {
+      id: _newId("request"),
+      name: op.name || "SOAP Operation",
+      method: "POST",
+      url: op.location || wsdl.ports[0]?.location || "",
+      headers,
+      queryParams: [],
+      bodyType: "xml",
+      body,
+      soapMeta: {
+        wsdl: xml,
+        operation: op.name,
+        targetNamespace: wsdl.targetNamespace,
+        isSoap12: op.isSoap12,
+        operations: wsdl.operations.map((otherOp) => ({
+          name: otherOp.name,
+          soapAction: otherOp.soapAction,
+          location: otherOp.location,
+          isSoap12: otherOp.isSoap12,
+          body: buildSoapEnvelope(wsdl, otherOp.name),
+        })),
+      },
+    };
+  });
+
+  return {
+    id: _newId("col"),
+    name: wsdl.name || "WSDL Import",
+    requests,
+  };
 }
 
 // ─── Postman ────────────────────────────────────────────────────────────────

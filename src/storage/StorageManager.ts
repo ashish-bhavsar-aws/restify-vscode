@@ -54,6 +54,27 @@ export interface CertEntry {
   caPath: string;
 }
 
+export interface SoapSecurityEntry {
+  hostname: string;
+  username: string;
+  password: string;
+  /** Outgoing: inject a WS-Security UsernameToken. */
+  useUsername?: boolean;
+  /** Outgoing: XML-encrypt the request body. */
+  encrypt?: boolean;
+  /** Incoming: decrypt an encrypted response body. */
+  decrypt?: boolean;
+  /** Truststore: recipient certificate (PEM) — public key source for encryption. */
+  certPath?: string;
+  /** Keystore: private key file (PEM) for response decryption. */
+  keyPath?: string;
+  /** Keystore: PKCS#12 (.p12/.pfx) bundle with cert + private key. */
+  p12Path?: string;
+  p12Password?: string;
+  /** For decryption: where the keystore private key comes from. */
+  keystore?: "p12" | "pem";
+}
+
 export interface SettingsState {
   proxy: string;
   proxyAuthorization: string;
@@ -66,7 +87,9 @@ export interface SettingsState {
     requestId: boolean;
     correlationId: boolean;
     date: boolean;
+    custom: Array<{ key: string; value: string; enabled?: boolean }>;
   };
+  soapSecurity: SoapSecurityEntry[];
 }
 
 export class StorageManager {
@@ -1114,7 +1137,31 @@ export class StorageManager {
         requestId: saved.defaultHeaders?.requestId ?? false,
         correlationId: saved.defaultHeaders?.correlationId ?? false,
         date: saved.defaultHeaders?.date ?? false,
+        custom: (saved.defaultHeaders?.custom ?? []).map((c) => ({
+          key: c?.key ?? "",
+          value: c?.value ?? "",
+          enabled: c?.enabled !== false,
+        })),
       },
+      soapSecurity: (saved.soapSecurity ?? []).map((e) => {
+        const type = (e as { type?: string })?.type;
+        return {
+          hostname: e?.hostname ?? "",
+          username: e?.username ?? "",
+          password: e?.password ?? "",
+          // Migrate the legacy mutually-exclusive "type" field to independent
+          // outgoing/incoming action toggles.
+          useUsername:
+            e?.useUsername ?? Boolean(type === "username" || type === "username-encrypt"),
+          encrypt: e?.encrypt ?? (type === "encrypt" || type === "username-encrypt"),
+          decrypt: e?.decrypt ?? type === "decrypt",
+          certPath: e?.certPath ?? "",
+          keyPath: e?.keyPath ?? "",
+          p12Path: e?.p12Path ?? "",
+          p12Password: e?.p12Password ?? "",
+          keystore: e?.keystore ?? "p12",
+        };
+      }),
     };
   }
 

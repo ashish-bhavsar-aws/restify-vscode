@@ -420,6 +420,42 @@ const CodeTextarea = styled.textarea`
   tab-size: 2;
 `;
 
+/* ─── SOAP / WSDL Section ─────────────────────────── */
+
+const SoapMetaRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  flex-shrink: 0;
+`;
+
+const SoapMetaLabel = styled.span`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  flex-shrink: 0;
+`;
+
+const SoapMetaSelect = styled.select`
+  flex: 1;
+  min-width: 0;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.inputFg};
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
 /* ─── Script Tab ─────────────────────────────────── */
 
 const ScriptTitle = styled.div`
@@ -1036,6 +1072,36 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
     reader.readAsArrayBuffer(file);
   };
 
+  const soapMeta = request.soapMeta;
+  const soapOperations = soapMeta?.operations || [];
+  const currentSoapOperation = soapOperations.find((op) => op.name === soapMeta?.operation) || soapOperations[0];
+
+  const soapCtype = (isSoap12: boolean) =>
+    isSoap12 ? 'application/soap+xml; charset=utf-8' : 'text/xml; charset=utf-8';
+
+  const upsertHeader = (base: KVItem[], key: string, value: string) => {
+    const headers = [...base];
+    const index = headers.findIndex((h) => (h.key || '').toLowerCase() === key.toLowerCase());
+    if (index >= 0) {
+      headers[index] = { ...headers[index], value, enabled: true };
+    } else {
+      headers.push({ key, value, enabled: true });
+    }
+    return headers;
+  };
+
+  const handleSoapOperationChange = (operationName: string) => {
+    const op = soapOperations.find((o) => o.name === operationName);
+    if (!op || !soapMeta) return;
+    let headers = upsertHeader(request.headers || [], 'SOAPAction', op.soapAction || '');
+    headers = upsertHeader(headers, 'Content-Type', soapCtype(op.isSoap12));
+    onUpdate({
+      soapMeta: { ...soapMeta, operation: op.name, isSoap12: op.isSoap12, operations: soapOperations },
+      body: op.body,
+      headers,
+    });
+  };
+
   const handleBodyTypeChange = (bt: BodyType) => {
     const mapping: Record<BodyType, string | undefined> = {
       json: 'application/json',
@@ -1331,6 +1397,23 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                 onChange={(e) => onUpdate({ gqlVars: e.target.value })}
               />
             </BodyEditorWrap>
+          )}
+
+          {soapOperations.length > 0 && (
+            <SoapMetaRow>
+              <SoapMetaLabel>SOAP Operation</SoapMetaLabel>
+              <SoapMetaSelect
+                data-testid="soap-operation-select"
+                value={currentSoapOperation?.name || ''}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleSoapOperationChange(e.target.value)}
+              >
+                {soapOperations.map((op) => (
+                  <option key={op.name} value={op.name}>
+                    {op.name}
+                  </option>
+                ))}
+              </SoapMetaSelect>
+            </SoapMetaRow>
           )}
         </BodyEditorWrap>
       )}

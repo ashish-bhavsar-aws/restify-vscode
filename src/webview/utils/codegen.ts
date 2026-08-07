@@ -117,6 +117,11 @@ function buildDefaultHeaders(
   if (defaultHeaders.requestId) out['X-Request-Id'] = previewDynamicVariable('guid');
   if (defaultHeaders.correlationId) out['X-Correlation-Id'] = previewDynamicVariable('guid');
   if (defaultHeaders.date) out['Date'] = new Date().toUTCString();
+  for (const item of defaultHeaders.custom || []) {
+    const key = (item?.key || '').trim();
+    if (!key || item.enabled === false) continue;
+    out[key] = item.value || '';
+  }
   return out;
 }
 

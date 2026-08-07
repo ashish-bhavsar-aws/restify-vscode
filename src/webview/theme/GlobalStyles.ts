@@ -15,7 +15,7 @@ const GlobalStyles = createGlobalStyle`
     --surface:   var(--vscode-sideBar-background, var(--vscode-editor-background));
     --surface-2: var(--vscode-dropdown-background, var(--vscode-input-background));
     --hover:     var(--vscode-list-hoverBackground, rgba(128,128,128,0.1));
-    --muted:     var(--vscode-descriptionForeground, rgba(128,128,128,0.8));
+    --muted:     color-mix(in srgb, var(--vscode-descriptionForeground, rgba(128,128,128,0.8)) 60%, #000000);
 
     /* Semantic — light-safe defaults using VS Code tokens */
     --error:   var(--vscode-errorForeground, #cf222e);

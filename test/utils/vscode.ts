@@ -1259,50 +1259,13 @@ export async function fillVariableInput(
 ): Promise<void> {
   log(`Filling VariableTextInput "${wrapperSelector}" with "${value.slice(0, 40)}..."`);
 
-  // Step 1: Use evaluate to dispatch a React-compatible mouseup on the display div.
-  // This triggers the onMouseUp handler which calls focusInputWithSelection().
-  await frame.evaluate((sel) => {
-    const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
-    if (display) {
-      const rect = display.getBoundingClientRect();
-      const evt = new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
-      });
-      display.dispatchEvent(evt);
-    }
-  }, wrapperSelector);
-  await frame.waitForTimeout(300);
-
-  // Step 2: The <input> should now be visible — find and fill it
   const input = frame.locator(`${wrapperSelector} [data-testid="variable-text-input"]`);
-  try {
-    await input.first().waitFor({ state: 'visible', timeout: 3_000 });
-  } catch {
-    log('  Input still not visible after mouseup dispatch, trying direct focus...');
-    await frame.evaluate((sel) => {
-      const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
-      if (display) (display as HTMLElement).click();
-    }, wrapperSelector);
-    await frame.waitForTimeout(300);
-    await input.first().waitFor({ state: 'visible', timeout: 3_000 });
-  }
 
-  // Step 3: Select all and type the new value
-  try {
-    await input.first().click({ force: true });
-  } catch { /* ignore */ }
-  await input.first().press('Meta+a');
-  await frame.waitForTimeout(100);
-  try {
-    await input.first().fill(value);
-  } catch {
-    // Fallback: the input may have been re-rendered between steps — retry the
-    // reveal + fill sequence once before giving up.
-    log('  fill() failed, retrying reveal+fill...');
+  // The display div uses onMouseUp (not onClick) to switch to an <input>. The
+  // webview re-renders in response to state updates (e.g. right after a request
+  // loads), which can unmount the focused input mid-sequence — retry the whole
+  // reveal + fill so we never depend on a single render being stable.
+  const reveal = async () => {
     await frame.evaluate((sel) => {
       const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
       if (display) {
@@ -1317,11 +1280,42 @@ export async function fillVariableInput(
         display.dispatchEvent(evt);
       }
     }, wrapperSelector);
-    await frame.waitForTimeout(400);
-    await input.first().waitFor({ state: 'visible', timeout: 5_000 });
-    await input.first().fill(value);
+    await frame.waitForTimeout(250);
+  };
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await reveal();
+    try {
+      await input.first().waitFor({ state: 'visible', timeout: 3_000 });
+      await input.first().press('Meta+a', { timeout: 3_000 });
+      await input.first().fill(value, { timeout: 3_000 });
+      const actual = await input.first().inputValue().catch(() => '');
+      if (actual === value) {
+        log('  VariableTextInput filled');
+        return;
+      }
+      log(`  Attempt ${attempt}: value mismatch (got "${actual.slice(0, 30)}"), retrying...`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+      log(`  Attempt ${attempt} failed (${msg}), retrying...`);
+    }
   }
-  log('  VariableTextInput filled');
+
+  // Last resort: try to click the display (covers a non-standard focus state).
+  await frame.evaluate((sel) => {
+    const display = document.querySelector(`${sel} [data-testid="variable-text-display"]`);
+    if (display) (display as HTMLElement).click();
+  }, wrapperSelector);
+  await frame.waitForTimeout(300);
+  try {
+    await input.first().waitFor({ state: 'visible', timeout: 3_000 });
+    await input.first().fill(value, { timeout: 3_000 });
+    log('  VariableTextInput filled (fallback)');
+    return;
+  } catch (err) {
+    logError(`Failed to fill VariableTextInput "${wrapperSelector}"`, err);
+    throw err;
+  }
 }
 
 export async function getVariableInputValue(

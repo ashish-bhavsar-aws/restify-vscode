@@ -39,7 +39,17 @@ export interface RequestState {
   formData: FormDataItem[];
   gqlQuery: string;
   gqlVars: string;
-  authType: 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2';
+  authType:
+    | 'none'
+    | 'bearer'
+    | 'basic'
+    | 'apikey'
+    | 'oauth2'
+    | 'digest'
+    | 'awssigv4'
+    | 'jwt'
+    | 'hawk'
+    | 'inherit';
   authData: {
     token?: string;
     username?: string;
@@ -64,7 +74,33 @@ export interface RequestState {
     tokenExpiresAt?: number;
     tokenType?: string;
     tokenScope?: string;
+    // Digest Auth
+    digestUsername?: string;
+    digestPassword?: string;
+    // AWS SigV4
+    awsAccessKey?: string;
+    awsSecretKey?: string;
+    awsSessionToken?: string;
+    awsRegion?: string;
+    awsService?: string;
+    // JWT bearer
+    jwtAlgorithm?: 'HS256' | 'HS384' | 'HS512' | 'RS256' | 'RS384' | 'RS512' | 'ES256' | 'ES384' | 'ES512';
+    jwtSecret?: string;
+    jwtPrivateKey?: string;
+    jwtKeyId?: string;
+    jwtIssuer?: string;
+    jwtSubject?: string;
+    jwtAudience?: string;
+    jwtClaims?: string;
+    jwtExpiresIn?: string;
+    jwtHeaderName?: string;
+    // Hawk
+    hawkId?: string;
+    hawkKey?: string;
+    hawkAlgorithm?: 'sha256' | 'sha1';
   };
+  /** Which collection this request was loaded from, for "inherit" auth. */
+  _collectionId?: string;
   rejectUnauthorized: boolean;
   followRedirects?: boolean;
   timeout?: number; // per-request timeout in ms; falls back to settings default

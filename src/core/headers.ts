@@ -17,11 +17,14 @@ export function canonicalHeaderName(name: string): string {
 }
 
 export function getHeader(
-  headers: Record<string, string>,
+  headers: Record<string, string | string[]>,
   name: string,
 ): string | undefined {
-  const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
-  return key === undefined ? undefined : headers[key];
+  const hit = Object.entries(headers).find(
+    ([k]) => k.toLowerCase() === name.toLowerCase(),
+  )?.[1];
+  if (hit === undefined) return undefined;
+  return Array.isArray(hit) ? hit.join(", ") : String(hit);
 }
 
 export function hasHeader(headers: Record<string, string>, name: string): boolean {

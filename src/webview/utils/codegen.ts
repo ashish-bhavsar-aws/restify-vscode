@@ -192,13 +192,32 @@ function filterContentTypeHeader(headers: Record<string, string>, isMultipart: b
 
 function getAuthHeaders(req: RequestState): Record<string, string> {
   const authHeaders: Record<string, string> = {};
-  if (req.authType === 'bearer' && req.authData.token) {
-    authHeaders.Authorization = `Bearer ${req.authData.token}`;
-  } else if (req.authType === 'basic' && req.authData.username) {
-    const creds = btoa(`${req.authData.username}:${req.authData.password ?? ''}`);
+  const authData = req.authData || {};
+  if (req.authType === 'bearer' && authData.token) {
+    authHeaders.Authorization = `Bearer ${authData.token}`;
+  } else if (req.authType === 'basic' && authData.username) {
+    const creds = btoa(`${authData.username}:${authData.password ?? ''}`);
     authHeaders.Authorization = `Basic ${creds}`;
-  } else if (req.authType === 'apikey' && req.authData.keyName && req.authData.addTo !== 'query') {
-    authHeaders[req.authData.keyName] = req.authData.keyValue ?? '';
+  } else if (req.authType === 'apikey' && authData.keyName && authData.addTo !== 'query') {
+    authHeaders[authData.keyName] = authData.keyValue ?? '';
+  } else if (req.authType === 'jwt') {
+    // The token is minted at request time by the extension; emit a placeholder
+    // the user replaces with their own signing logic.
+    const alg = authData.jwtAlgorithm || 'HS256';
+    const headerName = authData.jwtHeaderName || 'Authorization';
+    if (alg.startsWith('HS')) {
+      authHeaders[headerName] = `Bearer <jwt-signed-with-${alg}>`;
+    } else {
+      authHeaders[headerName] = `Bearer <jwt-signed-with-${alg}-private-key>`;
+    }
+  } else if (req.authType === 'awssigv4') {
+    // SigV4 requires host-side signing; emit a comment-style header.
+    authHeaders.Authorization = 'AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=<computed-by-extension>';
+  } else if (req.authType === 'hawk') {
+    authHeaders.Authorization = `Hawk id="${authData.hawkId || ''}", ts="<ts>", nonce="<nonce>", mac="<computed-by-extension>"`;
+  } else if (req.authType === 'digest') {
+    // Digest requires a 401 challenge round-trip handled by the extension.
+    authHeaders.Authorization = 'Digest <computed-by-extension>';
   }
   return authHeaders;
 }

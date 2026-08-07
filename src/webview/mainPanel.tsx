@@ -484,41 +484,10 @@ export const MainPanel: React.FC = () => {
 
   /* Build the request object, injecting auth headers/params */
   const buildPayload = useCallback((): RequestState => {
-    const headers = [...request.headers];
-    const queryParams = [...request.queryParams];
-
-    if (request.authType === "bearer" && request.authData.token) {
-      headers.push({
-        key: "Authorization",
-        value: `Bearer ${request.authData.token}`,
-        enabled: true,
-      });
-    } else if (request.authType === "basic" && request.authData.username) {
-      const creds = btoa(
-        `${request.authData.username}:${request.authData.password ?? ""}`,
-      );
-      headers.push({
-        key: "Authorization",
-        value: `Basic ${creds}`,
-        enabled: true,
-      });
-    } else if (request.authType === "apikey" && request.authData.keyName) {
-      const kv = {
-        key: request.authData.keyName,
-        value: request.authData.keyValue ?? "",
-        enabled: true,
-      };
-      if (request.authData.addTo === "query") queryParams.push(kv);
-      else headers.push(kv);
-    } else if (request.authType === "oauth2" && request.authData.accessToken) {
-      headers.push({
-        key: "Authorization",
-        value: `Bearer ${request.authData.accessToken}`,
-        enabled: true,
-      });
-    }
-
-    return { ...request, headers, queryParams };
+    // Auth headers (bearer/basic/apikey/oauth2/jwt/sigv4/hawk) are applied
+    // host-side after variable resolution so `{{var}}` placeholders resolve
+    // correctly and crypto-based schemes (JWT signing, SigV4) can run.
+    return { ...request };
   }, [request]);
 
   // Send the built payload (with injected auth headers) for execution

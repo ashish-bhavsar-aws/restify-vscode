@@ -2,11 +2,34 @@ import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { KVItem, FormDataItem, RequestState, Environment, OAuth2ConfigPayload } from '../types';
 import { KeyValueTable } from './KeyValueTable';
-import VariableTextInput from './VariableTextInput';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
 import { Icon, faEye, faEyeSlash, faTrash, faList, faLink, faFileLines, faTerminal, faKey } from './FaIcon';
 import { getSuggestedContentType } from '../utils/formDataTypeDetector';
+import {
+  FieldLabel,
+  AuthFieldsContainer,
+  AuthInput,
+  RelativeWrap,
+  PasswordToggleBtn,
+  OAuthHint,
+  AuthTypeWrap,
+  AuthTypeTriggerBtn,
+  AuthTypeTriggerLabel,
+  AuthTypeChevron,
+  AuthTypeMenu,
+  AuthTypeOption,
+  AuthTypeOptLabel,
+} from './authStyles';
+import {
+  InheritAuthFields,
+  DigestAuthFields,
+  SigV4AuthFields,
+  JwtAuthFields,
+  HawkAuthFields,
+  JwtAlgorithmDropdown,
+  HawkAlgorithmDropdown,
+} from './AuthSchemeFields';
 
 interface RequestPaneProps {
   request: RequestState;
@@ -479,88 +502,7 @@ const AuthPanelWrapper = styled.div`
   padding: 12px;
 `;
 
-const FieldLabel = styled.label`
-  display: block;
-  font-size: 11px;
-  color: ${({ theme }) => theme.muted};
-  margin-bottom: 4px;
-`;
-
-const AuthFieldsContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-`;
-
-const AuthInput = styled(VariableTextInput)`
-  width: 100%;
-  background: ${({ theme }) => theme.inputBg};
-  border: 1px solid ${({ theme }) => theme.border};
-  color: ${({ theme }) => theme.fg};
-  border-radius: ${({ theme }) => theme.radius};
-  font-size: 12px;
-  font-family: monospace;
-  outline: none;
-  display: flex;
-  align-items: stretch;
-  transition: border-color .15s;
-
-  &:focus-within {
-    border-color: ${({ theme }) => theme.accent};
-    background: ${({ theme }) => theme.inputBg};
-    color: ${({ theme }) => theme.fg};
-  }
-
-  .variable-text-display,
-  .variable-text-input {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-    padding: 7px 10px;
-    width: 100%;
-    font-size: 12px;
-    font-family: monospace;
-    color: ${({ theme }) => theme.fg};
-    min-width: 0;
-    flex: 1;
-  }
-
-  .variable-text-display:hover {
-    border: none !important;
-    background: transparent !important;
-  }
-
-  .variable-text-input:focus {
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-`;
-
-const RelativeWrap = styled.div`
-  position: relative;
-`;
-
-const PasswordToggleBtn = styled.button`
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: ${({ theme }) => theme.muted};
-  padding: 2px;
-  line-height: 1;
-`;
-
 /* ─── OAuth 2.0 ─────────────────────────────────── */
-
-const OAuthHint = styled.p`
-  margin: 0 0 10px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: ${({ theme }) => theme.muted};
-`;
 
 const OAuthStatus = styled.div<{ $state?: 'success' | 'error' }>`
   margin-top: 10px;
@@ -642,91 +584,6 @@ const OAuthResetBtn = styled.button`
 `;
 
 /* ─── Auth Type Dropdown ─────────────────────────── */
-
-const AuthTypeWrap = styled.div`
-  position: relative;
-  width: 100%;
-  margin-bottom: 12px;
-`;
-
-const AuthTypeTriggerBtn = styled.button`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 6px 10px;
-  height: auto;
-  background: ${({ theme }) => theme.surface2};
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: ${({ theme }) => theme.radius};
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  color: ${({ theme }) => theme.fg};
-  transition: border-color .15s, background .15s;
-  outline: none;
-  text-align: left;
-
-  &:hover {
-    background: ${({ theme }) => theme.hover};
-    border-color: ${({ theme }) => theme.accent};
-  }
-`;
-
-const AuthTypeTriggerLabel = styled.span`
-  flex: 1;
-`;
-
-const AuthTypeChevron = styled.svg<{ $open?: boolean }>`
-  fill: ${({ theme }) => theme.muted};
-  transition: transform .18s;
-  flex-shrink: 0;
-  margin-left: 6px;
-  transform: ${({ $open }) => ($open ? 'rotate(180deg)' : 'rotate(0)')};
-`;
-
-const AuthTypeMenu = styled.ul`
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: ${({ theme }) => theme.surface};
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: ${({ theme }) => theme.radius};
-  list-style: none;
-  padding: 4px;
-  z-index: 9999;
-  box-shadow: 0 8px 24px ${({ theme }) => theme.shadowSm};
-  margin: 0;
-`;
-
-const AuthTypeOption = styled.li<{ $selected?: boolean; $highlighted?: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  user-select: none;
-  transition: background .1s;
-  color: ${({ $selected, theme }) => ($selected ? theme.accent : theme.fg)};
-  font-weight: ${({ $selected }) => ($selected ? 600 : 400)};
-  background: ${({ $selected, $highlighted, theme }) =>
-    $selected
-      ? `color-mix(in srgb, ${theme.accent} 12%, transparent)`
-      : $highlighted
-        ? theme.hover
-        : 'transparent'};
-
-  &:hover {
-    background: ${({ theme }) => theme.hover};
-  }
-`;
-
-const AuthTypeOptLabel = styled.span`
-  flex: 1;
-`;
 
 /* ─── Add-To Dropdown ────────────────────────────── */
 
@@ -818,9 +675,14 @@ const AddToOptLabel = styled.span`
 
 const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
   { value: 'none', label: 'None' },
+  { value: 'inherit', label: 'Inherit from Collection' },
   { value: 'bearer', label: 'Bearer Token' },
   { value: 'basic', label: 'Basic Auth' },
   { value: 'apikey', label: 'API Key' },
+  { value: 'digest', label: 'Digest Auth' },
+  { value: 'awssigv4', label: 'AWS Signature v4' },
+  { value: 'jwt', label: 'JWT Bearer' },
+  { value: 'hawk', label: 'Hawk Auth' },
   { value: 'oauth2', label: 'OAuth 2.0' },
 ];
 
@@ -1669,6 +1531,24 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, 
           <FieldLabel style={{ marginTop: 8 }}>Add To</FieldLabel>
           <AddToDropdown value={authData.addTo || 'header'} onChange={(v) => onAuthDataChange({ addTo: v })} />
         </AuthFieldsContainer>
+      )}
+
+      {authType === 'inherit' && <InheritAuthFields onAuthDataChange={onAuthDataChange} />}
+
+      {authType === 'digest' && (
+        <DigestAuthFields authData={authData} environment={environment} onAuthDataChange={onAuthDataChange} />
+      )}
+
+      {authType === 'awssigv4' && (
+        <SigV4AuthFields authData={authData} environment={environment} onAuthDataChange={onAuthDataChange} />
+      )}
+
+      {authType === 'jwt' && (
+        <JwtAuthFields authData={authData} environment={environment} onAuthDataChange={onAuthDataChange} />
+      )}
+
+      {authType === 'hawk' && (
+        <HawkAuthFields authData={authData} environment={environment} onAuthDataChange={onAuthDataChange} />
       )}
 
       {authType === 'oauth2' && (

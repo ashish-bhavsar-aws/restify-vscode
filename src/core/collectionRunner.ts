@@ -22,6 +22,7 @@ import {
   resolveRedirectUrl,
 } from "./redirects";
 import { DEFAULT_TIMEOUT_MS, DEFAULT_MAX_REDIRECTS } from "./constants";
+import { applyAuthHeaders, type AuthType, type AuthDataLike } from "./auth";
 import { getCookieHeader, parseSetCookies, storeCookies, StoredCookie } from "./cookies";
 
 /**
@@ -59,6 +60,26 @@ export interface RunnerRequestItem {
     keyValue?: string;
     addTo?: "header" | "query";
     accessToken?: string;
+    digestUsername?: string;
+    digestPassword?: string;
+    awsAccessKey?: string;
+    awsSecretKey?: string;
+    awsSessionToken?: string;
+    awsRegion?: string;
+    awsService?: string;
+    jwtAlgorithm?: string;
+    jwtSecret?: string;
+    jwtPrivateKey?: string;
+    jwtKeyId?: string;
+    jwtIssuer?: string;
+    jwtSubject?: string;
+    jwtAudience?: string;
+    jwtClaims?: string;
+    jwtExpiresIn?: string;
+    jwtHeaderName?: string;
+    hawkId?: string;
+    hawkKey?: string;
+    hawkAlgorithm?: "sha256" | "sha1";
   };
   timeout?: number;
   rejectUnauthorized?: boolean;
@@ -419,36 +440,22 @@ export async function executeRunnerRequest(
     }
   });
 
-  const authData = req.authData || {};
-  if (req.authType === "bearer" && authData.token) {
-    setHeader(headers, "Authorization", `Bearer ${resolve(authData.token)}`);
-  } else if (req.authType === "basic" && authData.username) {
-    const creds = Buffer.from(
-      `${resolve(authData.username)}:${resolve(authData.password || "")}`,
-    ).toString("base64");
-    setHeader(headers, "Authorization", `Basic ${creds}`);
-  } else if (req.authType === "apikey" && authData.keyName) {
-    const keyName = resolve(authData.keyName);
-    const keyValue = resolve(authData.keyValue || "");
-    if (authData.addTo === "query") {
-      try {
-        const parsedUrl = new URL(url);
-        parsedUrl.searchParams.append(keyName, keyValue);
-        url = parsedUrl.toString();
-      } catch {
-        /* leave URL unchanged */
-      }
-    } else {
-      setHeader(headers, keyName, keyValue);
-    }
-  } else if (req.authType === "oauth2" && authData.accessToken) {
-    setHeader(headers, "Authorization", `Bearer ${resolve(authData.accessToken)}`);
-  }
-
   let body: string | Buffer | undefined;
   const serialized = serializeRequestBody(req as CoreRequestForBody, resolve);
   if (serialized.body !== undefined) body = serialized.body;
   applyHeadersToRequest(headers, serialized.headers, serialized.forceHeaders);
+
+  const authType = (req.authType || "none") as AuthType;
+  if (authType !== "digest") {
+    const applied = applyAuthHeaders(headers, authType, (req.authData || {}) as AuthDataLike, {
+      resolve,
+      method,
+      url,
+      body,
+      headers,
+    });
+    if (applied.url) url = applied.url;
+  }
 
   if (!hasHeader(headers, "Accept-Encoding")) {
     setHeader(headers, "Accept-Encoding", "gzip, deflate, br");

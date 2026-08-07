@@ -793,7 +793,7 @@ export const Sidebar: React.FC = () => {
         <CollectionsPanel collections={collections} search={search}
           expansionStates={expansionStates} onSearch={setSearch}
           onToggle={handleToggleCollection}
-          onLoad={(req, collectionName) => post({ command: 'loadRequest', data: req, collectionName })}
+          onLoad={(req, collectionName, collectionId) => post({ command: 'loadRequest', data: { ...req, _collectionId: collectionId }, collectionName })}
           onNewCollection={(name) => post({ command: 'saveCollection', data: { name, requests: [] } })}
           onDeleteCollection={(id) => post({ command: 'deleteCollection', id })}
           onDeleteRequest={(cid, rid) => post({ command: 'deleteCollectionRequest', collectionId: cid, requestId: rid })}
@@ -940,7 +940,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
 /* ─── Collections ────────────────────────────────────────── */
 interface CollectionsPanelProps {
   collections: Collection[]; search: string; expansionStates: Record<string,boolean>;
-  onSearch(q: string): void; onToggle(id: string, open: boolean): void; onLoad(req: CollectionRequest, collectionName: string): void;
+  onSearch(q: string): void; onToggle(id: string, open: boolean): void; onLoad(req: CollectionRequest, collectionName: string, collectionId?: string): void;
   onNewCollection(name: string): void; onDeleteCollection(id: string): void; onDeleteRequest(cid: string, rid: string): void;
   onCopyRequest(collectionId: string, requestId: string): void;
   onMoveRequest(requestId: string, fromCollectionId: string, toCollectionId: string): void;
@@ -1329,7 +1329,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                       editingRequest={editingGroupRequest}
                       dragRef={dragRef}
                       onToggle={onToggle}
-                      onLoad={req => onLoad(req, col.name)}
+                      onLoad={req => onLoad(req, col.name, col.id)}
                       onDeleteRequest={(gid, rid) => onDeleteGroupRequest(col.id, gid, rid)}
                       onCopyRequest={rid => onCopyRequest(col.id, rid)}
                       onStartRenameRequest={(gid, rid) => setEditingGroupRequest({ groupId: gid, requestId: rid })}
@@ -1362,8 +1362,8 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                   )}
                   {filteredTopReqs.map((req) => (
                     <SubItem key={req.id} tabIndex={0} draggable data-testid="collection-request"
-                      onClick={() => onLoad(req, col.name)}
-                      onKeyDown={e => { if (e.key === 'Enter') onLoad(req, col.name); }}
+                      onClick={() => onLoad(req, col.name, col.id)}
+                      onKeyDown={e => { if (e.key === 'Enter') onLoad(req, col.name, col.id); }}
                       onDragStart={e => { dragRef.current = { requestId: req.id!, fromCollectionId: col.id, fromGroupId: null }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).setAttribute('data-dragging', ''); }}
                       onDragEnd={e => { (e.currentTarget as HTMLElement).removeAttribute('data-dragging'); }}>
                       <DragHandle><Icon icon={faGripVertical} size={11} /></DragHandle>

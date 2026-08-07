@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { resolveDynamicVariables } from "../core";
-import type { OAuth2Token } from "../core";
+import type { OAuth2Token, AuthType, AuthDataLike } from "../core";
 
 export interface EnvVariable {
   key: string;
@@ -45,6 +45,11 @@ export interface Collection {
   name: string;
   requests?: any[];
   groups?: CollectionGroup[];
+  /** F12: collection-level auth inherited by requests with authType "inherit". */
+  auth?: {
+    authType?: AuthType;
+    authData?: AuthDataLike;
+  };
 }
 
 export interface CertEntry {

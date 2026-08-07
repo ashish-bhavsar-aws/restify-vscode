@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { VariableDisplay } from './VariableDisplay';
 
-interface VariableTextInputProps {
+export interface VariableTextInputProps {
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;

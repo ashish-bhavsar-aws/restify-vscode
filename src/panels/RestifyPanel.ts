@@ -36,11 +36,17 @@ import {
   decryptSoapMessage,
   looksEncrypted,
   resolveSoapSecurity,
+  applyAuthHeaders,
+  buildDigestAuthorization,
+  resolveAuthForRequest,
+  getHeader,
   buildRequestResult,
   type CoreRequestForBody,
   type OAuth2Config,
   type ResolvedSoapSecurity,
   type RequestResult,
+  type AuthType,
+  type CollectionAuthLike,
 } from "../core";
 import {
   parsePostmanEnvironment,
@@ -102,7 +108,17 @@ interface RequestData {
   rejectUnauthorized?: boolean;
   preScript?: string;
   script?: string; // Post-response script for variable extraction
-  authType?: "none" | "bearer" | "basic" | "apikey" | "oauth2";
+  authType?:
+    | "none"
+    | "bearer"
+    | "basic"
+    | "apikey"
+    | "oauth2"
+    | "digest"
+    | "awssigv4"
+    | "jwt"
+    | "hawk"
+    | "inherit";
   authData?: {
     token?: string;
     username?: string;
@@ -127,7 +143,28 @@ interface RequestData {
     tokenExpiresAt?: number;
     tokenType?: string;
     tokenScope?: string;
+    digestUsername?: string;
+    digestPassword?: string;
+    awsAccessKey?: string;
+    awsSecretKey?: string;
+    awsSessionToken?: string;
+    awsRegion?: string;
+    awsService?: string;
+    jwtAlgorithm?: "HS256" | "HS384" | "HS512" | "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512";
+    jwtSecret?: string;
+    jwtPrivateKey?: string;
+    jwtKeyId?: string;
+    jwtIssuer?: string;
+    jwtSubject?: string;
+    jwtAudience?: string;
+    jwtClaims?: string;
+    jwtExpiresIn?: string;
+    jwtHeaderName?: string;
+    hawkId?: string;
+    hawkKey?: string;
+    hawkAlgorithm?: "sha256" | "sha1";
   };
+  _collectionId?: string;
   gqlQuery?: string;
   gqlVars?: string;
   followRedirects?: boolean;
@@ -437,6 +474,11 @@ export class RestifyPanel {
     if (controller && !controller.signal.aborted) {
       controller.abort();
     }
+  }
+
+  private _resolveCollectionAuth(collectionId?: string): CollectionAuthLike | undefined {
+    if (!collectionId) return undefined;
+    return this.storageManager.getCollections().find((c) => String(c.id) === String(collectionId))?.auth;
   }
 
   private async _handleGetOAuthToken(config: OAuth2Config): Promise<void> {
@@ -971,6 +1013,27 @@ export class RestifyPanel {
 
     const settings = this.storageManager.getSettings();
     applyDefaultHeaders(headers, settings.defaultHeaders, this.extensionVersion, undefined, resolveVars);
+
+    // Apply auth host-side (F12); digest's header is computed after a 401 round-trip.
+    let authTypeToApply = (requestData.authType || "none") as AuthType;
+    let authDataToApply = requestData.authData || {};
+    if (authTypeToApply === "inherit") {
+      const resolved = resolveAuthForRequest("inherit", {}, this._resolveCollectionAuth(requestData._collectionId));
+      authTypeToApply = resolved.authType;
+      authDataToApply = resolved.authData;
+    }
+    let digestCreds: { username: string; password: string } | null = null;
+    if (authTypeToApply === "digest") {
+      digestCreds = {
+        username: resolveVars(authDataToApply.digestUsername || ""),
+        password: resolveVars(authDataToApply.digestPassword || ""),
+      };
+    } else {
+      const applied = applyAuthHeaders(headers, authTypeToApply, authDataToApply, {
+        resolve: resolveVars, method, url: finalUrl, body, headers,
+      });
+      if (applied.url) finalUrl = applied.url;
+    }
     let proxyOpts: { proxy: string; auth?: string } | null = null;
 
     if (settings.proxy) {
@@ -1068,14 +1131,36 @@ export class RestifyPanel {
           signal: controller.signal,
         },
       );
+
+      // HTTP Digest (RFC 7616): first attempt gets a 401 challenge, then we
+      // compute the Authorization header and retry once.
+      let finalResult = result;
+      if (digestCreds && result.status === 401) {
+        const challenge = getHeader(result.headers, "www-authenticate");
+        if (challenge && /^\s*digest\b/i.test(challenge)) {
+          try {
+            const authValue = buildDigestAuthorization(challenge, { method, url: finalUrl, body }, digestCreds);
+            setHeader(headers, "Authorization", authValue);
+            finalResult = await this._doRequest(method, finalUrl, headers, body, verifySsl, proxyOpts, {
+              followRedirects: req.followRedirects !== false,
+              maxRedirects: DEFAULT_MAX_REDIRECTS,
+              timeout: timeoutMs,
+              signal: controller.signal,
+            });
+            this.activityProvider?.append("Digest auth", "Retried the request with the digest challenge response.", "info");
+          } catch (digestErr) {
+            this.activityProvider?.append("Digest auth failed", digestErr instanceof Error ? digestErr.message : String(digestErr), "error");
+          }
+        }
+      }
       try {
         this.panel.webview.postMessage({
           command: "debugLog",
           data: {
             stage: "receivedResponse",
             info: {
-              status: result.status,
-              size: result.bodySize || Buffer.byteLength(result.body || "", "utf8"),
+            status: finalResult.status,
+            size: finalResult.bodySize || Buffer.byteLength(finalResult.body || "", "utf8"),
             },
           },
         });
@@ -1088,16 +1173,16 @@ export class RestifyPanel {
       // WS-Security: decrypt an encrypted SOAP response when a matching
       // settings entry provides a private key. Without valid decryption
       // material the encrypted body is shown as-is.
-      let responseBody = result.body;
+      let responseBody = finalResult.body;
       let decrypted = false;
       if (
         resolvedWs?.decrypt &&
         resolvedWs?.privateKeyPem &&
-        typeof result.body === "string"
+        typeof finalResult.body === "string"
       ) {
         try {
-          if (looksEncrypted(result.body)) {
-            const plain = decryptSoapMessage(result.body, resolvedWs.privateKeyPem);
+          if (looksEncrypted(finalResult.body)) {
+            const plain = decryptSoapMessage(finalResult.body, resolvedWs.privateKeyPem);
             if (plain) {
               responseBody = plain;
               decrypted = true;
@@ -1113,8 +1198,8 @@ export class RestifyPanel {
       }
       if (
         !decrypted &&
-        typeof result.body === "string" &&
-        looksEncrypted(result.body)
+        typeof finalResult.body === "string" &&
+        looksEncrypted(finalResult.body)
       ) {
         this.activityProvider?.append(
           "Encrypted response",
@@ -1123,18 +1208,18 @@ export class RestifyPanel {
         );
       }
       const responseData = {
-        status: result.status,
-        statusText: result.statusText,
-        headers: result.headers,
+        status: finalResult.status,
+        statusText: finalResult.statusText,
+        headers: finalResult.headers,
         body: responseBody,
         duration,
-        size: result.bodySize || Buffer.byteLength(String(responseBody || ""), "utf8"),
-        isFileResponse: result.isFileResponse,
-        fileDetectionSource: result.fileDetectionSource,
-        fileName: result.fileName,
-        fileMimeType: result.fileMimeType,
-        fileBase64: result.fileBase64,
-        filePreviewType: result.filePreviewType,
+        size: finalResult.bodySize || Buffer.byteLength(String(responseBody || ""), "utf8"),
+        isFileResponse: finalResult.isFileResponse,
+        fileDetectionSource: finalResult.fileDetectionSource,
+        fileName: finalResult.fileName,
+        fileMimeType: finalResult.fileMimeType,
+        fileBase64: finalResult.fileBase64,
+        filePreviewType: finalResult.filePreviewType,
       };
 
       // Detect mTLS usage
@@ -1272,7 +1357,7 @@ export class RestifyPanel {
           method,
           url: finalUrl,
           name: this._historyName(historyReq, method, finalUrl),
-          status: result.status,
+          status: finalResult.status,
           duration,
           request: historyReq,
           response: responseData,
@@ -1289,22 +1374,22 @@ export class RestifyPanel {
         [
           `Method: ${method}`,
           `URL: ${finalUrl}`,
-          `Status: ${result.status} ${result.statusText || "OK"}`,
+          `Status: ${finalResult.status} ${finalResult.statusText || "OK"}`,
           `Duration: ${duration}ms`,
           `Network: ${timings.network ?? 0}ms`,
           `Size: ${this._formatBytes(responseData.size)}`,
-          `Content-Type: ${getHeaderValue(result.headers, "content-type") || "unknown"}`,
+          `Content-Type: ${getHeaderValue(finalResult.headers, "content-type") || "unknown"}`,
           `Proxy: ${proxyOpts ? this._redactProxyUrl(proxyOpts.proxy) : "not used"}`,
           `mTLS: ${mtlsCerts ? `enabled for ${parsedUrl.hostname}` : "not used"}`,
         ].join("\n"),
-        result.status >= 400 ? "warning" : "info",
+        finalResult.status >= 400 ? "warning" : "info",
       );
 
       // Log timings for diagnostics
       // eslint-disable-next-line no-console
       console.log("Restify: request timings", {
         url: finalUrl,
-        status: result.status,
+        status: finalResult.status,
         timings,
       });
     } catch (err: any) {

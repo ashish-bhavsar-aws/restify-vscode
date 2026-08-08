@@ -158,6 +158,8 @@ export interface Collection {
   name: string;
   requests?: any[];
   groups?: CollectionGroup[];
+  /** F42: collection-level variables inherited by every request in the collection. */
+  variables?: KVItem[];
 }
 
 export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];

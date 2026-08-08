@@ -3,6 +3,11 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { resolveDynamicVariables } from "../core";
+import {
+  mergeVariableScopes,
+  applyVariableMap,
+  type ScopedVariables,
+} from "../core/variableScope";
 import type { OAuth2Token, AuthType, AuthDataLike } from "../core";
 import type { HeaderPreset } from "../core/headerPresets";
 
@@ -51,6 +56,8 @@ export interface Collection {
     authType?: AuthType;
     authData?: AuthDataLike;
   };
+  /** F42: collection-level variables inherited by every request in the collection. */
+  variables?: EnvVariable[];
 }
 
 export interface CertEntry {
@@ -1043,35 +1050,72 @@ export class StorageManager {
   }
 
   // ─── Variable resolution ──────────────────────────────────
-  resolveVariables(text: string, sessionId?: string): string {
-    let resolved = text;
-    const activeEnv = this.getActiveEnvironment();
-    if (activeEnv && activeEnv.variables) {
-      for (const v of activeEnv.variables) {
-        if (!v.key) continue;
-        const value = v.isSecret
-          ? (this.secretCache.get(this._secretKey(activeEnv.id, v.key)) ?? "")
-          : v.value;
-        resolved = resolved.replace(
-          new RegExp(`\\{\\{${v.key}\\}\\}`, "g"),
-          value,
-        );
-      }
+  /**
+   * Resolve `{{var}}` tokens with F42 scope precedence (lowest → highest):
+   * global env → collection vars → active environment → session/script vars.
+   * Pass `collectionId` when resolving for a request that belongs to a
+   * collection so its variables apply.
+   */
+  resolveVariables(text: string, sessionId?: string, collectionId?: string): string {
+    const scopes: ScopedVariables[] = [];
+    const globalEnv = this.getGlobalEnvironment();
+    if (globalEnv) {
+      scopes.push({ name: "global", values: this._envValueMap(globalEnv) });
     }
-    resolved = resolveDynamicVariables(resolved);
+    const colVars = this.getCollectionVariables(collectionId);
+    if (colVars.length > 0) {
+      scopes.push({ name: "collection", values: this._plainValueMap(colVars) });
+    }
+    const activeEnv = this.getActiveEnvironment();
+    if (activeEnv) {
+      scopes.push({ name: "environment", values: this._envValueMap(activeEnv) });
+    }
     if (sessionId) {
       const chainVars = this.sessionChainVars.get(sessionId);
       if (chainVars) {
-        for (const [key, value] of Object.entries(chainVars)) {
-          if (!key) continue;
-          resolved = resolved.replace(
-            new RegExp(`\\{\\{${key}\\}\\}`, "g"),
-            value,
-          );
-        }
+        scopes.push({ name: "local", values: chainVars });
       }
     }
+    let resolved = applyVariableMap(text, mergeVariableScopes(scopes));
+    resolved = resolveDynamicVariables(resolved);
     return resolved;
+  }
+
+  /** The built-in Global environment (always present, lowest scope priority). */
+  getGlobalEnvironment(): Environment | null {
+    return (
+      this.getEnvironments().find((e) => e.id === this.DEFAULT_GLOBAL_ENV_ID) ||
+      null
+    );
+  }
+
+  /** Variables defined on a collection (inherited by its requests). */
+  getCollectionVariables(collectionId?: string): EnvVariable[] {
+    if (!collectionId) return [];
+    const col = this.getCollections().find(
+      (c) => String(c.id) === String(collectionId),
+    );
+    return col?.variables ?? [];
+  }
+
+  private _envValueMap(env: Environment): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const v of env.variables || []) {
+      if (!v.key) continue;
+      map[v.key] = v.isSecret
+        ? (this.secretCache.get(this._secretKey(env.id, v.key)) ?? "")
+        : v.value;
+    }
+    return map;
+  }
+
+  private _plainValueMap(vars: EnvVariable[]): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const v of vars || []) {
+      if (!v.key) continue;
+      map[v.key] = v.value;
+    }
+    return map;
   }
 
   // ─── Request chaining (per-window session) ────────────────
@@ -1099,16 +1143,18 @@ export class StorageManager {
   /**
    * Return a resolved name → value map of the active environment's variables,
    * including secret values from the secret cache (never persisted to state).
+   * Global-environment variables are included as the lowest-priority fallback
+   * (F42): an active environment's values override globals with the same key.
    */
   getActiveEnvironmentVariables(): Record<string, string> {
-    const activeEnv = this.getActiveEnvironment();
     const result: Record<string, string> = {};
-    if (!activeEnv) return result;
-    for (const v of activeEnv.variables || []) {
-      if (!v.key) continue;
-      result[v.key] = v.isSecret
-        ? (this.secretCache.get(this._secretKey(activeEnv.id, v.key)) ?? "")
-        : v.value;
+    const globalEnv = this.getGlobalEnvironment();
+    if (globalEnv) {
+      Object.assign(result, this._envValueMap(globalEnv));
+    }
+    const activeEnv = this.getActiveEnvironment();
+    if (activeEnv) {
+      Object.assign(result, this._envValueMap(activeEnv));
     }
     return result;
   }

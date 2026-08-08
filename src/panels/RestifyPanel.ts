@@ -863,7 +863,7 @@ export class RestifyPanel {
     const startTime = Date.now();
     const timings: any = { start: startTime };
     const resolveVars = (s: string | undefined) =>
-      this.storageManager.resolveVariables(s || "", this.sessionId);
+      this.storageManager.resolveVariables(s || "", this.sessionId, req._collectionId);
 
     const executionReq: RequestData = {
       ...req,
@@ -950,7 +950,7 @@ export class RestifyPanel {
     let body: string | Buffer | undefined = undefined;
     const serialized = serializeRequestBody(
       requestData as CoreRequestForBody,
-      (s) => this.storageManager.resolveVariables(s || "", this.sessionId),
+      resolveVars,
     );
     if (serialized.body !== undefined) {
       body = serialized.body;
@@ -965,7 +965,7 @@ export class RestifyPanel {
         rawUrl,
         this.storageManager.getSettings().soapSecurity || [],
         (path) => fs.readFileSync(path),
-        (s) => this.storageManager.resolveVariables(s || "", this.sessionId),
+        resolveVars,
       );
     } catch (wsseLoadErr) {
       this.activityProvider?.append(

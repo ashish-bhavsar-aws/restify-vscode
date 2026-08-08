@@ -495,9 +495,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     let cookies = this.storageManager.getCookies();
     try {
+      const colVars = this.storageManager
+        .getCollectionVariables(collectionId)
+        .reduce(
+          (m, v) => {
+            if (v.key) m[v.key] = v.value;
+            return m;
+          },
+          {} as Record<string, string>,
+        );
       const results = await runCollectionRequests({
         requests,
-        variables: this.storageManager.getActiveEnvironmentVariables(),
+        variables: {
+          ...colVars,
+          ...this.storageManager.getActiveEnvironmentVariables(),
+        },
         signal: controller.signal,
         cookies,
         iterationData,

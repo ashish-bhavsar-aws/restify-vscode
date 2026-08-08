@@ -22,6 +22,7 @@ export * from "./soapSecurity";
 export * from "./schemaValidation";
 export * from "./jsonPath";
 export * from "./url";
+export * from "./variableScope";
 export * from "./wsdl";
 export * from "./wsse";
 export * from "./websocket";

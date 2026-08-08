@@ -5,7 +5,7 @@ import {
   faMagnifyingGlass, faFloppyDisk, faTrash, faPen,
   faFileExport, faFileImport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
-  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark, faStar,
+  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark, faStar, faListUl,
 } from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
   id: string; method: string; url: string; status: number;
@@ -13,7 +13,8 @@ interface HistoryEntry {
 }
 interface CollectionRequest { id?: string; method: string; url: string; name?: string; }
 interface CollectionGroup { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
-interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
+interface CollectionVar { key: string; value: string; }
+interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; variables?: CollectionVar[]; }
 type SidebarType = 'history' | 'collections' | 'environments';
 interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; }
 interface RunEntry {
@@ -819,7 +820,11 @@ export const Sidebar: React.FC = () => {
           triggerNew={triggerNewCollection}
           onTriggerNewDone={() => setTriggerNewCollection(false)}
           onRunCollection={(id) => { post({ command: 'runCollection', collectionId: id }); setRunState(null); }}
-          onRunGroup={(id, gid) => { post({ command: 'runCollection', collectionId: id, groupId: gid }); setRunState(null); }} />
+          onRunGroup={(id, gid) => { post({ command: 'runCollection', collectionId: id, groupId: gid }); setRunState(null); }}
+          onSaveCollectionVariables={(id, variables) => {
+            const col = collections.find((c) => c.id === id);
+            if (col) post({ command: 'saveCollection', data: { ...col, variables: variables.filter(v => v.key.trim()) } });
+          }} />
       )}
       <RunnerResultsModal runState={runState}
         onCancel={() => post({ command: 'cancelCollectionRun' })}
@@ -957,6 +962,7 @@ interface CollectionsPanelProps {
   onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null, fromCollectionId?: string): void;
   onRunCollection(collectionId: string): void;
   onRunGroup(collectionId: string, groupId: string): void;
+  onSaveCollectionVariables(collectionId: string, variables: CollectionVar[]): void;
   triggerNew?: boolean;
   onTriggerNewDone?(): void;
 }
@@ -1187,7 +1193,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   onCopyRequest, onMoveRequest: _onMoveRequest, onReorderRequest: _onReorderRequest,   onRenameCollection, onRenameRequest,
   onExportAllCollections, onExportCollection, onImport,
   onSaveGroup, onDeleteGroup, onRenameGroup, onDeleteGroupRequest, onMoveRequestToGroup,
-  onRunCollection, onRunGroup, triggerNew, onTriggerNewDone
+  onRunCollection, onRunGroup, onSaveCollectionVariables, triggerNew, onTriggerNewDone
 }) => {
   const [showNew, setShowNew] = useState(false);
   useEffect(() => { if (triggerNew) { setShowNew(true); onTriggerNewDone?.(); } }, [triggerNew, onTriggerNewDone]);
@@ -1197,6 +1203,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   const [editingGroupRequest, setEditingGroupRequest] = useState<{ groupId: string; requestId: string } | null>(null);
   const [showNewGroupFor, setShowNewGroupFor] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
+  const [editingVarsFor, setEditingVarsFor] = useState<{ id: string; name: string; variables: CollectionVar[] } | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [topLevelDropTarget, setTopLevelDropTarget] = useState<string | null>(null);
 
@@ -1290,6 +1297,10 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                     <Icon icon={faFolderPlus} size={12} />
                   </AddGroupBtn>
                   <RenameColBtn title="Rename" onClick={e => { e.stopPropagation(); setEditingCollection({ id: col.id, name: col.name }); }}><Icon icon={faPen} size={12} /></RenameColBtn>
+                  <IconButton title="Variables" data-testid="collection-vars-btn"
+                    onClick={e => { e.stopPropagation(); setEditingVarsFor({ id: col.id, name: col.name, variables: (col.variables || []).map(v => ({ key: v.key, value: v.value })) }); }}>
+                    <Icon icon={faListUl} size={12} />
+                  </IconButton>
                   <IconButton title="Export collection" onClick={e => { e.stopPropagation(); onExportCollection(col.id); }}><Icon icon={faFileExport} size={12} /></IconButton>
                   <IconButton title="Delete" onClick={e => { e.stopPropagation(); onDeleteCollection(col.id); }}><Icon icon={faTrash} size={12} /></IconButton>
                 </CollectionHeader>
@@ -1405,6 +1416,18 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
         </ModalBox>
       </ModalOverlay>
     )}
+    {editingVarsFor && (
+      <CollectionVarsModal
+        title={editingVarsFor.name}
+        variables={editingVarsFor.variables}
+        onChange={(variables) => setEditingVarsFor({ ...editingVarsFor, variables })}
+        onCancel={() => setEditingVarsFor(null)}
+        onSave={(variables) => {
+          onSaveCollectionVariables(editingVarsFor.id, variables);
+          setEditingVarsFor(null);
+        }}
+      />
+    )}
   </>);
 };
 
@@ -1510,6 +1533,85 @@ const statusColor = (s: number | undefined): string => {
   if (s >= 400 && s < 500) return 'var(--orange, #ce9178)';
   if (s >= 500) return 'var(--red, #f14c4c)';
   return 'var(--muted)';
+};
+
+/* ─── Collection variables editor (F42) ──────────────────── */
+const VarsModalBox = styled(ModalBox)`
+  max-width: 460px;
+`;
+
+const VarsHint = styled.p`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  margin: 0 0 8px;
+  line-height: 1.4;
+`;
+
+const VarRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+`;
+
+const VarKeyInput = styled(ModalInput)`
+  width: 42%;
+`;
+
+const VarValueInput = styled(ModalInput)`
+  flex: 1;
+`;
+
+const VarRemoveBtn = styled(IconButton)`
+  flex-shrink: 0;
+`;
+
+const AddVarBtn = styled(GhostButton)`
+  margin-top: 4px;
+`;
+
+const CollectionVarsModal: React.FC<{
+  title: string;
+  variables: CollectionVar[];
+  onChange(vars: CollectionVar[]): void;
+  onCancel(): void;
+  onSave(vars: CollectionVar[]): void;
+}> = ({ title, variables, onChange, onCancel, onSave }) => {
+  const update = (index: number, patch: Partial<CollectionVar>) => {
+    const next = variables.map((v, i) => (i === index ? { ...v, ...patch } : v));
+    onChange(next);
+  };
+  const remove = (index: number) => {
+    onChange(variables.filter((_, i) => i !== index));
+  };
+
+  return (
+    <ModalOverlay $open onClick={onCancel}>
+      <VarsModalBox data-testid="collection-vars-modal" onClick={e => e.stopPropagation()}>
+        <h3>Variables · {title}</h3>
+        <VarsHint>
+          These variables are available to every request in this collection as
+          {' '}{'{{key}}'}, below the active environment but above global variables.
+        </VarsHint>
+        {variables.map((v, i) => (
+          <VarRow key={i}>
+            <VarKeyInput data-testid={`vars-key-${i}`} placeholder="key" value={v.key}
+              onChange={e => update(i, { key: e.target.value })} />
+            <VarValueInput data-testid={`vars-value-${i}`} placeholder="value" value={v.value}
+              onChange={e => update(i, { value: e.target.value })} />
+            <VarRemoveBtn title="Remove" onClick={() => remove(i)}><Icon icon={faTrash} size={12} /></VarRemoveBtn>
+          </VarRow>
+        ))}
+        <AddVarBtn data-testid="vars-add-btn" onClick={() => onChange([...variables, { key: '', value: '' }])}>
+          + Add variable
+        </AddVarBtn>
+        <ModalActions>
+          <GhostButton data-testid="vars-cancel-btn" onClick={onCancel}>Cancel</GhostButton>
+          <PrimaryButton data-testid="vars-save-btn" onClick={() => onSave(variables)}>Save</PrimaryButton>
+        </ModalActions>
+      </VarsModalBox>
+    </ModalOverlay>
+  );
 };
 
 const RunnerResultsModal: React.FC<{

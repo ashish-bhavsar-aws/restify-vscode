@@ -827,17 +827,21 @@ export const MainPanel: React.FC = () => {
   const activeEnvironment =
     environments.find((env) => env.id === activeEnvId) || null;
 
-  // Merge the active environment's variables with the window session's chain
-  // variables so `{{token}}` (script-extracted) renders resolved + hoverable.
+  // Merge the active environment's variables with the collection's variables
+  // (F42) and the window session's chain variables so `{{token}}` (script- or
+  // collection-defined) renders resolved + hoverable.
   const displayVariables = React.useMemo(() => {
+    const activeCol = collections.find(
+      (c) => c.id === activeTab.request._collectionId,
+    );
+    const colVars = activeCol?.variables ?? [];
     const envVars = activeEnvironment?.variables ?? [];
     const chainEntries = Object.entries(chainVars).map(([key, value]) => ({
       key,
       value,
     }));
-    if (chainEntries.length === 0) return envVars;
-    return [...envVars, ...chainEntries];
-  }, [activeEnvironment, chainVars]);
+    return [...colVars, ...envVars, ...chainEntries];
+  }, [collections, activeTab.request._collectionId, activeEnvironment, chainVars]);
 
   const displayEnvironment = React.useMemo(
     () =>
@@ -852,6 +856,10 @@ export const MainPanel: React.FC = () => {
     const allVarKeys = new Set(
       (activeEnvironment?.variables ?? []).map((v) => v.key),
     );
+    const activeCol = collections.find(
+      (c) => c.id === activeTab.request._collectionId,
+    );
+    (activeCol?.variables ?? []).forEach((v) => allVarKeys.add(v.key));
     Object.keys(chainVars).forEach((k) => allVarKeys.add(k));
     const searchText = [
       activeTab.request.url,
@@ -876,6 +884,8 @@ export const MainPanel: React.FC = () => {
     activeTab.request.body,
     activeTab.request.headers,
     activeTab.request.queryParams,
+    activeTab.request._collectionId,
+    collections,
     activeEnvironment,
     chainVars,
   ]);

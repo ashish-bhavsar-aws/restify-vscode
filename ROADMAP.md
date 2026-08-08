@@ -110,7 +110,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F56 | **Undo/redo in body editor** | ⚪ P3 | CodeMirror history is present; ensure it's surfaced with shortcuts. |
 | F57 | **History search & pins** | 🟡 P2 | Persist search query, pin favorites, fuzzy search across history. |
 | F58 | **Screenshots/theme polish** | 🟡 P2 | Icon themes, method color on request rows, empty-state CTAs. |
-| F59 | **VS Code discoverability / marketplace metadata** | 🟡 P2 | Improve extension keywords, tags, descriptions, and category metadata so Restify is easier to find in the VS Code marketplace and command palette. |
+| F59 | **VS Code discoverability / marketplace metadata** | 🟡 P2 | ✅ Improve extension keywords, tags, descriptions, and category metadata so Restify is easier to find in the VS Code marketplace and command palette. *(done — keyword-rich `description` (OAuth 2.0/JWT/SigV4, JSON Schema, JSONPath, SOAP/WSDL, collections, environments, scripts, codegen), 31 searchable `keywords`, valid marketplace `categories` (Testing + Other — replaced invalid "REST Client"), `galleryBanner`, `homepage`, `bugs`, `qna`, and a rewritten `.vscodeignore` so the published package is lean (117 files vs ~3,800) — verified with `vsce package`)* |
 | F60 | **Code size and maintainability guardrails** | 🟠 P1 | ✅ Keep the extension maintainable by enforcing file-size limits, component boundaries, shared utilities, and a clear rule for when to extract logic into core modules. *(done — `scripts/check-guardrails.mjs` + `npm run guardrails`; rules in `GUARDRAILS.md`)* |
 
 ---
@@ -227,7 +227,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F23 **JSONPath/XPath query** in response viewer. *(done — JSONPath query mode in the response search bar: subset evaluator + filters in `src/core/jsonPath.ts`, matches highlighted in the CodeMirror viewer and listed as `path → value`; 15 unit tests + E2E in `jsonpath.spec.ts`)*
 - [x] F25 **Save response to file**; F30 **completion notifications**.
 - [x] F57 **History pins + fuzzy search**; [x] F54 **palette commands**. *(F54 done: `Restify: Send Request`, `Search in Collections`, `New from cURL`, New Request/Collection, Import Collection, Export All, Open Environments all registered and working in `src/extension.ts`; F57 done: fuzzy search on name/URL + pinned history entries (`pinned` flag on `HistoryEntry`, `StorageManager.toggleHistoryPin`, star toggle in `HistoryPanel` with pinned-first sorting); E2E in `feature6.spec.ts`)*
-- [ ] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
+- [x] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [ ] F46 **WebSocket client** (read-only connection viewer first).
 - [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
 - [x] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included)*

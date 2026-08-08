@@ -1,12 +1,39 @@
 # Exclude source
 src/**
 
-# Exclude dev stuff
+# Exclude dependencies (bundled into dist/ by webpack)
 node_modules/**
 !node_modules/your-runtime-deps/**
-output.zip
+
+# Exclude tests and test artifacts
 test/**
+test-results/**
+playwright-report/**
+video/**
+
+# Exclude dev/CI tooling
 .vscode/**
-file.js
+.vscodeignore
+.github/**
+.opencode/**
+.claude/**
+scripts/**
 dev/**
 server/**
+output.zip
+file.js
+
+# Exclude build config and docs not needed at runtime
+tsconfig.json
+vitest.config.ts
+eslint.config.*
+.eslintignore
+.eslintrc.json
+.gitignore
+GUARDRAILS.md
+ROADMAP.md
+UI_IMPRPVE.md
+
+# Exclude logs and sourcemaps (keep the package small)
+**/*.map
+*.log

@@ -1,19 +1,38 @@
 {
   "name": "restify-client",
   "displayName": "Restify — API Client",
-  "description": "A powerful REST API client for Visual Studio Code — send HTTP requests, manage collections and environments, persist cookies, follow redirects, run pre-request scripts, and generate code",
+  "description": "A full-featured REST, SOAP/WSDL, and GraphQL API client for Visual Studio Code. Send and debug HTTP requests, organize collections, manage environments and variables, authenticate with OAuth 2.0 / JWT / Bearer / Basic / AWS SigV4 / Digest / Hawk, validate JSON responses against JSON Schema, query bodies with JSONPath, persist cookies, run pre-request and post-response scripts, follow redirects, and generate code in many languages.",
   "keywords": [
     "api",
     "api client",
     "rest",
     "rest client",
-    "rest-api",
     "http",
     "http client",
+    "soap",
+    "wsdl",
     "graphql",
     "websocket",
-    "client",
+    "json",
+    "jsonpath",
+    "json schema",
+    "openapi",
+    "swagger",
+    "oauth2",
+    "oauth",
+    "jwt",
+    "bearer token",
+    "aws signature",
+    "digest auth",
+    "postman",
+    "insomnia",
+    "thunder client",
+    "collections",
+    "environments",
+    "variables",
     "curl",
+    "codegen",
+    "api testing",
     "testing"
   ],
   "version": "1.0.26",
@@ -23,13 +42,22 @@
     "type": "git",
     "url": "https://github.com/ashish-bhavsar-aws/restify-vscode.git"
   },
+  "homepage": "https://github.com/ashish-bhavsar-aws/restify-vscode",
+  "bugs": {
+    "url": "https://github.com/ashish-bhavsar-aws/restify-vscode/issues"
+  },
+  "qna": "marketplace",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
     "Testing",
-    "REST Client"
+    "Other"
   ],
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
   "main": "./dist/extension.js",
   "icon": "media/icon.png",
   "contributes": {

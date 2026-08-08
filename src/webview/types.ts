@@ -138,6 +138,8 @@ export interface ResponseState {
 export interface EnvVariable extends KVItem {
   timestamp?: number;
   isSecret?: boolean;
+  /** F43: baseline value. `value` is the current value; "reset" copies this into it. */
+  initialValue?: string;
 }
 
 export interface Environment {

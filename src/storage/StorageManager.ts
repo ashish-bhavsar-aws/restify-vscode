@@ -16,6 +16,8 @@ export interface EnvVariable {
   value: string;
   timestamp?: number; // timestamp for script variables
   isSecret?: boolean; // true → value stored in SecretStorage, not globalState
+  /** F43: baseline value. `value` is the *current* value; reset copies this into it. */
+  initialValue?: string;
 }
 
 export interface Environment {
@@ -978,6 +980,16 @@ export class StorageManager {
           if (this.secretStorage) await this.secretStorage.delete(this._secretKey(envId, old.key));
         } catch { /* ignore */ }
         this.secretCache.delete(this._secretKey(envId, old.key));
+      }
+    }
+
+    // F43: establish an initial/baseline value for variables that don't have one
+    // yet (legacy vars, newly-added rows). Secrets keep a single encrypted value.
+    for (const v of cleanVars) {
+      if (v.isSecret) {
+        delete v.initialValue;
+      } else if (v.initialValue === undefined) {
+        v.initialValue = v.value;
       }
     }
 

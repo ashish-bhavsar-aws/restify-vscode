@@ -376,7 +376,7 @@ export class RestifyPanel {
       variables: imported.variables.map((v) => ({
         key: v.key,
         value: v.value,
-        isSecret: v.isSecret,
+        isSecret: v.isSecret, initialValue: v.initialValue,
       })),
     });
     this._sendEnvironments();

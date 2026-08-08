@@ -82,8 +82,8 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
 | F41 | **Secret variables + encrypted storage** | 🟠 P1 | ✅ Masked `{{secret}}` values; store in keychain/`SecretStorage` instead of plaintext (globalState is currently plaintext). *(done — `SecretStorage` + mask/reveal; E2E in `feature5.spec.ts`)* |
-| F42 | **Variable scoping** | 🟡 P2 | global / collection / environment / local scope precedence (currently one active env + a Global env). |
-| F43 | **Initial vs current value** | 🟡 P2 | Postman-style two-column env values, with "reset to initial". |
+| F42 | **Variable scoping** | 🟡 P2 | ✅ global / collection / environment / local scope precedence with single-pass resolution. *(done — `src/core/variableScope.ts` (`mergeVariableScopes` + `applyVariableMap`), `StorageManager.resolveVariables` merges scopes in one pass at precedence global < collection < environment < local (session/script); fixed a bug where script vars could never override env vars of the same name; `resolveCollectionVariables`/`resolveAllVariables` expose scope breakdown; collection variables surfaced in sidebar + main panel; unit tests in `test/unit/variableScope.test.ts` + `test/unit/variableScoping.test.ts`)* |
+| F43 | **Initial vs current value** | 🟡 P2 | ✅ Postman-style two-column env values, with "reset to initial". *(done — `EnvVariable.initialValue` baseline + `value` current; env editor gains **Initial Value** / **Current Value** columns with per-row **Reset** (current←initial) and **Persist** (initial←current) actions; `saveEnvironment` back-fills a baseline for legacy vars; resolution always uses the current value; Restify env import/export + Postman `initial` field preserved; secret variables keep a single encrypted value (no split); unit tests in `test/unit/initialValue.test.ts`)* |
 | F44 | **Environment import/export** | 🟡 P2 | Share env files, incl. Postman env JSON format. |
 | F45 | **Environment switching from sidebar** | ⚪ P3 | Currently only available in the main panel dropdown. |
 

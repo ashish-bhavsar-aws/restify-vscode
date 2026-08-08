@@ -1334,7 +1334,7 @@ function _stripGroups(groups: ImportedCollection["groups"]): any[] {
 export interface ImportedEnvironment {
   id?: string;
   name: string;
-  variables: Array<{ key: string; value: string; isSecret?: boolean }>;
+  variables: Array<{ key: string; value: string; isSecret?: boolean; initialValue?: string }>;
 }
 
 /** Export an environment as Postman environment JSON. */
@@ -1364,6 +1364,10 @@ export function parsePostmanEnvironment(data: any): ImportedEnvironment | null {
         key: String(v.key),
         value: String(v.value ?? ""),
         isSecret: v.type === "secret",
+        initialValue:
+          v.initial !== undefined && v.initial !== null
+            ? String(v.initial)
+            : undefined,
       })),
   };
 }
@@ -1376,6 +1380,7 @@ export function environmentToRestify(env: ImportedEnvironment): any {
       key: v.key,
       value: v.isSecret ? "" : (v.value || ""),
       isSecret: !!v.isSecret,
+      initialValue: v.isSecret ? undefined : (v.initialValue ?? v.value ?? ""),
     })),
   };
 }
@@ -1391,6 +1396,10 @@ export function parseRestifyEnvironment(data: any): ImportedEnvironment | null {
         key: String(v.key),
         value: String(v.value ?? ""),
         isSecret: !!v.isSecret,
+        initialValue:
+          v.initialValue !== undefined && v.initialValue !== null
+            ? String(v.initialValue)
+            : undefined,
       })),
   };
 }

@@ -12,6 +12,8 @@ import {
   faEyeSlash,
   faUpload,
   faDownload,
+  faRotateLeft,
+  faArrowRight,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface EnvManagerModalProps {
@@ -43,7 +45,7 @@ const Modal = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 8px;
   padding: 18px;
-  width: 480px;
+  width: 640px;
   max-height: 70vh;
   display: flex;
   flex-direction: column;
@@ -243,15 +245,20 @@ const IconBtn = styled.button<{ $danger?: boolean }>`
   flex-shrink: 0;
   line-height: 1;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: ${({ theme }) => theme.hover};
     color: ${({ theme }) => theme.fg};
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
 
   ${({ $danger, theme }) =>
     $danger &&
     css`
-      &:hover {
+      &:hover:not(:disabled) {
         color: ${theme.error};
       }
     `}
@@ -291,8 +298,9 @@ const VarsTable = styled.table`
   }
 
   td:last-child {
-    width: 52px;
+    width: 92px;
     text-align: center;
+    white-space: nowrap;
   }
 `;
 
@@ -310,6 +318,10 @@ const VarInput = styled.input`
 
   &:focus {
     border-bottom-color: ${({ theme }) => theme.accent};
+  }
+
+  &:disabled {
+    opacity: 0.45;
   }
 
   &::placeholder {
@@ -390,7 +402,7 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
   const openNew = () =>
     setEditingEnv({ id: '', name: '', variables: [{ key: '', value: '' }] });
 
-  const updateVar = (i: number, field: 'key' | 'value', val: string) => {
+  const updateVar = (i: number, field: 'key' | 'value' | 'initial', val: string) => {
     if (!editingEnv) return;
     const vars = editingEnv.variables.map((v, idx) =>
       idx === i ? { ...v, [field]: val } : v
@@ -403,6 +415,31 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
         return next;
       });
     }
+  };
+
+  // F43: reset copies the baseline (initial) value into the current value.
+  const resetVar = (i: number) => {
+    if (!editingEnv) return;
+    const v = editingEnv.variables[i];
+    if (!v) return;
+    const vars = editingEnv.variables.map((v_, idx) =>
+      idx === i ? { ...v_, value: v_.initialValue ?? v_.value } : v_
+    );
+    setEditingEnv({ ...editingEnv, variables: vars });
+    setRevealedVals((r) => {
+      const next = { ...r };
+      delete next[i];
+      return next;
+    });
+  };
+
+  // F43: persist copies the current value into the baseline (initial) value.
+  const persistVar = (i: number) => {
+    if (!editingEnv) return;
+    const vars = editingEnv.variables.map((v_, idx) =>
+      idx === i ? { ...v_, initialValue: v_.value } : v_
+    );
+    setEditingEnv({ ...editingEnv, variables: vars });
   };
 
   const addVar = () => {
@@ -493,7 +530,8 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                 <thead>
                   <tr>
                     <th>Key</th>
-                    <th>Value</th>
+                    <th>Initial Value</th>
+                    <th>Current Value</th>
                     <th />
                   </tr>
                 </thead>
@@ -503,6 +541,8 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                     const revealedVal = revealedVals[i];
                     const showMasked =
                       isSecret && v.value === '' && revealedVal === undefined;
+                    const initialValue = v.initialValue ?? v.value;
+                    const canReset = !isSecret && initialValue !== v.value;
                     return (
                       <tr key={i}>
                         <td>
@@ -514,9 +554,28 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                           />
                         </td>
                         <td>
+                          {isSecret ? (
+                            <VarInput
+                              disabled
+                              placeholder="••••••••"
+                              value=""
+                              aria-label="Initial value (secrets keep a single value)"
+                            />
+                          ) : (
+                            <VarInput
+                              placeholder="initial"
+                              value={initialValue}
+                              data-testid={`env-var-initial-${i}`}
+                              onChange={(e) =>
+                                updateVar(i, 'initial', e.target.value)
+                              }
+                            />
+                          )}
+                        </td>
+                        <td>
                           <ValueWrap>
                             <VarInput
-                              placeholder={isSecret ? '••••••••' : 'value'}
+                              placeholder={isSecret ? '••••••••' : 'current'}
                               type={isSecret && showMasked ? 'password' : 'text'}
                               value={isSecret ? (revealedVal ?? v.value) : v.value}
                               data-testid="env-var-value"
@@ -544,6 +603,25 @@ export const EnvManagerModal: React.FC<EnvManagerModalProps> = ({
                           </ValueWrap>
                         </td>
                         <td>
+                          {!isSecret && (
+                            <>
+                              <IconBtn
+                                title="Reset current value to initial"
+                                disabled={!canReset}
+                                onClick={() => resetVar(i)}
+                                data-testid={`env-var-reset-${i}`}
+                              >
+                                <Icon icon={faRotateLeft} size={11} />
+                              </IconBtn>
+                              <IconBtn
+                                title="Persist current value as initial"
+                                onClick={() => persistVar(i)}
+                                data-testid={`env-var-persist-${i}`}
+                              >
+                                <Icon icon={faArrowRight} size={11} />
+                              </IconBtn>
+                            </>
+                          )}
                           <IconBtn
                             title={isSecret ? 'Secret variable (stored encrypted)' : 'Mark as secret'}
                             onClick={() => toggleSecret(i)}

@@ -23,3 +23,4 @@ export * from "./jsonPath";
 export * from "./url";
 export * from "./wsdl";
 export * from "./wsse";
+export * from "./websocket";

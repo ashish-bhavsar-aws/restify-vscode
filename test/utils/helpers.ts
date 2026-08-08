@@ -9,8 +9,10 @@ import {
   getVariableInputValue,
   sendRequestViaEnter,
   findMainPanelFrame,
+  findWebSocketPanelFrame,
   clickRestifyIcon,
   dismissOnboarding,
+  runCommand,
   log,
   DIALOG_STUB_FILE,
   type VSCodeApp,
@@ -81,6 +83,33 @@ export async function setupMainPanel(
   // Dismiss any late-appearing onboarding dialogs that block clicks
   await dismissOnboarding(window);
   return frame;
+}
+
+// ─── WebSocket Panel ────────────────────────────────────────────────
+
+export async function openWebSocketPanel(app: VSCodeApp): Promise<Frame> {
+  const { window } = app;
+  await runCommand(window, 'Restify: Open WebSocket Client');
+  await window.waitForTimeout(2000);
+  const frame = await findWebSocketPanelFrame(window);
+  if (!frame) throw new Error('Could not find WebSocket panel frame');
+  return frame;
+}
+
+/** Fill the WS URL input and click Connect, waiting for the connected status. */
+export async function wsConnect(frame: Frame, url: string): Promise<void> {
+  // If a connection is already open, close it first so Connect is visible again.
+  const disconnect = frame.locator('[data-testid="ws-disconnect-btn"]');
+  if ((await disconnect.count()) > 0) {
+    await clickInFrame(frame, '[data-testid="ws-disconnect-btn"]');
+  }
+  await frame.locator('[data-testid="ws-url-input"]').fill(url);
+  await clickInFrame(frame, '[data-testid="ws-connect-btn"]');
+}
+
+/** Click Disconnect (visible only while connected). */
+export async function wsDisconnect(frame: Frame): Promise<void> {
+  await clickInFrame(frame, '[data-testid="ws-disconnect-btn"]');
 }
 
 // ─── HTTP Method ──────────────────────────────────────────────────

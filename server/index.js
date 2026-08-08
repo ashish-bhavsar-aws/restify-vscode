@@ -7,6 +7,7 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+const { WebSocketServer } = require('ws');
 
 const app = express();
 const PORT = 3000;
@@ -1332,7 +1333,7 @@ app.post('/api/soap/encrypted', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const httpServer = app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
@@ -1348,11 +1349,56 @@ app.listen(PORT, () => {
 ║       • POST http://localhost:${PORT}/api/xml-field          ║
 ║       • POST http://localhost:${PORT}/api/mixed-content      ║
 ║       • POST http://localhost:${PORT}/api/file-upload        ║
+║       • WS  ws://localhost:${PORT}/ws/echo                   ║
+║       • WS  ws://localhost:${PORT}/ws/hello                  ║
+║       • WS  ws://localhost:${PORT}/ws/binary                 ║
 ║                                                            ║
 ║       📖 Swagger UI: http://localhost:${PORT}/api-docs       ║
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
   `);
+});
+
+// ─── WebSocket test endpoints (F46) ─────────────────────────
+// /ws/echo   — echoes every frame back (text stays text, binary stays binary)
+// /ws/hello  — sends a fixed text frame on connect, then echoes
+// /ws/binary — sends a fixed binary frame on connect, then echoes
+const wss = new WebSocketServer({ noServer: true });
+const WS_ROUTES = {
+  '/ws/echo': (ws) => {
+    ws.on('message', (data, isBinary) => {
+      ws.send(data, { binary: isBinary });
+    });
+  },
+  '/ws/hello': (ws) => {
+    ws.send('Hello from Restify test server');
+    ws.on('message', (data, isBinary) => {
+      ws.send(data, { binary: isBinary });
+    });
+  },
+  '/ws/binary': (ws) => {
+    ws.send(Buffer.from([0x00, 0x01, 0x02, 0xde, 0xad, 0xbe, 0xef]), { binary: true });
+    ws.on('message', (data, isBinary) => {
+      ws.send(data, { binary: isBinary });
+    });
+  },
+};
+
+httpServer.on('upgrade', (req, socket, head) => {
+  const pathname = req.url ? req.url.split('?')[0] : '';
+  const handler = WS_ROUTES[pathname];
+  if (handler) {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+      handler(ws);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+wss.on('connection', () => {
+  /* handled per-route */
 });
 
 // Self-signed HTTPS listener for SSL-verification feature tests.

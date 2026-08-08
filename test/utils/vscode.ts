@@ -548,6 +548,51 @@ async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | nu
   return null;
 }
 
+async function findWsSelectorInTree(frame: Frame, depth = 0): Promise<Frame | null> {
+  const prefix = '  '.repeat(depth + 1);
+  const selector = '[data-testid="ws-url-input"]';
+
+  const has = await frame.locator(selector).count().catch(() => 0);
+  if (has > 0) {
+    log(`${prefix}✓ Found WebSocket panel frame: ${frame.url().slice(0, 60)}`);
+    return frame;
+  }
+
+  for (const child of frame.childFrames()) {
+    const result = await findWsSelectorInTree(child, depth + 1);
+    if (result) return result;
+  }
+  return null;
+}
+
+/** Find the WebSocket client panel webview frame (newest-first). */
+export async function findWebSocketPanelFrame(
+  page: Page,
+  timeoutMs = 30_000,
+): Promise<Frame | null> {
+  log(`Searching for WebSocket panel frame (timeout=${timeoutMs}ms)...`);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (page.isClosed()) {
+      logError('Page is closed, aborting WebSocket frame search');
+      return null;
+    }
+
+    const allFrames = [...page.frames()].reverse();
+    for (const frame of allFrames) {
+      if (!frame.url().includes('vscode-webview://')) continue;
+      const result = await findWsSelectorInTree(frame);
+      if (result) return result;
+    }
+    log('  No WebSocket panel frame yet, retrying in 1s...');
+    await page.waitForTimeout(1000);
+  }
+
+  logError(`No WebSocket panel frame appeared after ${timeoutMs}ms`);
+  return null;
+}
+
 export async function findSidebarWebviewFrames(page: Page): Promise<Frame[]> {
   log('Searching for sidebar webview frames...');
   const allFrames = page.frames().filter(f => f.url().includes('vscode-webview://'));

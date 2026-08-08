@@ -105,6 +105,12 @@
         "category": "Restify"
       },
       {
+        "command": "restify.openWebSocket",
+        "title": "Open WebSocket Client",
+        "category": "Restify",
+        "icon": "$(remote-explorer)"
+      },
+      {
         "command": "restify.newRequest",
         "title": "New Request",
         "category": "Restify",
@@ -265,6 +271,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/vscode": "^1.80.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.59.3",
     "@typescript-eslint/parser": "^8.59.3",
     "@vscode/webview-ui-toolkit": "^1.2.0",
@@ -303,7 +310,8 @@
     "node-fetch": "^2.6.9",
     "node-forge": "^1.4.0",
     "react-pdf": "^10.4.1",
-    "styled-components": "^6.4.3"
+    "styled-components": "^6.4.3",
+    "ws": "^8.21.3"
   },
   "overrides": {
     "glob": "^8.1.0",

@@ -91,7 +91,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| F46 | **WebSocket client** | 🟡 P2 | Connect, send/receive frames, message log — separate panel or request-body mode. |
+| F46 | **WebSocket client** | 🟡 P2 | ✅ Connect, send/receive frames, message log — separate panel. *(done — `restify.openWebSocket` command opens a dedicated WebSocket panel; socket runs in the extension host via the `ws` package, frames stream to a React webview over postMessage; text/binary send, echo + server-pushed frames, hex rendering for binary, status badge, connection log; env-variable resolution in the URL; unit tests in `test/unit/websocket.test.ts`, E2E in `test/specs/websocket.spec.ts`)* |
 | F47 | **gRPC support** | ⚪ P3 | Import `.proto`, invoke unary/server-streaming calls. |
 | F48 | **HTTP/2 support** | ⚪ P3 | `http2` module for h2 endpoints. |
 | F49 | **Request compression** | ⚪ P3 | Compress request body (gzip/deflate) with `Content-Encoding`. |
@@ -151,7 +151,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F25 — Save response to file ✅
 - F30 — Notification on long request ✅
 - F44 — Environment import/export ✅
-- F46 — WebSocket client
+- F46 — WebSocket client ✅
 - F52 — Multi-tab / multiple panels
 - F53 — Additional codegen languages ✅
 - F59 — Marketplace discoverability metadata
@@ -228,7 +228,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F25 **Save response to file**; F30 **completion notifications**.
 - [x] F57 **History pins + fuzzy search**; [x] F54 **palette commands**. *(F54 done: `Restify: Send Request`, `Search in Collections`, `New from cURL`, New Request/Collection, Import Collection, Export All, Open Environments all registered and working in `src/extension.ts`; F57 done: fuzzy search on name/URL + pinned history entries (`pinned` flag on `HistoryEntry`, `StorageManager.toggleHistoryPin`, star toggle in `HistoryPanel` with pinned-first sorting); E2E in `feature6.spec.ts`)*
 - [x] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
-- [ ] F46 **WebSocket client** (read-only connection viewer first).
+- [x] F46 **WebSocket client** (connect + send/receive frames + message log — dedicated panel).
 - [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
 - [x] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included)*
 
@@ -296,7 +296,7 @@ Focus: make Restify fit into broader developer workflows and existing API toolch
 - F22 — JSON schema validation ✅
 - F23 — JSONPath/XPath query ✅
 - F24 — Response beautify options
-- F46 — WebSocket client
+- F46 — WebSocket client ✅
 
 ### Release 4 — Advanced and experimental (target: later)
 Focus: more advanced API workflows and long-term differentiation.

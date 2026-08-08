@@ -15,7 +15,8 @@
 
 import { createHash, createHmac, createSign, randomBytes } from "crypto";
 
-import { setHeader, getHeader } from "./headers";
+import { setHeader, hasHeader } from "./headers";
+import { extractBasicAuthFromUrl } from "./url";
 
 export type JwtAlgorithm =
   | "HS256"
@@ -633,6 +634,21 @@ export function applyAuthHeaders(
 ): ApplyAuthResult {
   const result: ApplyAuthResult = { headers };
   const resolve = ctx.resolve;
+
+  // F19: `https://user:pass@host/` credentials become a Basic Authorization
+  // header (fallback only, so explicit auth config still wins) and are
+  // stripped from the URL so they are never logged or sent on the wire.
+  const urlAuth = extractBasicAuthFromUrl(ctx.url);
+  if (urlAuth.url !== ctx.url) {
+    result.url = urlAuth.url;
+    if (urlAuth.username && !hasHeader(headers, "Authorization")) {
+      setHeader(
+        headers,
+        "Authorization",
+        `Basic ${Buffer.from(`${urlAuth.username}:${urlAuth.password}`).toString("base64")}`,
+      );
+    }
+  }
 
   switch (authType) {
     case "none":

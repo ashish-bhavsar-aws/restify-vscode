@@ -368,6 +368,58 @@ describe("applyAuthHeaders", () => {
     );
   });
 
+  it("F19: URL user:pass@ becomes a Basic Authorization header and is stripped", () => {
+    const headers: Record<string, string> = {};
+    const result = applyAuthHeaders(
+      headers,
+      "none",
+      {},
+      { ...ctx(), url: "https://alice:s3cret@api.example.com/users" },
+    );
+    expect(result.url).toBe("https://api.example.com/users");
+    expect(headers.Authorization).toBe(
+      `Basic ${Buffer.from("alice:s3cret").toString("base64")}`,
+    );
+  });
+
+  it("F19: explicit auth config wins over URL credentials", () => {
+    const headers: Record<string, string> = {};
+    const result = applyAuthHeaders(
+      headers,
+      "basic",
+      { username: "explicit", password: "pw" },
+      { ...ctx(), url: "https://url-user:url-pass@api.example.com/" },
+    );
+    expect(result.url).toBe("https://api.example.com/");
+    expect(headers.Authorization).toBe(
+      `Basic ${Buffer.from("explicit:pw").toString("base64")}`,
+    );
+  });
+
+  it("F19: an existing Authorization header is left untouched", () => {
+    const headers: Record<string, string> = { Authorization: "Bearer custom" };
+    const result = applyAuthHeaders(
+      headers,
+      "none",
+      {},
+      { ...ctx(), url: "https://u:p@api.example.com/" },
+    );
+    expect(result.url).toBe("https://api.example.com/");
+    expect(headers.Authorization).toBe("Bearer custom");
+  });
+
+  it("F19: URLs without userinfo are unchanged", () => {
+    const headers: Record<string, string> = {};
+    const result = applyAuthHeaders(
+      headers,
+      "none",
+      {},
+      { ...ctx(), url: "https://api.example.com/" },
+    );
+    expect(result.url).toBeUndefined();
+    expect(headers.Authorization).toBeUndefined();
+  });
+
   it("apikey header", () => {
     const headers: Record<string, string> = {};
     applyAuthHeaders(headers, "apikey", { keyName: "X-API-Key", keyValue: "k" }, ctx());

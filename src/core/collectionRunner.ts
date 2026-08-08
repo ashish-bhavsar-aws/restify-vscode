@@ -431,7 +431,6 @@ export async function executeRunnerRequest(
     return { entry, extractedVariables };
   }
   url = withParams;
-  entry.url = url;
 
   const headers: Record<string, string> = {};
   (req.headers || []).forEach((h) => {
@@ -456,6 +455,7 @@ export async function executeRunnerRequest(
     });
     if (applied.url) url = applied.url;
   }
+  entry.url = url;
 
   if (!hasHeader(headers, "Accept-Encoding")) {
     setHeader(headers, "Accept-Encoding", "gzip, deflate, br");

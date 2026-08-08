@@ -40,10 +40,10 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F13 | **cURL command import** | 🟠 P1 | ✅ Paste a `curl ...` command to build a full request (flags: `-X`, `-H`, `-d`, `-F`, `-u`, `--data-binary`, `--url`). Reverse of existing codegen. *(done — `src/core/curlParser.ts` tokenizer + parser; `restify.importCurl` command with input box + clipboard auto-detect; unit tests (17) + E2E tests)* |
 | F14 | **Bulk editor for headers/params** | 🟡 P2 | ✅ Postman-style raw key-value text editor with parse-on-change. *(done — `src/core/kvParse.ts` shared parse/serialize (`Key: Value` for headers, `key=value` for params, tab-delimited paste), a **Bulk Edit** toggle on Params/Headers/urlencoded tables that live-parses into rows on each keystroke; 17 unit tests in `test/unit/kvParse.test.ts`)* |
 | F15 | **Clipboard paste into KV tables** | 🟡 P2 | ✅ Paste tab/newline-delimited rows from Excel/CSV into Params/Headers/Form tables. *(done — pasting multi-row clipboard text (tabs or newlines) into a key or value cell bulk-inserts parsed rows at the cursor row, reusing an empty target row when present; single-cell paste is untouched)* |
-| F16 | **Dynamic variables** | 🟠 P1 | `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$processEnv}}`, `{{$localDateTime}}` like Postman. |
+| F16 | **Dynamic variables** | 🟠 P1 | ✅ `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$processEnv}}`, `{{$localDateTime}}` like Postman. *(done — `src/core/dynamicVars.ts` resolution engine + `src/core/dynamicVarTokens.ts` token registry, used by request engine, collection runner, and codegen; unit tests in `test/unit/dynamic-vars.test.ts`)* |
 | F17 | **Default dynamic headers** | 🟡 P2 | Add switchable default headers like `User-Agent`, `X-Request-Id`, `X-Correlation-Id`, or `Date` that can be injected automatically. *(done — settings toggles in Settings modal; injected at request time via `src/core/defaultHeaders.ts`, only when not already set explicitly; unit + E2E covered)* |
 | F18 | **Variable autocomplete** | 🟡 P2 | ✅ Suggest `{{envVar}}` and `{{$dynamic}}` names in URL, header/param value cells, and the body/pre-script/post-script editors. *(done — shared `src/core/variableSuggestions.ts` pure logic (env prefix + `{{$` dynamic filtering, trailing-token replacement, caret math); wired into `UrlBar`, `KeyValueTable` value cells, and `CodeEditor` dropdown; 15 unit tests in `test/unit/variableSuggestions.test.ts`)* |
-| F19 | **Basic Auth via URL** | 🟡 P2 | Support `https://user:pass@host/` URL form and carry it into Authorization header. |
+| F19 | **Basic Auth via URL** | 🟡 P2 | ✅ Support `https://user:pass@host/` URL form and carry it into a Basic Authorization header. *(done — `extractBasicAuthFromUrl` in `src/core/url.ts` (decodes percent-encoded creds, strips them from the URL) folded into `applyAuthHeaders` as a fallback: URL creds apply when no Authorization header is set, explicit auth config still wins, and the stripped URL is returned via `applied.url` so credentials are never logged or sent; 11 unit tests in `test/unit/url.test.ts` + `test/unit/auth.test.ts`)* |
 | F20 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
 | F61 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
 | F21 | **Request chaining** | 🟠 P1 | ✅ Post-response scripts store values with `set('key', value)` and they are scoped to the current window session, available in every later request as `{{key}}`; a new window starts a fresh scope. *(done — per-window session chain variables in `StorageManager` + script `set()`; E2E in `feature3.spec.ts`)* |
@@ -141,10 +141,10 @@ This section separates the highest-priority features from the broader roadmap in
 - F13 — cURL command import ✅
 - F14 — Bulk editor for headers/params
 - F15 — Clipboard paste into KV tables
-- F16 — Dynamic variables
+- F16 — Dynamic variables ✅
 - F17 — Default dynamic headers
 - F18 — Variable autocomplete ✅
-- F19 — Header presets / groups
+- F19 — Basic Auth via URL ✅
 - F22 — JSON schema validation ✅
 - F23 — JSONPath / XPath query
 - F24 — Response beautify options
@@ -212,7 +212,8 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
     5. ✅ Set appropriate headers: `Content-Type: text/xml; charset=utf-8` (SOAP 1.1) or `application/soap+xml` (SOAP 1.2) and `SOAPAction` when applicable. *(`soapContentType` in `src/core/wsdl.ts`)*
     6. ✅ Allow overriding generated XML body and keep the original template in the body editor for easy modification. *(generated envelope becomes the editable body; switching operations re-seeds it)*
      7. ✅ Add tests covering WSDL parsing, operation selection, envelope generation, and SOAP header injection. *(unit tests in `test/unit/wsdl.test.ts` + E2E spec `test/specs/soap.spec.ts`: sidebar WSDL file import, WSDL **URL** import (`_importWsdlUrl`), SOAP operation load, header/body capture against the mock server, WS-Security settings-driven response decryption against `server/certs/soap-key.pem` (encrypted mode without a matching settings entry), and live calls to the Beeceptor `CountryInfoService` (`ListOfContinentsByName`/`ListOfCountryNamesByName`))*
-- [ ] F18 **Variable autocomplete** in URL/headers/body inputs (debounced suggestions from active env + globals).
+- [x] F18 **Variable autocomplete** in URL/headers/body inputs (debounced suggestions from active env + globals). *(done — shared `src/core/variableSuggestions.ts`; wired into `UrlBar`, `KeyValueTable` value cells, and the body/pre-script/post-script `CodeEditor` dropdowns; 15 unit tests)*
+- [x] F19 **Basic Auth via URL**: `https://user:pass@host/` form carries credentials into a Basic Authorization header. *(done — `extractBasicAuthFromUrl` in `src/core/url.ts` + fallback integration in `applyAuthHeaders`; URL credentials never leak into logs/wire; unit tested)*
 - [x] F15 **Clipboard paste** into KV tables; [x] F14 **bulk editor** for Params/Headers. *(done — shared grammar in `src/core/kvParse.ts`; multi-row clipboard paste into any KV table cell + a live **Bulk Edit** textarea toggle on Params/Headers/urlencoded; unit tests in `test/unit/kvParse.test.ts`)*
 - [x] F53 **Codegen correctness pass** *(done — GraphQL body serialization, `urlencoded` + text-only-form fields, disabled header/param filtering, API-key-in-query, dynamic-var substitution incl. `{{$processEnv:NAME}}`, Python/Go/Swift multipart fixes; 27 codegen unit tests)*
 - [x] F53 **Codegen additions** (TypeScript fetch, Dart, Ruby, Rust, Kotlin, HTTPie) — done; all 17 languages present in `src/webview/utils/codegen.ts`, E2E in `codegen.spec.ts` + `feature6.spec.ts`.
@@ -275,10 +276,11 @@ Focus: move from basic request sending to practical daily workflows while keepin
 - F60 — Code size and maintainability guardrails ✅
 
 **Nice-to-have**
-- F14 — Bulk editor for headers/params
-- F15 — Clipboard paste into KV tables
+- F14 — Bulk editor for headers/params ✅
+- F15 — Clipboard paste into KV tables ✅
 - F17 — Default dynamic headers ✅
 - F18 — Variable autocomplete ✅
+- F19 — Basic Auth via URL ✅
 - F20 — Header presets/groups
 - F44 — Environment import/export ✅
 

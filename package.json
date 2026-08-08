@@ -267,6 +267,8 @@
     "@codemirror/state": "^6.0.0",
     "@codemirror/theme-one-dark": "^6.0.0",
     "@codemirror/view": "^6.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "exceljs": "^4.4.0",
     "https-proxy-agent": "^9.0.0",
     "lokijs": "^1.5.12",

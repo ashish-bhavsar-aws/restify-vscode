@@ -5,6 +5,7 @@ import { KeyValueTable } from './KeyValueTable';
 import { CodeEditor } from './CodeEditor';
 import { getScriptTemplate } from './scriptExecutor';
 import { Icon, faEye, faEyeSlash, faTrash, faList, faLink, faFileLines, faTerminal, faKey } from './FaIcon';
+import { faListCheck } from '@fortawesome/free-solid-svg-icons';
 import { getSuggestedContentType } from '../utils/formDataTypeDetector';
 import {
   FieldLabel,
@@ -41,7 +42,7 @@ interface RequestPaneProps {
   onGetOAuthToken?: (config: OAuth2ConfigPayload) => void;
 }
 
-type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth';
+type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth' | 'schema';
 type BodyType = RequestState['bodyType'];
 type AuthType = RequestState['authType'];
 
@@ -496,6 +497,30 @@ const Mono = styled.span`
   font-family: monospace;
 `;
 
+const SchemaTitle = styled.div`
+  font-size: 12px;
+  font-weight: 600;
+`;
+
+const SchemaDesc = styled.div`
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+  margin-bottom: 6px;
+`;
+
+const SchemaToggleRow = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+
+  input[type="checkbox"] {
+    accent-color: ${({ theme }) => theme.accent};
+  }
+`;
+
 /* ─── Auth Panel ─────────────────────────────────── */
 
 const AuthPanelWrapper = styled.div`
@@ -872,6 +897,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
   );
   const hasAuth = request.authType && request.authType !== 'none';
   const hasScript = (request.script || '').trim().length > 0;
+  const hasSchema = (request.schema || '').trim().length > 0;
 
   const updateKvList = (field: 'queryParams' | 'headers' | 'formData', index: number, key: keyof KVItem, value: any) => {
     const items = [...request[field]] as KVItem[];
@@ -991,7 +1017,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
     <PaneWrapper id="req-pane">
       {/* Tab Bar */}
       <TabBarContainer id="req-tabs">
-        {(['params', 'headers', 'body', 'script', 'auth'] as ReqTab[]).map((tab) => (
+        {(['params', 'headers', 'body', 'script', 'auth', 'schema'] as ReqTab[]).map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}
@@ -1005,12 +1031,13 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                 : tab === 'headers' ? faLink
                 : tab === 'body' ? faFileLines
                 : tab === 'script' ? faTerminal
-                : faKey
+                : tab === 'auth' ? faKey
+                : faListCheck
               }
               size={12}
               $active={activeTab === tab}
             />
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'schema' ? 'Schema' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'params' && activeParamCount > 0 && (
               <TabBadgeCount>{activeParamCount}</TabBadgeCount>
             )}
@@ -1024,6 +1051,9 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               <TabBadgeDot />
             )}
             {tab === 'script' && hasScript && (
+              <TabBadgeDot />
+            )}
+            {tab === 'schema' && hasSchema && (
               <TabBadgeDot />
             )}
           </TabItem>
@@ -1356,6 +1386,47 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               onAuthDataChange={(authData) => onUpdate({ authData: { ...request.authData, ...authData } })}
             />
           </ScrollContainer>
+        </TabPanel>
+      )}
+
+      {/* Schema Tab (F22) */}
+      {activeTab === 'schema' && (
+        <TabPanel style={{ padding: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <SchemaTitle>JSON Schema (draft-07, optional)</SchemaTitle>
+            <div>
+              <FormAddBtn
+                onClick={() => onUpdate({ schema: '{\n  "$schema": "http://json-schema.org/draft-07/schema#",\n  "type": "object",\n  "properties": {\n    "ok": { "type": "boolean" }\n  },\n  "required": ["ok"]\n}' })}
+              >
+                Insert Example
+              </FormAddBtn>
+            </div>
+          </div>
+
+          <SchemaDesc>
+            Validate JSON responses against this schema after each request. The
+            result appears in the response&apos;s <Mono>Schema</Mono> tab.
+          </SchemaDesc>
+
+          <div style={{ flex: 1, overflow: 'hidden', marginBottom: 16 }}>
+            <CodeEditor
+              value={request.schema || ''}
+              onChange={(schema) => onUpdate({ schema })}
+              language={'json'}
+              themeKind={themeKind}
+              placeholder={'{\n  "type": "object",\n  "properties": {}\n}'}
+              dataTestId="schema-editor"
+            />
+          </div>
+
+          <SchemaToggleRow data-testid="validate-schema-toggle">
+            <input
+              type="checkbox"
+              checked={request.validateSchema === true}
+              onChange={(e) => onUpdate({ validateSchema: e.target.checked })}
+            />
+            <span>Validate JSON responses against this schema</span>
+          </SchemaToggleRow>
         </TabPanel>
       )}
     </PaneWrapper>

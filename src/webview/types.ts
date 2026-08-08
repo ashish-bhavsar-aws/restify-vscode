@@ -108,6 +108,10 @@ export interface RequestState {
   script?: string; // JavaScript to extract variables from response
   urlencoded?: KVItem[]; // URL-encoded form parameters (application/x-www-form-urlencoded)
   soapMeta?: SoapRequestMeta;
+  /** Validate JSON responses against a JSON Schema (draft-07). */
+  validateSchema?: boolean;
+  /** The JSON Schema (draft-07) text the response body is validated against. */
+  schema?: string;
 }
 
 export interface ResponseState {
@@ -265,4 +269,6 @@ export const DEFAULT_REQUEST: RequestState = {
   preScript: '',
   script: '',
   urlencoded: [],
+  validateSchema: false,
+  schema: '',
 };

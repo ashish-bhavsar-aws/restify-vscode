@@ -240,6 +240,7 @@ export const MainPanel: React.FC = () => {
   const [request, setRequest] = useState<RequestState>(DEFAULT_REQUEST);
   const [response, setResponse] = useState<ResponseState | null>(null);
   const [requestInfo, setRequestInfo] = useState<any>(null);
+  const [schemaValidation, setSchemaValidation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
@@ -334,6 +335,7 @@ export const MainPanel: React.FC = () => {
         case "requestStart":
           setLoading(true);
           setResponse(null);
+          setSchemaValidation(null);
           setRequestInfo({
             networkLogs: [],
           });
@@ -371,6 +373,7 @@ export const MainPanel: React.FC = () => {
         case "requestComplete":
           setLoading(false);
           setResponse(msg.response);
+          setSchemaValidation(msg.schemaValidation ?? null);
           setRequestInfo((prev: any) => ({
             ...(msg.requestInfo || {}),
             networkLogs: prev?.networkLogs || [],
@@ -868,6 +871,7 @@ export const MainPanel: React.FC = () => {
             response={response}
             loading={loading}
             request={requestInfo}
+            schemaValidation={schemaValidation}
             onDownloadFile={handleDownloadFile}
             post={post}
           />

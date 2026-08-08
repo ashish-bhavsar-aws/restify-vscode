@@ -206,7 +206,7 @@ export async function getResponseText(frame: Frame): Promise<string> {
 
 export async function clickRequestTab(
   frame: Frame,
-  tab: 'params' | 'headers' | 'body' | 'script' | 'auth',
+  tab: 'params' | 'headers' | 'body' | 'script' | 'auth' | 'schema',
 ): Promise<void> {
   await clickInFrame(frame, `[data-testid="req-tab-${tab}"]`);
   await frame.waitForTimeout(200);
@@ -216,7 +216,7 @@ export async function clickRequestTab(
 
 export async function clickResponseTab(
   frame: Frame,
-  tab: 'body' | 'headers' | 'cookies' | 'tests' | 'logs' | 'raw',
+  tab: 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw',
 ): Promise<void> {
   await clickInFrame(frame, `[data-testid="res-tab-${tab}"]`);
   await frame.waitForTimeout(200);

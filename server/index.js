@@ -951,6 +951,25 @@ app.get('/api/json-response', (req, res) => {
 
 /**
  * @swagger
+ * /api/schema-validation:
+ *   get:
+ *     summary: Deterministic JSON body used by the JSON Schema validation E2E test
+ *     tags:
+ *       - Feature Tests
+ *     responses:
+ *       200:
+ *         description: Validatable JSON object
+ */
+app.get('/api/schema-validation', (req, res) => {
+  res.json({
+    ok: true,
+    name: 'Alice',
+    count: 3,
+  });
+});
+
+/**
+ * @swagger
  * /api/redirect:
  *   get:
  *     summary: Respond with a 302 redirect to /api/redirect-target

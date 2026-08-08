@@ -710,6 +710,31 @@ function _buildOpenApiRequestBody(doc: any, op: any, pathItem: any, isOpenApi3: 
   return { bodyType: "none", body: "" };
 }
 
+/**
+ * Extract the JSON response schema for an OpenAPI operation's success
+ * response (first 2xx). $refs are resolved against the doc so the schema is
+ * self-contained and can be handed to the JSON Schema validator (F22).
+ */
+function _openApiResponseSchema(doc: any, op: any): any {
+  if (!op || !op.responses || typeof op.responses !== "object") return undefined;
+  const statuses = Object.keys(op.responses).sort((a, b) => {
+    const rank = (s: string) => (s === "2XX" || s === "default" ? 1 : /^2\d\d$/.test(s) ? 0 : 2);
+    return rank(a) - rank(b);
+  });
+  for (const status of statuses) {
+    if (status !== "default" && !/^2\d\d$/i.test(status)) continue;
+    const resp = op.responses[status];
+    if (!resp) continue;
+    const content = resp.content;
+    if (!content || typeof content !== "object") continue;
+    const media = content["application/json"] || content["application/*+json"];
+    if (!media || !media.schema) continue;
+    const resolved = _resolveOpenApiSchema(doc, media.schema);
+    if (resolved) return resolved;
+  }
+  return undefined;
+}
+
 export function parseOpenApiCollection(data: any): ImportedCollection | null {
   const isOpenApi3 = typeof data?.openapi === "string" && data.openapi.startsWith("3");
   const isSwagger2 = data?.swagger === "2.0";
@@ -761,6 +786,8 @@ export function parseOpenApiCollection(data: any): ImportedCollection | null {
         });
       }
 
+      const responseSchema = _openApiResponseSchema(data, op);
+
       const req = {
         id: _newId("request"),
         name: reqName,
@@ -772,6 +799,15 @@ export function parseOpenApiCollection(data: any): ImportedCollection | null {
         bodyType: bodySeed.bodyType,
         formData: bodySeed.formData || [],
         urlencoded: bodySeed.urlencoded || [],
+        validateSchema: !!responseSchema,
+        schema: (() => {
+          if (!responseSchema) return "";
+          try {
+            return JSON.stringify(responseSchema, null, 2);
+          } catch {
+            return "";
+          }
+        })(),
       };
       void pathParams;
 

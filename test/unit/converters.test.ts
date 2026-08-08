@@ -193,6 +193,68 @@ paths:
     const getOp = doc.paths["/users"].get;
     expect(getOp.parameters.some((p: any) => p.name === "page" && p.in === "query")).toBe(true);
   });
+
+  it("attaches a resolved JSON response schema to imported requests (F22)", () => {
+    const doc = {
+      openapi: "3.0.1",
+      info: { title: "Pets", version: "1.0.0" },
+      paths: {
+        "/pets/{id}": {
+          get: {
+            summary: "Get pet",
+            responses: {
+              "200": {
+                description: "OK",
+                content: {
+                  "application/json": {
+                    schema: { $ref: "#/components/schemas/Pet" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          Pet: {
+            type: "object",
+            properties: {
+              id: { type: "integer" },
+              name: { type: "string" },
+            },
+            required: ["id", "name"],
+          },
+        },
+      },
+    };
+    const col = parseOpenApiCollection(doc);
+    expect(col).not.toBeNull();
+    const req = col!.requests[0];
+    expect(req.validateSchema).toBe(true);
+    const schema = JSON.parse(req.schema as string);
+    expect(schema.type).toBe("object");
+    expect(schema.properties.id.type).toBe("integer");
+    expect(schema.required).toEqual(["id", "name"]);
+  });
+
+  it("leaves validateSchema disabled when an operation has no JSON response schema (F22)", () => {
+    const doc = {
+      openapi: "3.0.1",
+      info: { title: "No Schema", version: "1.0.0" },
+      paths: {
+        "/health": {
+          get: {
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+    };
+    const col = parseOpenApiCollection(doc);
+    const req = col!.requests[0];
+    expect(req.validateSchema).toBe(false);
+    expect(req.schema).toBe("");
+  });
 });
 
 describe("har import/export", () => {

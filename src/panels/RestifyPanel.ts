@@ -41,6 +41,7 @@ import {
   resolveAuthForRequest,
   getHeader,
   buildRequestResult,
+  validateResponseIfEnabled,
   type CoreRequestForBody,
   type OAuth2Config,
   type ResolvedSoapSecurity,
@@ -171,6 +172,9 @@ interface RequestData {
   timeout?: number;
   activeEnvironmentId?: string;
   soapMeta?: { isSoap12: boolean };
+  /** Validate JSON responses against a JSON Schema (draft-07). */
+  validateSchema?: boolean;
+  schema?: string;
 }
 
 export class RestifyPanel {
@@ -495,8 +499,7 @@ export class RestifyPanel {
         openUrl: (url) => {
           if (process.env.RESTIFY_TEST_OPEN_URL === "fetch") {
             // Test hook: perform the redirect server-side instead of opening a
-            // browser. The mock auth server 302-redirects to the loopback
-            // listener, which captures the authorization code.
+            // browser (the mock auth server 302-redirects to the loopback).
             void fetch(url).catch((err) => {
               console.error("OAuth test openUrl fetch failed:", err);
             });
@@ -945,9 +948,7 @@ export class RestifyPanel {
     applyHeadersToRequest(headers, serialized.headers, serialized.forceHeaders);
 
     // WS-Security: inject UsernameToken credentials and/or encrypt the body
-    // before sending (host-side only — Node `crypto` is unavailable in the
-    // webview). The global settings entries are matched by hostname
-    // (Settings → SOAP Security), like SSL certs.
+    // host-side only (Node crypto is unavailable in the webview).
     let resolvedWs: ResolvedSoapSecurity | null = null;
     try {
       resolvedWs = resolveSoapSecurity(
@@ -1171,8 +1172,7 @@ export class RestifyPanel {
 
       const duration = Date.now() - startTime;
       // WS-Security: decrypt an encrypted SOAP response when a matching
-      // settings entry provides a private key. Without valid decryption
-      // material the encrypted body is shown as-is.
+      // settings entry provides a private key; otherwise show it as-is.
       let responseBody = finalResult.body;
       let decrypted = false;
       if (
@@ -1221,6 +1221,8 @@ export class RestifyPanel {
         fileBase64: finalResult.fileBase64,
         filePreviewType: finalResult.filePreviewType,
       };
+
+      const schemaValidation = validateResponseIfEnabled(req, responseBody);
 
       // Detect mTLS usage
       const mtlsCerts = this._getCertificatesForHost(parsedUrl.hostname);
@@ -1317,11 +1319,9 @@ export class RestifyPanel {
         curlCommand,
       };
 
-      // NOTE: We intentionally do NOT offload the response body to a file for the
-      // webview postMessage. Doing so would set body=undefined in the webview,
-      // causing JsonPrettyViewer to crash with a TypeError and blank the UI.
-      // File offloading is only done inside addToHistory (StorageManager) for the
-      // persistence layer, where the body is never needed in-webview.
+      // NOTE: We intentionally do NOT offload the response body to a file for
+      // postMessage (it would blank JsonPrettyViewer); file offloading is only
+      // done inside addToHistory for the persistence layer.
 
       // Measure postMessage serialization time and size
       try {
@@ -1343,6 +1343,7 @@ export class RestifyPanel {
           command: "requestComplete",
           response: safeResponse,
           requestInfo: safeRequestInfo,
+          schemaValidation,
         });
         timings.postMessageMs = Date.now() - pmStart;
         timings.postMessageSize = size;

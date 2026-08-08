@@ -7,7 +7,7 @@ import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList, faXmark, faChevronRight,
   faArrowUp, faList, faLink, faFileCode, faFileLines, faDownload, faCode, faCookieBite,
-  faFlaskVial,
+  faFlaskVial, faListCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 
@@ -159,11 +159,12 @@ interface ResponsePaneProps {
   response: ResponseState | null;
   loading: boolean;
   request?: any;
+  schemaValidation?: any;
   onDownloadFile?: (payload: { fileName: string; mimeType: string; fileBase64: string }) => void;
   post?: (msg: any) => void;
 }
 
-type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'logs' | 'raw';
+type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw';
 
 /* ─── Styled Components ──────────────────────────────────── */
 
@@ -965,6 +966,71 @@ const TestResultName = styled.span`
   flex: 1;
 `;
 
+/* ─── Schema Validation Results (F22) ─────────────────── */
+
+interface SchemaResultsProps {
+  schemaValidation?: any;
+}
+
+const SchemaResults: React.FC<SchemaResultsProps> = ({ schemaValidation }) => {
+  if (!schemaValidation) {
+    return (
+      <EmptyHint>
+        No schema validation configured. Open the request&apos;s{' '}
+        <code>Schema</code> tab, paste a JSON Schema, and enable{' '}
+        <code>Validate response</code>.
+      </EmptyHint>
+    );
+  }
+
+  if (schemaValidation.valid) {
+    return (
+      <TestResultsWrapper>
+        <TestSummaryBar $allPassed>
+          <TestSummaryIcon>✓</TestSummaryIcon>
+          <TestSummaryText>Response matches the JSON Schema</TestSummaryText>
+          <TestSummaryTotal>valid</TestSummaryTotal>
+        </TestSummaryBar>
+      </TestResultsWrapper>
+    );
+  }
+
+  const errors: Array<{ path: string; keyword: string; message: string }> =
+    schemaValidation.errors || [];
+
+  return (
+    <TestResultsWrapper>
+      <TestSummaryBar $allPassed={false}>
+        <TestSummaryIcon>✗</TestSummaryIcon>
+        <TestSummaryText>Response does not match the JSON Schema</TestSummaryText>
+        <TestSummaryTotal>
+          {schemaValidation.errorCount ?? errors.length} error
+          {(schemaValidation.errorCount ?? errors.length) === 1 ? '' : 's'}
+        </TestSummaryTotal>
+      </TestSummaryBar>
+      {errors.map((err, idx) => (
+        <TestResultRow key={`${err.path}-${idx}`} $passed={false}>
+          <TestResultIcon $passed={false}>✗</TestResultIcon>
+          <SchemaPath>{err.path}</SchemaPath>
+          <SchemaMsg>{err.message}</SchemaMsg>
+        </TestResultRow>
+      ))}
+    </TestResultsWrapper>
+  );
+};
+
+const SchemaPath = styled.code`
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: ${({ theme }) => theme.accent};
+  flex-shrink: 0;
+  min-width: 120px;
+`;
+
+const SchemaMsg = styled.span`
+  flex: 1;
+`;
+
 /* ─── Request Log ─────────────────────────────────────── */
 
 interface RequestLogProps {
@@ -1465,7 +1531,7 @@ const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (m
 
 /* ─── Main Component ──────────────────────────────────── */
 
-export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, onDownloadFile, post }) => {
+export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, schemaValidation, onDownloadFile, post }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
@@ -1640,7 +1706,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
 
       {/* Tab bar */}
       <TabBar id="res-tabs">
-        {(['body', 'headers', 'cookies', 'tests', 'logs', 'raw'] as ResTab[]).map((tab) => (
+        {(['body', 'headers', 'cookies', 'tests', 'schema', 'logs', 'raw'] as ResTab[]).map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}
@@ -1654,6 +1720,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 : tab === 'headers' ? faLink
                 : tab === 'cookies' ? faCookieBite
                 : tab === 'tests' ? faFlaskVial
+                : tab === 'schema' ? faListCheck
                 : tab === 'logs' ? faClipboardList
                 : faFileCode
               }
@@ -1677,6 +1744,14 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 </TabBadge>
               );
             })()}
+            {tab === 'schema' && schemaValidation && (
+              <TabBadge style={{
+                background: schemaValidation.valid ? 'var(--accent, #50fa7b)' : 'var(--error, #c0392b)',
+                color: 'var(--accent-fg, #fff)',
+              }}>
+                {schemaValidation.valid ? '✓' : '✗'} {schemaValidation.errorCount ?? 0}
+              </TabBadge>
+            )}
             {tab === 'logs' && ((request?.networkLogs?.length || 0) > 0 || (request?.scriptLogs?.length || 0) > 0) && (
               <TabBadge style={{ background: request.scriptSuccess === false ? 'var(--error, #c0392b)' : 'var(--accent, #50fa7b)', color: 'var(--accent-fg, #fff)' }}>
                 {request.scriptSuccess === false ? '✗' : ((request?.networkLogs?.length || 0) + (request?.scriptLogs?.length || 0))}
@@ -1797,6 +1872,17 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           <ScrollArea>
             <div style={{ padding: '12px' }}>
               <TestResults request={request} />
+            </div>
+          </ScrollArea>
+        </TabContent>
+      )}
+
+      {/* Schema Validation tab */}
+      {activeTab === 'schema' && (
+        <TabContent>
+          <ScrollArea>
+            <div style={{ padding: '12px' }}>
+              <SchemaResults schemaValidation={schemaValidation} />
             </div>
           </ScrollArea>
         </TabContent>

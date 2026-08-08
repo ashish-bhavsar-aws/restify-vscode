@@ -42,6 +42,8 @@ import {
   getHeader,
   buildRequestResult,
   validateResponseIfEnabled,
+  extensionForContentType,
+  suggestResponseFilename,
   type CoreRequestForBody,
   type OAuth2Config,
   type ResolvedSoapSecurity,
@@ -584,6 +586,9 @@ export class RestifyPanel {
         break;
       case "downloadFile":
         await this._downloadFile(msg.payload);
+        break;
+      case "saveResponseToFile":
+        await this._saveResponseToFile(msg.payload);
         break;
       case "getEnvironments":
         this._sendEnvironments();
@@ -1930,70 +1935,44 @@ export class RestifyPanel {
     }
   }
 
-  private async _downloadFile(payload: {
-    fileName?: string;
-    mimeType?: string;
-    fileBase64?: string;
-  }): Promise<void> {
-    let fileName = payload?.fileName || "response.bin";
-    const mimeType = payload?.mimeType || "application/octet-stream";
-    
-    // Extract just the filename (not the full path)
-    fileName = path.basename(fileName);
-    
-    // If basename returns empty string, fall back to MIME-based filename
-    if (!fileName || fileName.trim().length === 0 || fileName === ".") {
-      if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('vnd.ms-excel')) {
-        fileName = "response.xlsx";
-      } else if (mimeType.includes('csv')) {
-        fileName = "response.csv";
-      } else if (mimeType.includes('pdf')) {
-        fileName = "response.pdf";
-      } else if (mimeType.includes('text')) {
-        fileName = "response.txt";
-      } else {
-        fileName = "response.bin";
-      }
-    }
-    
-    const fileBase64 = payload?.fileBase64;
+  private _defaultSaveUri(fileName: string): vscode.Uri {
+    const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+    return workspaceUri
+      ? vscode.Uri.joinPath(workspaceUri, fileName)
+      : vscode.Uri.file(path.join(os.homedir(), fileName));
+  }
 
+  private async _saveViaDialog(defaultUri: vscode.Uri, saveLabel: string, title: string, data: Uint8Array): Promise<void> {
+    const targetUri = await showSaveDialog({ defaultUri, saveLabel, title });
+    if (!targetUri) return;
+    try {
+      await vscode.workspace.fs.writeFile(targetUri, data);
+      vscode.window.showInformationMessage(`Saved file: ${path.basename(targetUri.fsPath)}`);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to save file: ${err?.message || "Unknown error"}`);
+    }
+  }
+
+  private async _downloadFile(payload: { fileName?: string; mimeType?: string; fileBase64?: string }): Promise<void> {
+    const fileBase64 = payload?.fileBase64;
     if (!fileBase64) {
       vscode.window.showErrorMessage("No file payload available to download.");
       return;
     }
-
-    let defaultUri: vscode.Uri | undefined;
-    
-    // Try to use workspace folder first
-    const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (workspaceUri) {
-      defaultUri = vscode.Uri.joinPath(workspaceUri, fileName);
-    } else {
-      // Fallback: create a URI from home directory (uses OS temp or user home)
-      // vscode.Uri.file() will use the home directory on most systems
-      defaultUri = vscode.Uri.file(path.join(os.homedir(), fileName));
+    let fileName = path.basename(payload?.fileName || "");
+    if (!fileName || fileName.trim().length === 0 || fileName === ".") {
+      fileName = `response.${extensionForContentType(payload?.mimeType)}`;
     }
+    await this._saveViaDialog(this._defaultSaveUri(fileName), "Save Response File", "Save Response File", new Uint8Array(Buffer.from(fileBase64, "base64")));
+  }
 
-    const targetUri = await showSaveDialog({
-      defaultUri,
-      saveLabel: "Save Response File",
-      title: "Save Response File",
-    });
-
-    if (!targetUri) return;
-
-    try {
-      const bytes = Buffer.from(fileBase64, "base64");
-      await vscode.workspace.fs.writeFile(targetUri, new Uint8Array(bytes));
-      const savedFileName = targetUri.fsPath.split("/").pop() || fileName;
-      vscode.window.showInformationMessage(
-        `Saved file: ${savedFileName}`,
-      );
-    } catch (err: any) {
-      vscode.window.showErrorMessage(
-        `Failed to save file: ${err?.message || "Unknown error"}`,
-      );
+  private async _saveResponseToFile(payload: { body?: string; contentType?: string; suggestName?: string }): Promise<void> {
+    const body = payload?.body;
+    if (!body) {
+      vscode.window.showErrorMessage("No response body available to save.");
+      return;
     }
+    const fileName = suggestResponseFilename(payload.suggestName, payload.contentType);
+    await this._saveViaDialog(this._defaultSaveUri(fileName), "Save Response", "Save Response Body", new Uint8Array(Buffer.from(body, "utf8")));
   }
 }

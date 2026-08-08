@@ -663,6 +663,14 @@ export const MainPanel: React.FC = () => {
     post({ command: "downloadFile", payload });
   };
 
+  const handleSaveResponse = (payload: {
+    body: string;
+    contentType?: string;
+    suggestName?: string;
+  }) => {
+    post({ command: "saveResponseToFile", payload });
+  };
+
   // script functionality removed
 
   /* ── Render ──────────────────────────────────────── */
@@ -873,6 +881,7 @@ export const MainPanel: React.FC = () => {
             request={requestInfo}
             schemaValidation={schemaValidation}
             onDownloadFile={handleDownloadFile}
+            onSaveResponse={handleSaveResponse}
             post={post}
           />
         </SplitPane>

@@ -55,7 +55,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F22 | **JSON schema validation** | 🟡 P2 | ✅ Validate response body against a JSON Schema (from OpenAPI or pasted). *(done — `src/core/schemaValidation.ts` Ajv draft-07 validation (host-side, serializable results); request **Schema** tab with editor + validate toggle + badge; response **Schema** tab with valid/error summary; OpenAPI imports attach the resolved 2xx JSON response schema; 12 unit tests + E2E in `schema-validation.spec.ts`)* |
 | F23 | **JSONPath / XPath / filter** | 🟡 P2 | ✅ Query the JSON response body with a JSONPath expression and highlight results. *(done — `src/core/jsonPath.ts` subset evaluator (`$`, `.name`, `[n]`, `[*]`, `..name`, `[?(filter)]` with `==/!=/</>/<=/>=`) + pretty-print offset mapping for exact match highlighting; search bar gains a **Text / JSONPath** mode toggle, match count, and a results list of `path → value`; 15 unit tests + E2E in `jsonpath.spec.ts`)* |
 | F24 | **Response beautify options** | 🟡 P2 | Word wrap, font size, line numbers, collapse/expand tree view of JSON. |
-| F25 | **Save response to file** | 🟡 P2 | Download raw body (not just binary file responses) to disk. |
+| F25 | **Save response to file** | 🟡 P2 | ✅ Download raw body (not just binary file responses) to disk. *(done — response actions gain a **Save** button that opens the OS save dialog with a content-type-derived extension (`src/core/responseSave.ts`); filename auto-suggested from the request URL; `_downloadFile` refactored onto a shared `_saveViaDialog` helper; 12 unit tests + E2E in `save-response.spec.ts`)* |
 | F26 | **Response diff** | ⚪ P3 | Compare two responses/requests side-by-side. |
 | F27 | **Timeline / time breakdown** | 🟡 P2 | TTFB, transfer, DNS, TLS stages (needs refactor of `_doRequest` timing). |
 | F28 | **Streaming / SSE support** | ⚪ P3 | Incremental body rendering for chunked/`text/event-stream` responses. |
@@ -148,7 +148,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F22 — JSON schema validation ✅
 - F23 — JSONPath / XPath query
 - F24 — Response beautify options
-- F25 — Save response to file
+- F25 — Save response to file ✅
 - F30 — Notification on long request
 - F44 — Environment import/export ✅
 - F46 — WebSocket client
@@ -225,7 +225,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F11 **OAuth 2.0**: authorization-code flow with system browser + redirect listener; token cache; refresh; PKCE. *(done — `src/core/oauth2.ts`: authorization-code + client-credentials + password grants, token cache keyed by token-URL/client/scopes, refresh, PKCE challenge; unit-tested + E2E for client-credentials/password in `feature2.spec.ts`; authorization-code grant covered by unit tests, loopback redirect listener included)*
 - [x] F22 **JSON schema validation** of responses (paste schema or pull from imported OpenAPI). *(done — Ajv draft-07 validation host-side in `src/core/schemaValidation.ts`, request Schema tab (editor + validate toggle + badge dot), response Schema tab (valid/error summary with instance paths), OpenAPI imports resolve & attach 2xx JSON response schemas; 12 unit tests + E2E in `schema-validation.spec.ts`)*
 - [x] F23 **JSONPath/XPath query** in response viewer. *(done — JSONPath query mode in the response search bar: subset evaluator + filters in `src/core/jsonPath.ts`, matches highlighted in the CodeMirror viewer and listed as `path → value`; 15 unit tests + E2E in `jsonpath.spec.ts`)*
-- [ ] F25 **Save response to file**; F30 **completion notifications**.
+- [x] F25 **Save response to file**; F30 **completion notifications**.
 - [x] F57 **History pins + fuzzy search**; [x] F54 **palette commands**. *(F54 done: `Restify: Send Request`, `Search in Collections`, `New from cURL`, New Request/Collection, Import Collection, Export All, Open Environments all registered and working in `src/extension.ts`; F57 done: fuzzy search on name/URL + pinned history entries (`pinned` flag on `HistoryEntry`, `StorageManager.toggleHistoryPin`, star toggle in `HistoryPanel` with pinned-first sorting); E2E in `feature6.spec.ts`)*
 - [ ] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [ ] F46 **WebSocket client** (read-only connection viewer first).

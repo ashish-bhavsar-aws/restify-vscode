@@ -7,7 +7,7 @@ import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList, faChevronRight,
   faArrowUp, faList, faLink, faFileCode, faFileLines, faDownload, faCode, faCookieBite,
-  faFlaskVial, faListCheck,
+  faFlaskVial, faListCheck, faFloppyDisk,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 import { ResponseSearchBar, type ResponseSearchMode } from './ResponseSearchBar';
@@ -163,6 +163,7 @@ interface ResponsePaneProps {
   request?: any;
   schemaValidation?: any;
   onDownloadFile?: (payload: { fileName: string; mimeType: string; fileBase64: string }) => void;
+  onSaveResponse?: (payload: { body: string; contentType?: string; suggestName?: string }) => void;
   post?: (msg: any) => void;
 }
 
@@ -1494,7 +1495,7 @@ const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (m
 
 /* ─── Main Component ──────────────────────────────────── */
 
-export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, schemaValidation, onDownloadFile, post }) => {
+export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, schemaValidation, onDownloadFile, onSaveResponse, post }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
@@ -1605,6 +1606,17 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     }
   };
 
+  const handleSaveResponse = () => {
+    if (!response?.body || !onSaveResponse) return;
+    const contentType = getHeaderValue(response.headers, 'content-type');
+    let suggestName = '';
+    const url = request?.url || '';
+    const pathOnly = url.split('?')[0].replace(/\/+$/, '');
+    const lastSeg = pathOnly.split('/').pop() || '';
+    if (lastSeg) suggestName = lastSeg.replace(/[\\/:*?"<>|\s]+/g, '_');
+    onSaveResponse({ body: response.body, contentType, suggestName });
+  };
+
   /* loading state */
   if (loading) {
     return (
@@ -1662,6 +1674,12 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             <CopyBtn onClick={handleCopy}>
               <Icon icon={faCopy} size={12} />
               {copied ? 'Copied ✓' : 'Copy'}
+            </CopyBtn>
+          )}
+          {response.body && !isLargeFilePreviewBlocked && !response.isFileResponse && (
+            <CopyBtn data-testid="save-response-btn" onClick={handleSaveResponse} title="Save response body to a file">
+              <Icon icon={faFloppyDisk} size={12} />
+              Save
             </CopyBtn>
           )}
           {!isLargeFilePreviewBlocked && !hideSearchButton && (response.body || decodedFileText || response.isFileResponse) && (

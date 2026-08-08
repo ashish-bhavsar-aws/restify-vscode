@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import styled, { css, keyframes } from "styled-components";
 
 import { TopBar } from "./components/TopBar";
+import TabBar from "./components/TabBar";
 import { CodeGenModal } from "./components/CodeGenModal";
 import { UrlBar } from "./components/UrlBar";
 import { RequestPane } from "./components/RequestPane";
@@ -68,6 +69,49 @@ const hasRealName = (req: RequestState): boolean => {
   const n = req.name?.trim();
   return Boolean(n) && n !== "New Request";
 };
+
+/** Per-tab editor state. Each tab carries its own request + response. */
+interface TabState {
+  id: string;
+  request: RequestState;
+  response: ResponseState | null;
+  requestInfo: any | null;
+  schemaValidation: any | null;
+  loading: boolean;
+  isDirty: boolean;
+  savedCollectionName: string | null;
+  savedGroupId?: string;
+  oauthStatus: { state: 'success' | 'error' | 'none'; text?: string };
+}
+
+const createTab = (requestData?: Partial<RequestState>): TabState => ({
+  id: `tab-${Math.random().toString(36).slice(2, 10)}`,
+  request: requestData
+    ? { ...DEFAULT_REQUEST, ...requestData }
+    : { ...DEFAULT_REQUEST },
+  response: null,
+  requestInfo: null,
+  schemaValidation: null,
+  loading: false,
+  isDirty: false,
+  savedCollectionName: null,
+  savedGroupId: undefined,
+  oauthStatus: { state: "none" },
+});
+
+/** Display label for a tab (real name, else suggested name, else placeholder). */
+const tabLabel = (tab: TabState): string => {
+  if (hasRealName(tab.request)) return tab.request.name!;
+  return suggestedRequestName(tab.request) || "New Request";
+};
+
+/** True when a tab is untouched since creation (safe to replace on loadRequest). */
+const isPristine = (t: TabState): boolean =>
+  !t.isDirty &&
+  !t.loading &&
+  !t.response &&
+  !t.request.url &&
+  !hasRealName(t.request);
 
 /* ─── Styled Components ───────────────────────────────────── */
 
@@ -237,11 +281,8 @@ const Resizer = styled.div`
 
 export const MainPanel: React.FC = () => {
   /* ── State ───────────────────────────────────────── */
-  const [request, setRequest] = useState<RequestState>(DEFAULT_REQUEST);
-  const [response, setResponse] = useState<ResponseState | null>(null);
-  const [requestInfo, setRequestInfo] = useState<any>(null);
-  const [schemaValidation, setSchemaValidation] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [tabs, setTabs] = useState<TabState[]>(() => [createTab()]);
+  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -254,26 +295,64 @@ export const MainPanel: React.FC = () => {
   const [varsHelpOpen, setVarsHelpOpen] = useState(false);
   const [chainVars, setChainVars] = useState<Record<string, string>>({});
   const [oauthFetching, setOauthFetching] = useState(false);
-  const [oauthStatus, setOauthStatus] = useState<{
-    state: 'success' | 'error' | 'none';
-    text?: string;
-  }>({ state: 'none' });
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [themeKind, setThemeKind] = useState<number>(2);
-  const [savedCollectionName, setSavedCollectionName] = useState<string | null>(
-    null,
-  );
-  const [savedGroupId, setSavedGroupId] = useState<string | undefined>(
-    undefined,
-  );
-  const [isDirty, setIsDirty] = useState(false);
 
-  const requestRef = useRef<RequestState>(request);
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+
+  const tabsRef = useRef(tabs);
+  const activeTabRef = useRef(activeTab);
+  const activeTabIdRef = useRef(activeTabId);
   const sendRef = useRef<() => void>(() => {});
-  const savedCollectionNameRef = useRef<string | null>(null);
-  const savedGroupIdRef = useRef<string | undefined>(undefined);
   const activeEnvIdRef = useRef<string | null>(null);
   const pendingSecretResolves = useRef(new Map<string, (value: string) => void>());
+
+  /* ── Helpers ─────────────────────────────────────── */
+  const post = useCallback(
+    (message: any) => vscodeApi?.postMessage({ ...message, sessionId: SESSION_ID }),
+    [],
+  );
+
+  const patchTab = useCallback((id: string, mutator: (t: TabState) => TabState) => {
+    setTabs((prev) => prev.map((t) => (t.id === id ? mutator(t) : t)));
+  }, []);
+
+  const updateActiveRequest = (updates: Partial<RequestState>) => {
+    const id = activeTabIdRef.current;
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? { ...t, request: { ...t.request, ...updates }, isDirty: true }
+          : t,
+      ),
+    );
+    if (updates.name) post({ command: "updateTitle", title: updates.name, tabId: id });
+  };
+
+  const selectTab = (id: string) => {
+    setActiveTabId(id);
+    const t = tabsRef.current.find((x) => x.id === id);
+    if (t) post({ command: "updateTitle", title: tabLabel(t), tabId: id });
+  };
+
+  const addTab = () => {
+    const t = createTab();
+    setTabs((prev) => [...prev, t]);
+    setActiveTabId(t.id);
+    post({ command: "updateTitle", title: tabLabel(t), tabId: t.id });
+  };
+
+  const closeTab = (id: string) => {
+    if (tabsRef.current.length <= 1) return;
+    const idx = tabsRef.current.findIndex((t) => t.id === id);
+    const next = tabsRef.current.filter((t) => t.id !== id);
+    setTabs(next);
+    if (activeTabIdRef.current === id) {
+      const neighbor = next[Math.max(0, idx - 1)] ?? next[0];
+      setActiveTabId(neighbor.id);
+      post({ command: "updateTitle", title: tabLabel(neighbor), tabId: neighbor.id });
+    }
+  };
 
   /* ── VS Code API bootstrap ───────────────────────── */
   useEffect(() => {
@@ -290,26 +369,34 @@ export const MainPanel: React.FC = () => {
 
     const handler = (event: MessageEvent) => {
       const msg = event.data;
-      try {
-        // incoming message received
-      } catch {
-        /* empty */
-      }
       switch (msg.command) {
         case "loadRequest": {
           const { _collectionName, _groupId, ...reqData } = msg.data;
-          setRequest((prev: RequestState) => ({ ...prev, ...reqData }));
-          setSavedCollectionName(_collectionName ?? null);
-          setSavedGroupId(_groupId ?? undefined);
-          setIsDirty(false);
-          // If the request has an activeEnvironmentId, set that environment
+          const current = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
+          // Reuse the untouched initial tab so the first opened request
+          // replaces the empty placeholder rather than stacking a second tab.
+          const replace =
+            tabsRef.current.length === 1 && current !== undefined && isPristine(current);
+          if (replace) {
+            const t: TabState = {
+              ...createTab(reqData),
+              id: current.id,
+              savedCollectionName: _collectionName ?? null,
+              savedGroupId: _groupId ?? undefined,
+            };
+            setTabs([t]);
+            post({ command: "updateTitle", title: tabLabel(t), tabId: t.id });
+          } else {
+            const t = createTab(reqData);
+            t.savedCollectionName = _collectionName ?? null;
+            t.savedGroupId = _groupId ?? undefined;
+            setTabs((prev) => [...prev, t]);
+            setActiveTabId(t.id);
+            post({ command: "updateTitle", title: tabLabel(t), tabId: t.id });
+          }
           if (reqData.activeEnvironmentId) {
             setActiveEnvId(reqData.activeEnvironmentId);
-            // Notify the extension that environment was changed
-            post({
-              command: "setActiveEnvironment",
-              id: reqData.activeEnvironmentId,
-            });
+            post({ command: "setActiveEnvironment", id: reqData.activeEnvironmentId });
           }
           break;
         }
@@ -333,120 +420,159 @@ export const MainPanel: React.FC = () => {
           setSettings(msg.settings ?? DEFAULT_SETTINGS);
           break;
         case "requestStart":
-          setLoading(true);
-          setResponse(null);
-          setSchemaValidation(null);
-          setRequestInfo({
-            networkLogs: [],
-          });
+          patchTab(msg.tabId ?? activeTabIdRef.current, (t) => ({
+            ...t,
+            loading: true,
+            response: null,
+            schemaValidation: null,
+            requestInfo: { networkLogs: [] },
+          }));
           break;
         case "sessionChainVarsUpdated":
           setChainVars(msg.variables ?? {});
           break;
-        case "oauthTokenResult":
+        case "oauthTokenResult": {
           setOauthFetching(false);
+          const tid = msg.tabId ?? activeTabIdRef.current;
           if (msg.error) {
-            setOauthStatus({ state: "error", text: msg.error });
+            patchTab(tid, (t) => ({ ...t, oauthStatus: { state: "error", text: msg.error } }));
             break;
           }
-          setRequest((prev: RequestState) => ({
-            ...prev,
-            authData: {
-              ...prev.authData,
-              accessToken: msg.accessToken,
-              refreshToken: msg.refreshToken ?? prev.authData.refreshToken,
-              tokenExpiresAt: msg.expiresAt ?? prev.authData.tokenExpiresAt,
-              tokenType: msg.tokenType ?? prev.authData.tokenType,
-              tokenScope: msg.scope ?? prev.authData.tokenScope,
+          patchTab(tid, (t) => ({
+            ...t,
+            request: {
+              ...t.request,
+              authData: {
+                ...t.request.authData,
+                accessToken: msg.accessToken,
+                refreshToken: msg.refreshToken ?? t.request.authData.refreshToken,
+                tokenExpiresAt: msg.expiresAt ?? t.request.authData.tokenExpiresAt,
+                tokenType: msg.tokenType ?? t.request.authData.tokenType,
+                tokenScope: msg.scope ?? t.request.authData.tokenScope,
+              },
+            },
+            oauthStatus: {
+              state: "success",
+              text:
+                msg.source === "cache"
+                  ? "Using cached access token"
+                  : msg.source === "refresh"
+                    ? "Access token refreshed"
+                    : "Access token obtained",
             },
           }));
-          setOauthStatus({
-            state: "success",
-            text:
-              msg.source === "cache"
-                ? "Using cached access token"
-                : msg.source === "refresh"
-                  ? "Access token refreshed"
-                  : "Access token obtained",
-          });
           break;
-        case "requestComplete":
-          setLoading(false);
-          setResponse(msg.response);
-          setSchemaValidation(msg.schemaValidation ?? null);
-          setRequestInfo((prev: any) => ({
-            ...(msg.requestInfo || {}),
-            networkLogs: prev?.networkLogs || [],
-          }));
+        }
+        case "requestComplete": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === tid
+                ? {
+                    ...t,
+                    loading: false,
+                    response: msg.response,
+                    schemaValidation: msg.schemaValidation ?? null,
+                    requestInfo: {
+                      ...(msg.requestInfo || {}),
+                      networkLogs: t.requestInfo?.networkLogs || [],
+                    },
+                  }
+                : t,
+            ),
+          );
           // If the current request has a post-response script, delegate to extension host
           try {
-            const script = requestRef.current?.script;
+            const script = tabsRef.current.find((x) => x.id === tid)?.request?.script;
             if (script && script.trim().length > 0) {
               // Mark script as running so the UI can show a spinner
-              setRequestInfo((prev: any) => ({ ...prev, scriptRunning: true }));
+              patchTab(tid, (t) => ({
+                ...t,
+                requestInfo: { ...(t.requestInfo || {}), scriptRunning: true },
+              }));
               // Send script + response to extension host for CSP-free execution
-              post({ command: "runScript", script, response: msg.response });
+              post({ command: "runScript", script, response: msg.response, tabId: tid });
             }
           } catch {
             /* ignore */
           }
           break;
-        case "scriptResult":
-          // Result returned from extension host script execution
-          setRequestInfo((prev: any) => ({
-            ...prev,
-            scriptRunning: false,
-            scriptLogs: msg.result?.logs || [],
-            scriptSuccess: msg.result?.success !== false,
-            scriptError: msg.result?.error,
-            scriptVariables: msg.result?.variables || {},
-            scriptTests: msg.result?.tests || {},
+        }
+        case "scriptResult": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          patchTab(tid, (t) => ({
+            ...t,
+            requestInfo: {
+              ...(t.requestInfo || {}),
+              scriptRunning: false,
+              scriptLogs: msg.result?.logs || [],
+              scriptSuccess: msg.result?.success !== false,
+              scriptError: msg.result?.error,
+              scriptVariables: msg.result?.variables || {},
+              scriptTests: msg.result?.tests || {},
+            },
           }));
           break;
-        case "requestError":
-          setLoading(false);
-          setResponse({
-            status: 0,
-            statusText: "Error",
-            headers: {},
-            body: msg.error ?? "Unknown error",
-            duration: msg.duration ?? 0,
-            size: 0,
-          });
+        }
+        case "requestError": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          patchTab(tid, (t) => ({
+            ...t,
+            loading: false,
+            response: {
+              status: 0,
+              statusText: "Error",
+              headers: {},
+              body: msg.error ?? "Unknown error",
+              duration: msg.duration ?? 0,
+              size: 0,
+            },
+          }));
           break;
-        case "requestCancelled":
-          setLoading(false);
-          setResponse({
-            status: 0,
-            statusText: "Cancelled",
-            headers: {},
-            body: "Request was cancelled",
-            duration: msg.duration ?? 0,
-            size: 0,
-          });
+        }
+        case "requestCancelled": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          patchTab(tid, (t) => ({
+            ...t,
+            loading: false,
+            response: {
+              status: 0,
+              statusText: "Cancelled",
+              headers: {},
+              body: "Request was cancelled",
+              duration: msg.duration ?? 0,
+              size: 0,
+            },
+          }));
           break;
+        }
         case "setTheme":
           setThemeKind(msg.kind ?? 2);
           applyThemeClass(msg.kind ?? 2);
           break;
         case "getCurrentRequest":
-          post({ command: "currentRequest", request: requestRef.current });
+          post({ command: "currentRequest", request: activeTabRef.current.request });
           break;
         case "triggerSendRequest":
           sendRef.current();
           break;
-        case "debugLog":
+        case "debugLog": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
           try {
             const ts = new Date().toLocaleTimeString();
             const entry = `${ts} — ${msg.data?.stage || "debug"}: ${JSON.stringify(msg.data?.info || {})}`;
-            setRequestInfo((prev: any) => ({
-              ...(prev || {}),
-              networkLogs: [...(prev?.networkLogs || []), entry],
+            patchTab(tid, (t) => ({
+              ...t,
+              requestInfo: {
+                ...(t.requestInfo || {}),
+                networkLogs: [...(t.requestInfo?.networkLogs || []), entry],
+              },
             }));
-          } catch(e) {
+          } catch (e) {
             console.error("Failed to append debugLog", e);
           }
           break;
+        }
       }
     };
 
@@ -456,42 +582,29 @@ export const MainPanel: React.FC = () => {
     post({ command: "webviewReady" });
 
     return () => window.removeEventListener("message", handler);
-  }, []);
+  }, [post, patchTab]);
 
   // keep refs in sync with latest state for use in event handlers
   useEffect(() => {
-    requestRef.current = request;
-  }, [request]);
+    tabsRef.current = tabs;
+  }, [tabs]);
   useEffect(() => {
-    savedCollectionNameRef.current = savedCollectionName;
-  }, [savedCollectionName]);
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
   useEffect(() => {
-    savedGroupIdRef.current = savedGroupId;
-  }, [savedGroupId]);
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
   useEffect(() => {
     activeEnvIdRef.current = activeEnvId;
   }, [activeEnvId]);
-
-  /* ── Helpers ─────────────────────────────────────── */
-  const post = (message: any) =>
-    vscodeApi?.postMessage({ ...message, sessionId: SESSION_ID });
-
-  const updateRequest = (updates: Partial<RequestState>) => {
-    setRequest((prev: RequestState) => {
-      const next = { ...prev, ...updates };
-      if (updates.name) post({ command: "updateTitle", title: updates.name });
-      return next;
-    });
-    setIsDirty(true);
-  };
 
   /* Build the request object, injecting auth headers/params */
   const buildPayload = useCallback((): RequestState => {
     // Auth headers (bearer/basic/apikey/oauth2/jwt/sigv4/hawk) are applied
     // host-side after variable resolution so `{{var}}` placeholders resolve
     // correctly and crypto-based schemes (JWT signing, SigV4) can run.
-    return { ...request };
-  }, [request]);
+    return { ...activeTab.request };
+  }, [activeTab]);
 
   // Send the built payload (with injected auth headers) for execution
   const handleSend = useCallback(() => {
@@ -500,16 +613,20 @@ export const MainPanel: React.FC = () => {
     post({
       command: "executeRequest",
       request: buildPayload(),
-      savedRequest: request,
+      savedRequest: activeTab.request,
+      tabId: activeTab.id,
     });
-  }, [buildPayload, request]);
+  }, [buildPayload, activeTab, post]);
 
   // Ask the extension host to run an OAuth 2.0 flow and cache the token
-  const handleGetOAuthToken = useCallback((config: OAuth2ConfigPayload) => {
-    setOauthFetching(true);
-    setOauthStatus({ state: 'none' });
-    post({ command: "getOAuthToken", config });
-  }, []);
+  const handleGetOAuthToken = useCallback(
+    (config: OAuth2ConfigPayload) => {
+      setOauthFetching(true);
+      patchTab(activeTabIdRef.current, (t) => ({ ...t, oauthStatus: { state: "none" } }));
+      post({ command: "getOAuthToken", config, tabId: activeTabIdRef.current });
+    },
+    [post, patchTab],
+  );
 
   // Normal send handler
   const handleSendGuarded = handleSend;
@@ -520,26 +637,24 @@ export const MainPanel: React.FC = () => {
 
   // Cancel the in-flight request
   const handleCancel = useCallback(() => {
-    post({ command: "cancelRequest" });
-  }, []);
+    post({ command: "cancelRequest", tabId: activeTab.id });
+  }, [activeTab.id, post]);
 
   // Ctrl+S / Cmd+S — silent save if already in a collection, otherwise open SaveModal
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        const colName = savedCollectionNameRef.current;
-        if (colName) {
+        const t = activeTabRef.current;
+        if (t?.savedCollectionName) {
           post({
             command: "saveToCollection",
-            request: {
-              ...requestRef.current,
-              activeEnvironmentId: activeEnvIdRef.current,
-            },
-            collectionName: colName,
-            groupId: savedGroupIdRef.current,
+            request: { ...t.request, activeEnvironmentId: activeEnvIdRef.current },
+            collectionName: t.savedCollectionName,
+            groupId: t.savedGroupId,
+            tabId: t.id,
           });
-          setIsDirty(false);
+          patchTab(t.id, (tt) => ({ ...tt, isDirty: false }));
         } else {
           setSaveModalOpen(true);
         }
@@ -551,7 +666,7 @@ export const MainPanel: React.FC = () => {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleSend]);
+  }, [handleSend, post, patchTab]);
 
   // Safely decode a URI component, falling back to the raw string on malformed input
   const safeDecode = (s: string): string => {
@@ -571,8 +686,10 @@ export const MainPanel: React.FC = () => {
       // If the user removed the query string entirely from the URL input,
       // clear any active query params so they don't reappear when the
       // derived display URL is recalculated on blur.
-      const disabledParams = request.queryParams.filter((p) => p.enabled === false);
-      updateRequest({ url: rawUrl, queryParams: disabledParams });
+      const disabledParams = activeTab.request.queryParams.filter(
+        (p) => p.enabled === false,
+      );
+      updateActiveRequest({ url: rawUrl, queryParams: disabledParams });
       return;
     }
     const baseUrl = rawUrl.slice(0, qIdx);
@@ -591,10 +708,10 @@ export const MainPanel: React.FC = () => {
             };
       });
     // Preserve any explicitly disabled params (they don't appear in the URL)
-    const disabledParams = request.queryParams.filter(
+    const disabledParams = activeTab.request.queryParams.filter(
       (p) => p.enabled === false,
     );
-    updateRequest({
+    updateActiveRequest({
       url: baseUrl,
       queryParams: [...parsedParams, ...disabledParams],
     });
@@ -605,16 +722,28 @@ export const MainPanel: React.FC = () => {
     collectionName: string,
     groupId?: string,
   ) => {
+    const id = activeTabIdRef.current;
     post({
       command: "saveToCollection",
-      request: { ...request, name: reqName, activeEnvironmentId: activeEnvId },
+      request: { ...activeTab.request, name: reqName, activeEnvironmentId: activeEnvId },
       collectionName,
       groupId,
+      tabId: id,
     });
-    setSavedCollectionName(collectionName);
-    setSavedGroupId(groupId);
-    updateRequest({ name: reqName });
-    setIsDirty(false);
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              savedCollectionName: collectionName,
+              savedGroupId: groupId,
+              request: { ...t.request, name: reqName },
+              isDirty: false,
+            }
+          : t,
+      ),
+    );
+    post({ command: "updateTitle", title: reqName, tabId: id });
     setSaveModalOpen(false);
   };
 
@@ -638,7 +767,7 @@ export const MainPanel: React.FC = () => {
         pendingSecretResolves.current.set(id, resolve);
         post({ command: "getEnvSecretValue", id, envId, varKey });
       }),
-    []
+    [post],
   );
 
   const handleImportEnvironment = () => {
@@ -671,8 +800,6 @@ export const MainPanel: React.FC = () => {
     post({ command: "saveResponseToFile", payload });
   };
 
-  // script functionality removed
-
   /* ── Render ──────────────────────────────────────── */
   const activeEnvironment =
     environments.find((env) => env.id === activeEnvId) || null;
@@ -704,10 +831,10 @@ export const MainPanel: React.FC = () => {
     );
     Object.keys(chainVars).forEach((k) => allVarKeys.add(k));
     const searchText = [
-      request.url,
-      request.body || "",
-      ...(request.headers || []).map((h) => `${h.key} ${h.value}`),
-      ...(request.queryParams || []).map((p) => `${p.key} ${p.value}`),
+      activeTab.request.url,
+      activeTab.request.body || "",
+      ...(activeTab.request.headers || []).map((h) => `${h.key} ${h.value}`),
+      ...(activeTab.request.queryParams || []).map((p) => `${p.key} ${p.value}`),
     ].join(" ");
     const matches = [...searchText.matchAll(/\{\{([^}]+)}}/g)].map(
       (m) => m[1],
@@ -722,10 +849,10 @@ export const MainPanel: React.FC = () => {
       return { name: rawName, resolved, dynamic: isDynamic };
     });
   }, [
-    request.url,
-    request.body,
-    request.headers,
-    request.queryParams,
+    activeTab.request.url,
+    activeTab.request.body,
+    activeTab.request.headers,
+    activeTab.request.queryParams,
     activeEnvironment,
     chainVars,
   ]);
@@ -733,11 +860,11 @@ export const MainPanel: React.FC = () => {
   return (
     <Container>
       <TopBar
-        name={request.name}
-        isDirty={isDirty}
+        name={activeTab.request.name}
+        isDirty={activeTab.isDirty}
         environments={environments}
         activeEnvId={activeEnvId}
-        onNameChange={(name) => updateRequest({ name })}
+        onNameChange={(name) => updateActiveRequest({ name })}
         onEnvChange={handleEnvChange}
         onManageEnvs={() => {
           setEditingEnvForModal(null);
@@ -758,16 +885,29 @@ export const MainPanel: React.FC = () => {
         codegenEnabled={codeGenEnabled}
       />
 
+      <TabBar
+        tabs={tabs.map((t) => ({
+          id: t.id,
+          label: tabLabel(t),
+          dirty: t.isDirty,
+          active: t.id === activeTab.id,
+          loading: t.loading,
+        }))}
+        onSelect={selectTab}
+        onClose={closeTab}
+        onAdd={addTab}
+      />
+
       {/* Animated loading bar */}
-      <LoadingBar $active={loading} />
+      <LoadingBar $active={activeTab.loading} />
 
       <UrlBar
-        method={request.method}
-        url={request.url}
-        loading={loading}
-        queryParams={request.queryParams}
+        method={activeTab.request.method}
+        url={activeTab.request.url}
+        loading={activeTab.loading}
+        queryParams={activeTab.request.queryParams}
         environment={displayEnvironment}
-        onMethodChange={(method) => updateRequest({ method })}
+        onMethodChange={(method) => updateActiveRequest({ method })}
         onUrlChange={handleUrlChange}
         onSend={handleSendGuarded}
         onCancel={handleCancel}
@@ -783,14 +923,14 @@ export const MainPanel: React.FC = () => {
           <OptionIcon icon={faShieldHalved} size={12} />
           <input
             type="checkbox"
-            checked={request.rejectUnauthorized !== false}
+            checked={activeTab.request.rejectUnauthorized !== false}
             onChange={(e) =>
-              updateRequest({ rejectUnauthorized: e.target.checked })
+              updateActiveRequest({ rejectUnauthorized: e.target.checked })
             }
           />
           Verify SSL Certificate
         </label>
-        {request.rejectUnauthorized === false && (
+        {activeTab.request.rejectUnauthorized === false && (
           <SslWarning>Insecure — TLS not verified</SslWarning>
         )}
 
@@ -801,9 +941,9 @@ export const MainPanel: React.FC = () => {
           <OptionIcon icon={faArrowsRotate} size={12} />
           <input
             type="checkbox"
-            checked={request.followRedirects !== false}
+            checked={activeTab.request.followRedirects !== false}
             onChange={(e) =>
-              updateRequest({ followRedirects: e.target.checked })
+              updateActiveRequest({ followRedirects: e.target.checked })
             }
           />
           Follow Redirects
@@ -823,9 +963,9 @@ export const MainPanel: React.FC = () => {
             placeholder={String(
               settings.defaultTimeout ?? DEFAULT_SETTINGS.defaultTimeout,
             )}
-            value={request.timeout ?? ""}
+            value={activeTab.request.timeout ?? ""}
             onChange={(e) =>
-              updateRequest({
+              updateActiveRequest({
                 timeout:
                   e.target.value === "" ? undefined : Number(e.target.value),
               })
@@ -866,20 +1006,20 @@ export const MainPanel: React.FC = () => {
       <MainArea>
         <SplitPane>
           <RequestPane
-            request={request}
-            onUpdate={updateRequest}
+            request={activeTab.request}
+            onUpdate={updateActiveRequest}
             themeKind={themeKind}
             environment={displayEnvironment}
             oauthFetching={oauthFetching}
-            oauthStatus={oauthStatus}
+            oauthStatus={activeTab.oauthStatus}
             onGetOAuthToken={handleGetOAuthToken}
           />
           <Resizer />
           <ResponsePane
-            response={response}
-            loading={loading}
-            request={requestInfo}
-            schemaValidation={schemaValidation}
+            response={activeTab.response}
+            loading={activeTab.loading}
+            request={activeTab.requestInfo}
+            schemaValidation={activeTab.schemaValidation}
             onDownloadFile={handleDownloadFile}
             onSaveResponse={handleSaveResponse}
             post={post}
@@ -889,7 +1029,11 @@ export const MainPanel: React.FC = () => {
 
       <SaveModal
         open={saveModalOpen}
-        requestName={hasRealName(request) ? request.name : suggestedRequestName(request)}
+        requestName={
+          hasRealName(activeTab.request)
+            ? activeTab.request.name
+            : suggestedRequestName(activeTab.request)
+        }
         collections={collections}
         onSave={handleSave}
         onClose={() => setSaveModalOpen(false)}

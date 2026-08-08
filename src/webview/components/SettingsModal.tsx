@@ -578,6 +578,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           : 5000,
       defaultHeaders,
       soapSecurity: soapEntries,
+      headerPresets: initialSettings?.headerPresets ?? [],
     });
   };
 

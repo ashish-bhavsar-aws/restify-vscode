@@ -4,6 +4,12 @@ export interface KVItem {
   enabled?: boolean;
 }
 
+export interface HeaderPreset {
+  id: string;
+  name: string;
+  headers: KVItem[];
+}
+
 export interface FormDataItem extends KVItem {
   formType?: 'text' | 'file';
   fileName?: string;
@@ -219,6 +225,7 @@ export interface SettingsState {
   longRequestThresholdMs: number;
   defaultHeaders: DefaultHeadersConfig;
   soapSecurity: SoapSecurityEntry[]; // global WS-Security defaults by hostname
+  headerPresets: HeaderPreset[];
 }
 
 export interface OAuth2ConfigPayload {
@@ -252,6 +259,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
     custom: [],
   },
   soapSecurity: [],
+  headerPresets: [],
 };
 
 export const DEFAULT_REQUEST: RequestState = {

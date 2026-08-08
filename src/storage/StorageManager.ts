@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { resolveDynamicVariables } from "../core";
 import type { OAuth2Token, AuthType, AuthDataLike } from "../core";
+import type { HeaderPreset } from "../core/headerPresets";
 
 export interface EnvVariable {
   key: string;
@@ -97,6 +98,7 @@ export interface SettingsState {
     custom: Array<{ key: string; value: string; enabled?: boolean }>;
   };
   soapSecurity: SoapSecurityEntry[];
+  headerPresets: HeaderPreset[];
 }
 
 export class StorageManager {
@@ -1171,6 +1173,15 @@ export class StorageManager {
           keystore: e?.keystore ?? "p12",
         };
       }),
+      headerPresets: (saved.headerPresets ?? []).map((p) => ({
+        id: p?.id ?? "",
+        name: p?.name ?? "",
+        headers: (p?.headers ?? []).map((h) => ({
+          key: h?.key ?? "",
+          value: h?.value ?? "",
+          enabled: h?.enabled !== false,
+        })),
+      })),
     };
   }
 

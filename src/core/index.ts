@@ -10,6 +10,7 @@ export * from "./defaultHeaders";
 export * from "./dynamicVarTokens";
 export * from "./dynamicVars";
 export * from "./headers";
+export * from "./headerPresets";
 export * from "./http";
 export * from "./oauth2";
 export * from "./redirects";

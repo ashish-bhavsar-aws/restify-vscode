@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
-import { KVItem, FormDataItem, RequestState, Environment, OAuth2ConfigPayload } from '../types';
+import { KVItem, FormDataItem, RequestState, Environment, OAuth2ConfigPayload, HeaderPreset } from '../types';
 import { KeyValueTable } from './KeyValueTable';
 import { CodeEditor } from './CodeEditor';
+import { mergeHeaders } from '../../core/headerPresets';
 import { getScriptTemplate } from './scriptExecutor';
 import { Icon, faEye, faEyeSlash, faTrash, faList, faLink, faFileLines, faTerminal, faKey } from './FaIcon';
 import { faListCheck } from '@fortawesome/free-solid-svg-icons';
@@ -40,6 +41,9 @@ interface RequestPaneProps {
   oauthFetching?: boolean;
   oauthStatus?: { state: 'success' | 'error' | 'none'; text?: string };
   onGetOAuthToken?: (config: OAuth2ConfigPayload) => void;
+  headerPresets?: HeaderPreset[];
+  onSaveHeaderPreset?: (name: string, headers: KVItem[]) => void;
+  onDeleteHeaderPreset?: (id: string) => void;
 }
 
 type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth' | 'schema';
@@ -124,6 +128,65 @@ const TabPanel = styled.div`
   flex: 1;
   overflow: hidden;
   flex-direction: column;
+`;
+
+const HeaderPresetBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  flex-shrink: 0;
+`;
+
+const PresetLabel = styled.span`
+  font-size: 12px;
+  color: ${({ theme }) => theme.muted};
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+`;
+
+const PresetSelect = styled.select`
+  background: ${({ theme }) => theme.inputBg};
+  color: ${({ theme }) => theme.inputFg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  padding: 5px 8px;
+  font-size: 12px;
+  min-width: 160px;
+  flex: 1;
+  max-width: 320px;
+`;
+
+const PresetNameInput = styled.input`
+  background: ${({ theme }) => theme.inputBg};
+  color: ${({ theme }) => theme.inputFg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  padding: 5px 8px;
+  font-size: 12px;
+  flex: 1;
+  max-width: 260px;
+`;
+
+const PresetBtn = styled.button<{ $danger?: boolean }>`
+  background: ${({ theme, $danger }) => ($danger ? 'transparent' : theme.surface2)};
+  color: ${({ theme, $danger }) => ($danger ? theme.error : theme.fg)};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: ${({ theme }) => theme.hover};
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
 `;
 
 const ScrollContainer = styled.div`
@@ -885,8 +948,11 @@ const AuthTypeDropdown: React.FC<{ authType: AuthType; onChange: (type: AuthType
 
 /* ─── RequestPane ────────────────────────────────── */
 
-export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment, oauthFetching, oauthStatus, onGetOAuthToken }) => {
+export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment, oauthFetching, oauthStatus, onGetOAuthToken, headerPresets = [], onSaveHeaderPreset, onDeleteHeaderPreset }) => {
   const [activeTab, setActiveTab] = useState<ReqTab>('params');
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [namingPreset, setNamingPreset] = useState(false);
+  const [presetName, setPresetName] = useState('');
 
   const activeParamCount = request.queryParams.filter((p) => p.key && p.enabled !== false).length;
   const activeHeaderCount = request.headers.filter((h) => h.key && h.enabled !== false).length;
@@ -940,6 +1006,33 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
 
   const replaceAllKvRows = (field: 'queryParams' | 'headers' | 'urlencoded', rows: KVItem[]) => {
     onUpdate({ [field]: rows });
+  };
+
+  const selectedPreset = headerPresets.find((p) => p.id === selectedPresetId) || null;
+
+  const applySelectedPreset = () => {
+    if (!selectedPreset) return;
+    onUpdate({ headers: mergeHeaders(request.headers, selectedPreset.headers) });
+  };
+
+  const saveCurrentAsPreset = () => {
+    if (!onSaveHeaderPreset) return;
+    setNamingPreset(true);
+    setPresetName('');
+  };
+
+  const confirmSavePreset = () => {
+    const name = presetName.trim();
+    if (!name || !onSaveHeaderPreset) return;
+    onSaveHeaderPreset(name, request.headers.filter((h) => (h.key || '').trim() !== ''));
+    setNamingPreset(false);
+    setPresetName('');
+  };
+
+  const deleteSelectedPreset = () => {
+    if (!selectedPreset || !onDeleteHeaderPreset) return;
+    onDeleteHeaderPreset(selectedPreset.id);
+    setSelectedPresetId('');
   };
 
   const updateFormDataRow = (index: number, updates: Partial<FormDataItem>) => {
@@ -1102,6 +1195,75 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
       {activeTab === 'headers' && (
         <TabPanel>
           <ScrollContainer>
+            <HeaderPresetBar>
+              {namingPreset ? (
+                <>
+                  <PresetLabel>Name</PresetLabel>
+                  <PresetNameInput
+                    autoFocus
+                    data-testid="header-preset-name-input"
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmSavePreset();
+                      if (e.key === 'Escape') setNamingPreset(false);
+                    }}
+                    placeholder="Preset name…"
+                  />
+                  <PresetBtn
+                    data-testid="header-preset-name-save"
+                    onClick={confirmSavePreset}
+                    disabled={!presetName.trim()}
+                  >
+                    Save
+                  </PresetBtn>
+                  <PresetBtn data-testid="header-preset-name-cancel" onClick={() => setNamingPreset(false)}>
+                    Cancel
+                  </PresetBtn>
+                </>
+              ) : (
+                <>
+                  <PresetLabel>Presets</PresetLabel>
+                  <PresetSelect
+                    data-testid="header-preset-select"
+                    value={selectedPresetId}
+                    onChange={(e) => setSelectedPresetId(e.target.value)}
+                  >
+                    <option value="">Select preset…</option>
+                    {headerPresets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </PresetSelect>
+                  <PresetBtn
+                    data-testid="header-preset-apply"
+                    onClick={applySelectedPreset}
+                    disabled={!selectedPreset}
+                    title="Merge the selected preset into the current headers"
+                  >
+                    Apply
+                  </PresetBtn>
+                  <PresetBtn
+                    data-testid="header-preset-save"
+                    onClick={saveCurrentAsPreset}
+                    disabled={!onSaveHeaderPreset || request.headers.every((h) => !(h.key || '').trim())}
+                    title="Save the current headers as a reusable preset"
+                  >
+                    Save as Preset
+                  </PresetBtn>
+                  <PresetBtn
+                    data-testid="header-preset-delete"
+                    $danger
+                    onClick={deleteSelectedPreset}
+                    disabled={!selectedPreset || !onDeleteHeaderPreset}
+                    title="Delete the selected preset"
+                  >
+                    Delete
+                  </PresetBtn>
+                </>
+              )}
+            </HeaderPresetBar>
             <KeyValueTable
               items={request.headers}
               addLabel="+ Add Header"

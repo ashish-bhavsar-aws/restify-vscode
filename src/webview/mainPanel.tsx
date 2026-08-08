@@ -17,6 +17,7 @@ import {
   DEFAULT_REQUEST,
   DEFAULT_SETTINGS,
   KVItem,
+  HeaderPreset,
   RequestState,
   ResponseState,
   Environment,
@@ -297,6 +298,7 @@ export const MainPanel: React.FC = () => {
   const [oauthFetching, setOauthFetching] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
   const [themeKind, setThemeKind] = useState<number>(2);
+  const headerPresets = settings.headerPresets;
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
@@ -779,9 +781,30 @@ export const MainPanel: React.FC = () => {
   };
 
   const handleSaveSettings = (newSettings: SettingsState) => {
-    setSettings(newSettings);
-    post({ command: "saveSettings", settings: newSettings });
+    const merged: SettingsState = { ...newSettings, headerPresets: settings.headerPresets };
+    setSettings(merged);
+    post({ command: "saveSettings", settings: merged });
     setSettingsModalOpen(false);
+  };
+
+  const handleSaveHeaderPreset = (name: string, headers: KVItem[]) => {
+    const preset: HeaderPreset = {
+      id: `preset-${Date.now().toString(36)}`,
+      name,
+      headers,
+    };
+    const next: SettingsState = { ...settings, headerPresets: [...settings.headerPresets, preset] };
+    setSettings(next);
+    post({ command: "saveSettings", settings: next });
+  };
+
+  const handleDeleteHeaderPreset = (id: string) => {
+    const next: SettingsState = {
+      ...settings,
+      headerPresets: settings.headerPresets.filter((p) => p.id !== id),
+    };
+    setSettings(next);
+    post({ command: "saveSettings", settings: next });
   };
 
   const handleDownloadFile = (payload: {
@@ -1013,6 +1036,9 @@ export const MainPanel: React.FC = () => {
             oauthFetching={oauthFetching}
             oauthStatus={activeTab.oauthStatus}
             onGetOAuthToken={handleGetOAuthToken}
+            headerPresets={headerPresets}
+            onSaveHeaderPreset={handleSaveHeaderPreset}
+            onDeleteHeaderPreset={handleDeleteHeaderPreset}
           />
           <Resizer />
           <ResponsePane

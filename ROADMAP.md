@@ -1,6 +1,6 @@
 # Restify — Missing Features & Implementation Roadmap
 
-**Status**: Living document · **Last reviewed**: 2026-08-05 · **Extension version**: 1.0.26
+**Status**: Living document · **Last reviewed**: 2026-08-08 · **Extension version**: 1.0.26
 
 This document inventories the gaps between Restify's current feature set and what a mature REST API client (Postman, Thunder Client, Bruno, HTTPie, REST Client) offers, then sequences them into an implementation roadmap for features that belong inside the VS Code extension itself.
 
@@ -44,7 +44,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F17 | **Default dynamic headers** | 🟡 P2 | Add switchable default headers like `User-Agent`, `X-Request-Id`, `X-Correlation-Id`, or `Date` that can be injected automatically. *(done — settings toggles in Settings modal; injected at request time via `src/core/defaultHeaders.ts`, only when not already set explicitly; unit + E2E covered)* |
 | F18 | **Variable autocomplete** | 🟡 P2 | ✅ Suggest `{{envVar}}` and `{{$dynamic}}` names in URL, header/param value cells, and the body/pre-script/post-script editors. *(done — shared `src/core/variableSuggestions.ts` pure logic (env prefix + `{{$` dynamic filtering, trailing-token replacement, caret math); wired into `UrlBar`, `KeyValueTable` value cells, and `CodeEditor` dropdown; 15 unit tests in `test/unit/variableSuggestions.test.ts`)* |
 | F19 | **Basic Auth via URL** | 🟡 P2 | ✅ Support `https://user:pass@host/` URL form and carry it into a Basic Authorization header. *(done — `extractBasicAuthFromUrl` in `src/core/url.ts` (decodes percent-encoded creds, strips them from the URL) folded into `applyAuthHeaders` as a fallback: URL creds apply when no Authorization header is set, explicit auth config still wins, and the stripped URL is returned via `applied.url` so credentials are never logged or sent; 11 unit tests in `test/unit/url.test.ts` + `test/unit/auth.test.ts`)* |
-| F20 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
+| F20 | **Header presets / groups** | 🟡 P2 | ✅ Save reusable header sets and apply them to requests. *(done — named presets stored inside `SettingsState` (survive settings saves/loads), **Presets** bar on the Headers tab with a dropdown + **Apply** (case-insensitive key merge/replace) + **Save as Preset** (inline name input) + **Delete**; shared merge logic in `src/core/headerPresets.ts`; unit tests in `test/unit/headerPresets.test.ts` + `test/unit/headerPresetStorage.test.ts`)* |
 | F61 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
 | F21 | **Request chaining** | 🟠 P1 | ✅ Post-response scripts store values with `set('key', value)` and they are scoped to the current window session, available in every later request as `{{key}}`; a new window starts a fresh scope. *(done — per-window session chain variables in `StorageManager` + script `set()`; E2E in `feature3.spec.ts`)* |
 
@@ -103,7 +103,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
 | F51 | **.http file support** | 🟡 P2 | Open/send REST-Client-format `.http` files; export requests to `.http`. |
-| F52 | **Multi-tab / multiple panels** | 🟡 P2 | Currently a single `RestifyPanel`; support multiple open request tabs. |
+| F52 | **Multi-tab / multiple panels** | 🟡 P2 | ✅ Multiple open request tabs. *(done — `TabBar.tsx` + tabbed `mainPanel` with per-tab request/response/oauth state, add/close/dirty-dot tabs, active-tab refs for message routing; commit `904410a`)* |
 | F53 | **Codegen: more languages** | 🟡 P2 | Add TypeScript fetch, Dart, Ruby, Rust, Kotlin, HTTPie (currently 11). |
 | F54 | **Command palette actions** | 🟡 P2 | "Restify: Send Request", "Search in Collections", "Restify: New from curl". |
 | F55 | **Rich diff of saved request** | ⚪ P3 | Show unsaved-change indicator vs last saved (there's a dirty dot only). |
@@ -230,7 +230,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F57 **History pins + fuzzy search**; [x] F54 **palette commands**. *(F54 done: `Restify: Send Request`, `Search in Collections`, `New from cURL`, New Request/Collection, Import Collection, Export All, Open Environments all registered and working in `src/extension.ts`; F57 done: fuzzy search on name/URL + pinned history entries (`pinned` flag on `HistoryEntry`, `StorageManager.toggleHistoryPin`, star toggle in `HistoryPanel` with pinned-first sorting); E2E in `feature6.spec.ts`)*
 - [x] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
 - [x] F46 **WebSocket client** (connect + send/receive frames + message log — dedicated panel).
-- [ ] F52 **Multi-tab request panels** (biggest UX surface; defer to late phase).
+- [x] F52 **Multi-tab request panels** *(done — `TabBar.tsx`, per-tab state in `mainPanel`, commit `904410a`)*.
 - [x] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included)*
 
 ### Phase 5 — Experimental / Long-term (P3)
@@ -281,7 +281,7 @@ Focus: move from basic request sending to practical daily workflows while keepin
 - F17 — Default dynamic headers ✅
 - F18 — Variable autocomplete ✅
 - F19 — Basic Auth via URL ✅
-- F20 — Header presets/groups
+- F20 — Header presets/groups ✅
 - F44 — Environment import/export ✅
 
 ### Release 3 — Ecosystem and editor integration (target: 4+ weeks)
@@ -291,7 +291,7 @@ Focus: make Restify fit into broader developer workflows and existing API toolch
 - F13 — cURL import ✅
 - F34/F35 — OpenAPI/HAR/Insomnia/.http import-export ✅
 - F53 — Additional code generation languages ✅
-- F52 — Multi-tab/multi-panel support
+- F52 — Multi-tab/multi-panel support ✅
 
 **Nice-to-have**
 - F11 — OAuth 2.0 ✅

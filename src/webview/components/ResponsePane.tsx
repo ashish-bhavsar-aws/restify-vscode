@@ -5,11 +5,13 @@ import { Icon } from './FaIcon';
 import { PdfViewer } from './PdfViewer';
 import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
-  faClipboardList, faXmark, faChevronRight,
+  faClipboardList, faChevronRight,
   faArrowUp, faList, faLink, faFileCode, faFileLines, faDownload, faCode, faCookieBite,
   faFlaskVial, faListCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
+import { ResponseSearchBar, type ResponseSearchMode } from './ResponseSearchBar';
+import { queryJsonPathInText } from '../../core/jsonPath';
 
 const LARGE_RESPONSE_THRESHOLD = 500 * 1024;
 const FILE_PREVIEW_RENDER_THRESHOLD = 5 * 1024 * 1024;
@@ -397,45 +399,6 @@ const LogTitle = styled.div`
   display: flex;
   align-items: center;
   gap: 6px;
-`;
-
-/* ─── Search Bar ──────────────────────────────────────── */
-
-const SearchBar = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-bottom: 1px solid ${({ theme }) => theme.border};
-  background: ${({ theme }) => theme.surface};
-  flex-shrink: 0;
-`;
-
-const SearchInput = styled.input`
-  flex: 1;
-  background: ${({ theme }) => theme.inputBg};
-  border: 1px solid ${({ theme }) => theme.accent};
-  color: ${({ theme }) => theme.fg};
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: inherit;
-  outline: none;
-`;
-
-const SearchCount = styled.span`
-  font-size: 10px;
-  color: ${({ theme }) => theme.muted};
-  flex-shrink: 0;
-`;
-
-const SearchCloseBtn = styled.button`
-  background: none;
-  border: none;
-  color: ${({ theme }) => theme.muted};
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
 `;
 
 /* ─── Large Response Warning ──────────────────────────── */
@@ -1537,6 +1500,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [bodySearch, setBodySearch] = useState('');
+  const [searchMode, setSearchMode] = useState<ResponseSearchMode>('text');
   const [showRawForLarge, setShowRawForLarge] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1544,7 +1508,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
   const send = post;
 
   useEffect(() => { if (showSearch) searchRef.current?.focus(); }, [showSearch]);
-  useEffect(() => { setShowSearch(false); setBodySearch(''); }, [response]);
+  useEffect(() => { setShowSearch(false); setBodySearch(''); setSearchMode('text'); }, [response]);
 
   const decodedFileText = React.useMemo(() => {
     if (!response?.isFileResponse || !response.fileBase64) return '';
@@ -1570,6 +1534,16 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
   const isLargeFilePreviewBlocked = !!response?.isFileResponse && response.size > FILE_PREVIEW_RENDER_THRESHOLD;
   const isPdfPreview = !!response?.isFileResponse && response.filePreviewType === 'pdf' && !!response.fileBase64;
   const searchableText = isPdfPreview ? '' : (response?.body || decodedFileText || '');
+
+  const jsonPathResult = React.useMemo(() => {
+    if (searchMode !== 'jsonpath' || !bodySearch.trim()) return null;
+    return queryJsonPathInText(response?.body || '', bodySearch.trim());
+  }, [searchMode, bodySearch, response?.body]);
+
+  const jsonPathHighlightRanges = React.useMemo(
+    () => (jsonPathResult?.ok ? jsonPathResult.ranges : []),
+    [jsonPathResult],
+  );
 
   const headerRows = React.useMemo(
     () => flattenHeaders(response?.headers),
@@ -1766,20 +1740,16 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
         <BodyContentWrapper>
           {/* Search bar */}
           {showSearch && (
-            <SearchBar>
-              <SearchInput ref={searchRef} type="text" placeholder="Search in response..." value={bodySearch}
-                onChange={e => setBodySearch(e.target.value)}
-                onKeyDown={e => e.key === 'Escape' && (setShowSearch(false), setBodySearch(''))}
-              />
-              {bodySearch && (
-                <SearchCount>
-                  {(() => { try { return (searchableText.match(new RegExp(escapeRegex(bodySearch), 'gi')) || []).length; } catch { return 0; } })()} matches
-                </SearchCount>
-              )}
-              <SearchCloseBtn onClick={() => { setShowSearch(false); setBodySearch(''); }}>
-                <Icon icon={faXmark} size={13} />
-              </SearchCloseBtn>
-            </SearchBar>
+            <ResponseSearchBar
+              mode={searchMode}
+              query={bodySearch}
+              searchableText={searchableText}
+              jsonPathResult={jsonPathResult}
+              onModeChange={setSearchMode}
+              onQueryChange={setBodySearch}
+              onClose={() => { setShowSearch(false); setBodySearch(''); }}
+              inputRef={searchRef}
+            />
           )}
           {/* Large response warning */}
           {response.size > LARGE_RESPONSE_THRESHOLD && !showRawForLarge && (
@@ -1793,7 +1763,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             {response.isFileResponse && response.fileBase64 ? (
               <FilePreview response={response} search={bodySearch} post={send} />
             ) : isLikelyJson(response.body, response.headers) ? (
-              <ContentPadding><PrettyBodyViewer text={response.body} language="json" search={bodySearch} /></ContentPadding>
+              <ContentPadding><PrettyBodyViewer text={response.body} language="json" search={searchMode === 'jsonpath' ? '' : bodySearch} highlightRanges={jsonPathHighlightRanges} /></ContentPadding>
             ) : isLikelyHtml(response.body, response.headers) ? (
               <ContentPadding><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></ContentPadding>
             ) : isLikelyXml(response.body, response.headers) ? (

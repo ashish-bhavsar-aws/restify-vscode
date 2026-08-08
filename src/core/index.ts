@@ -17,6 +17,7 @@ export * from "./responseResult";
 export * from "./script";
 export * from "./soapSecurity";
 export * from "./schemaValidation";
+export * from "./jsonPath";
 export * from "./url";
 export * from "./wsdl";
 export * from "./wsse";

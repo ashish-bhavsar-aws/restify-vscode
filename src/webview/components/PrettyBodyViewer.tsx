@@ -34,6 +34,7 @@ interface PrettyBodyViewerProps {
   jsonMode?: JsonDisplayMode;
   placeholder?: string;
   className?: string;
+  highlightRanges?: Array<{ from: number; to: number }>;
   onActivate?: () => void;
 }
 
@@ -209,6 +210,37 @@ function searchHighlightExtension(search: string): Extension {
   });
 }
 
+function jsonPathHighlightExtension(ranges: Array<{ from: number; to: number }>): Extension {
+  if (!ranges.length) return [];
+  const mark = Decoration.mark({ class: 'cm-response-jsonpath-match' });
+  return ViewPlugin.fromClass(class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = this.buildDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) {
+        this.decorations = this.buildDecorations(update.view);
+      }
+    }
+
+    buildDecorations(view: EditorView) {
+      const builder = new RangeSetBuilder<Decoration>();
+      const docLen = view.state.doc.length;
+      for (const r of ranges) {
+        const from = Math.max(0, Math.min(r.from, docLen));
+        const to = Math.max(from, Math.min(r.to, docLen));
+        builder.add(from, to, mark);
+      }
+      return builder.finish();
+    }
+  }, {
+    decorations: (plugin) => plugin.decorations,
+  });
+}
+
 const responseHighlightStyle = HighlightStyle.define([
   { tag: tags.propertyName, class: 'cm-response-json-key' },
   { tag: tags.string, class: 'cm-response-json-string' },
@@ -282,6 +314,7 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   jsonMode = 'formatted',
   placeholder,
   className = '',
+  highlightRanges = [],
   onActivate,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -323,6 +356,7 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
     syntaxHighlighting(responseHighlightStyle),
     languageExtension(language),
     searchHighlightExtension(search),
+    jsonPathHighlightExtension(highlightRanges),
     keymap.of([...foldKeymap, ...defaultKeymap]),
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
@@ -392,9 +426,14 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
       '.cm-line::selection': {
         backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
       },
+      '.cm-response-jsonpath-match': {
+        backgroundColor: `color-mix(in srgb, ${theme.accent} 38%, transparent)`,
+        outline: `1px solid ${theme.accent}`,
+        borderRadius: '2px',
+      },
       ...getSyntaxColors(isDark),
     }),
-  ], [language, search, theme, isDark]);
+  ], [language, search, theme, isDark, highlightRanges]);
 
   useEffect(() => {
     const host = hostRef.current;

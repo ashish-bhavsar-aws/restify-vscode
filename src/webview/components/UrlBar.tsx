@@ -5,7 +5,7 @@ import VariableTextInput from './VariableTextInput';
 import { Icon } from './FaIcon';
 import { faFloppyDisk, faStop } from '@fortawesome/free-solid-svg-icons';
 import { getMethodColor } from '../theme/methodColors';
-import { getDynamicVarSuggestions, applyDynamicVarSuggestion } from '../utils/dynamicVarSuggestions';
+import { getVariableSuggestions, applyVariableSuggestion } from '../../core/variableSuggestions';
 
 interface UrlBarProps {
   method: string;
@@ -368,7 +368,12 @@ export const UrlBar: React.FC<UrlBarProps> = ({
     }
   }, [displayUrl]);
 
-  const urlSuggestions = urlFocused ? getDynamicVarSuggestions(urlForSuggestions) : [];
+  const urlSuggestions = urlFocused
+    ? getVariableSuggestions(
+        urlForSuggestions,
+        (environment?.variables || []).map((v) => v.key),
+      )
+    : [];
 
   const handleUrlKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!urlSuggestions.length) {
@@ -381,10 +386,10 @@ export const UrlBar: React.FC<UrlBarProps> = ({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setUrlActiveIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       const idx = urlActiveIndex >= 0 ? urlActiveIndex : 0;
-      onUrlChange(applyDynamicVarSuggestion(urlForSuggestions, urlSuggestions[idx]));
+      onUrlChange(applyVariableSuggestion(urlForSuggestions, urlSuggestions[idx]));
       setUrlActiveIndex(-1);
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -412,19 +417,20 @@ export const UrlBar: React.FC<UrlBarProps> = ({
 
         {urlSuggestions.length > 0 && (
           <UrlSuggestionDropdown ref={urlDropdownRef}>
-            {urlSuggestions.map((token, idx) => (
+            {urlSuggestions.map((s, idx) => (
               <UrlSuggestionItem
-                key={token}
+                key={s.token}
                 data-testid="url-suggestion-item"
                 $active={idx === urlActiveIndex}
                 onMouseDown={() => {
-                  onUrlChange(applyDynamicVarSuggestion(urlForSuggestions, token));
+                  onUrlChange(applyVariableSuggestion(urlForSuggestions, s));
                   setUrlActiveIndex(-1);
                 }}
                 onMouseEnter={() => setUrlActiveIndex(idx)}
                 onMouseLeave={() => setUrlActiveIndex(-1)}
+                title={s.dynamic ? 'Dynamic variable' : 'Environment variable'}
               >
-                {token}
+                {s.dynamic ? s.token : `{{${s.name}}}`}
               </UrlSuggestionItem>
             ))}
           </UrlSuggestionDropdown>

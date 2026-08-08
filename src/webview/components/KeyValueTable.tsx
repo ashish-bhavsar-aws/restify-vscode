@@ -5,7 +5,7 @@ import { Icon, faTrash } from './FaIcon';
 import VariableTextInput from './VariableTextInput';
 import { getPredefinedHeaderNames, getHeaderSuggestions } from '../constants/predefinedHeaders';
 import { isDynamicVariableToken } from '../../core/dynamicVarTokens';
-import { getDynamicVarSuggestions, applyDynamicVarSuggestion } from '../utils/dynamicVarSuggestions';
+import { getVariableSuggestions, applyVariableSuggestion } from '../../core/variableSuggestions';
 import {
   parsePaste,
   parseBulkText,
@@ -228,6 +228,12 @@ interface KeyValueTableProps {
   onReplaceAll?: (rows: KVItem[]) => void;
 }
 
+/** Normalized autocomplete suggestion for a KV value cell. */
+type ValueSuggestionItem = {
+  display: string;
+  token: string;
+};
+
 const KvToolbar = styled.div`
   display: flex;
   justify-content: flex-end;
@@ -347,8 +353,8 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
 
   const applyValueSuggestion = useCallback(
     (currentValue: string, suggestion: string): string =>
-      suggestion.startsWith('{{$')
-        ? applyDynamicVarSuggestion(currentValue, suggestion)
+      suggestion.startsWith('{{')
+        ? applyVariableSuggestion(currentValue, { token: suggestion })
         : suggestion,
     [],
   );
@@ -398,7 +404,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   const handleValueKeyDown = useCallback((
     e: React.KeyboardEvent<HTMLInputElement>,
     rowIndex: number,
-    suggestions: string[],
+    suggestions: ValueSuggestionItem[],
     currentValue: string,
   ) => {
     if (!suggestions.length) return;
@@ -417,8 +423,8 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
       e.preventDefault();
       const idx = valueActiveIndex >= 0 ? valueActiveIndex : 0;
       const selected = suggestions[idx];
-      onUpdate(rowIndex, 'value', applyValueSuggestion(currentValue, selected));
-      setValueInput(selected);
+      onUpdate(rowIndex, 'value', applyValueSuggestion(currentValue, selected.token));
+      setValueInput(selected.display);
       setShowValueAutocomplete(null);
       setValueActiveIndex(-1);
       try { (e.currentTarget as HTMLInputElement).blur(); } catch { void 0; }
@@ -472,11 +478,15 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
         const keySuggestions = isHeaderTable && showKeyAutocomplete === i && keyInput.length > 0
           ? getPredefinedHeaderNames().filter((n) => n.toLowerCase().includes(keyInput.toLowerCase()))
           : [];
-        const dynamicVarSuggestions = focusedIndex === i ? getDynamicVarSuggestions(item.value) : [];
-        const headerValueSuggestions = isHeaderTable && showValueAutocomplete === i && item.key && valueInput.length > 0
+        const varSuggestions = (focusedIndex === i
+          ? getVariableSuggestions(item.value, variables.map((v) => v.key))
+          : []
+        ).map((s) => ({ display: s.dynamic ? s.token : `{{${s.name}}}`, token: s.token }));
+        const headerValueSuggestions = (isHeaderTable && showValueAutocomplete === i && item.key && valueInput.length > 0
           ? getHeaderSuggestions(item.key).filter((v) => v.toLowerCase().includes(valueInput.toLowerCase()))
-          : [];
-        const valueSuggestions = [...headerValueSuggestions, ...dynamicVarSuggestions];
+          : []
+        ).map((v) => ({ display: v, token: v }));
+        const valueSuggestions = [...headerValueSuggestions, ...varSuggestions];
 
         const valueVariant = item.value.includes('{{')
           ? hasUnresolvedVars
@@ -602,19 +612,19 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                 >
                   {valueSuggestions.map((val, idx) => (
                     <AutocompleteItem
-                      key={val}
+                      key={`${val.token}-${idx}`}
                       data-testid="kv-suggestion-item"
                       $active={idx === valueActiveIndex}
                       onMouseDown={() => {
-                        onUpdate(i, 'value', applyValueSuggestion(item.value, val));
+                        onUpdate(i, 'value', applyValueSuggestion(item.value, val.token));
                         setShowValueAutocomplete(null);
-                        setValueInput(val);
+                        setValueInput(val.display);
                         setValueActiveIndex(-1);
                       }}
                       onMouseEnter={() => setValueActiveIndex(idx)}
                       onMouseLeave={() => setValueActiveIndex(-1)}
                     >
-                      {val}
+                      {val.display}
                     </AutocompleteItem>
                   ))}
                 </AutocompleteDropdown>

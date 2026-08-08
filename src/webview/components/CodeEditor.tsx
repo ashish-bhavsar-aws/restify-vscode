@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { formatJSON, minifyJSON, prettyPrintXml } from './PrettyBodyViewer';
+import {
+  getVariableSuggestions,
+  applyVariableSuggestion,
+  incompleteTokenLength,
+} from '../../core/variableSuggestions';
+import type { VariableSuggestion } from '../../core/variableSuggestions';
 
 type Language = 'json' | 'xml' | 'text' | 'javascript';
 type JsonFormatMode = 'formatted' | 'minified';
@@ -16,6 +22,8 @@ interface CodeEditorProps {
   readOnly?: boolean;
   minHeight?: string;
   dataTestId?: string;
+  /** Env variable names used for `{{name}}` autocomplete suggestions. */
+  variableNames?: string[];
 }
 
 const Wrapper = styled.div`
@@ -193,6 +201,33 @@ const Ruler = styled.div`
   border: none;
 `;
 
+const VarDropdown = styled.div`
+  position: absolute;
+  z-index: 1200;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  box-shadow: 0 4px 16px ${({ theme }) => theme.shadowSm};
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 160px;
+  max-width: 320px;
+`;
+
+const VarDropdownItem = styled.div<{ $active?: boolean }>`
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  color: ${({ theme }) => theme.info};
+  background: ${({ $active, theme }) => ($active ? theme.hover : 'transparent')};
+
+  &:last-of-type {
+    border-bottom: none;
+  }
+`;
+
 const StatusBar = styled.div`
   display: flex;
   align-items: center;
@@ -233,6 +268,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   readOnly = false,
   minHeight = '200px',
   dataTestId,
+  variableNames,
 }) => {
   void _themeKind;
 
@@ -250,6 +286,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [isFormatting, setIsFormatting] = useState(false);
   const [lineHeights, setLineHeights] = useState<number[]>([19]);
   const [baseLineHeight, setBaseLineHeight] = useState(19);
+  const [varSuggestions, setVarSuggestions] = useState<VariableSuggestion[]>([]);
+  const [varActiveIndex, setVarActiveIndex] = useState(-1);
+  const [varPos, setVarPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     setEditorValue(value);
@@ -324,6 +363,75 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     });
   }, [updateCursorFromSelection, updateValue]);
 
+  const computeVarPos = useCallback((): { top: number; left: number } => {
+    const textarea = textareaRef.current;
+    const ruler = rulerRef.current;
+    if (!textarea || !ruler) return { top: 24, left: 16 };
+    const caret = textarea.selectionStart;
+    const textBefore = textarea.value.slice(0, caret);
+    const lines = textBefore.split('\n');
+    const lineIdx = lines.length - 1;
+    const lineText = lines[lineIdx] || '';
+
+    ruler.style.width = 'max-content';
+    ruler.style.whiteSpace = 'nowrap';
+    ruler.style.visibility = 'hidden';
+    ruler.innerHTML = '';
+    const span = document.createElement('span');
+    span.textContent = lineText.length ? lineText : ' ';
+    ruler.appendChild(span);
+    const measuredWidth = span.offsetWidth;
+    ruler.style.width = `${textarea.clientWidth}px`;
+    ruler.style.whiteSpace = 'pre-wrap';
+    ruler.innerHTML = '';
+    ruler.style.visibility = 'hidden';
+
+    return {
+      top: (lineIdx + 1) * baseLineHeight + 10,
+      left: Math.min(14 + measuredWidth, Math.max(14, textarea.clientWidth - 220)),
+    };
+  }, [baseLineHeight]);
+
+  const refreshVarSuggestions = useCallback(() => {
+    if (readOnly || !variableNames || variableNames.length === 0) {
+      setVarSuggestions([]);
+      setVarPos(null);
+      setVarActiveIndex(-1);
+      return;
+    }
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const textBefore = textarea.value.slice(0, textarea.selectionStart);
+    const suggestions = getVariableSuggestions(textBefore, variableNames);
+    if (suggestions.length === 0) {
+      setVarSuggestions([]);
+      setVarPos(null);
+      setVarActiveIndex(-1);
+      return;
+    }
+    setVarSuggestions(suggestions);
+    setVarPos(computeVarPos());
+    setVarActiveIndex((i) => (i >= suggestions.length ? 0 : i));
+  }, [computeVarPos, readOnly, variableNames]);
+
+  const acceptVarSuggestion = useCallback((suggestion: VariableSuggestion) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const caret = textarea.selectionStart;
+    const textBefore = textarea.value.slice(0, caret);
+    const nextValue = applyVariableSuggestion(textBefore, suggestion) + textarea.value.slice(caret);
+    const nextCaret = caret - incompleteTokenLength(textBefore) + suggestion.token.length;
+    setValueAndRestoreCaret(nextValue, nextCaret);
+    setVarSuggestions([]);
+    setVarPos(null);
+    setVarActiveIndex(-1);
+  }, [setValueAndRestoreCaret]);
+
+  const handleSelectionChange = useCallback(() => {
+    updateCursorFromSelection();
+    refreshVarSuggestions();
+  }, [refreshVarSuggestions, updateCursorFromSelection]);
+
   const formatCode = useCallback(() => {
     if (readOnly) return;
     if (!editorValue.trim()) return;
@@ -366,6 +474,31 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (readOnly) return;
 
+    if (varSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setVarActiveIndex((i) => Math.min(i + 1, varSuggestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setVarActiveIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acceptVarSuggestion(varSuggestions[varActiveIndex >= 0 ? varActiveIndex : 0]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setVarSuggestions([]);
+        setVarPos(null);
+        setVarActiveIndex(-1);
+        return;
+      }
+    }
+
     if (e.shiftKey && e.altKey && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       formatCode();
@@ -383,7 +516,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       const nextValue = `${editorValue.slice(0, start)}${insert}${editorValue.slice(end)}`;
       setValueAndRestoreCaret(nextValue, start + insert.length);
     }
-  }, [editorValue, formatCode, readOnly, setValueAndRestoreCaret]);
+  }, [acceptVarSuggestion, editorValue, formatCode, readOnly, setValueAndRestoreCaret, varActiveIndex, varSuggestions]);
 
   const canFormat = language === 'json' || language === 'xml';
   const langLabel = language === 'javascript' ? 'JS' : language.toUpperCase();
@@ -556,14 +689,34 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             autoCorrect="off"
             autoComplete="off"
             data-testid={dataTestId ? `${dataTestId}-textarea` : undefined}
-            onChange={(e) => updateValue(e.target.value)}
+            onChange={(e) => {
+              updateValue(e.target.value);
+              refreshVarSuggestions();
+            }}
             onKeyDown={handleKeyDown}
-            onClick={updateCursorFromSelection}
-            onKeyUp={updateCursorFromSelection}
-            onSelect={updateCursorFromSelection}
+            onClick={handleSelectionChange}
+            onKeyUp={handleSelectionChange}
+            onSelect={handleSelectionChange}
             onScroll={syncScroll}
           />
           <Ruler ref={rulerRef} aria-hidden="true" />
+          {varSuggestions.length > 0 && varPos && (
+            <VarDropdown style={{ top: varPos.top, left: varPos.left }}>
+              {varSuggestions.map((s, idx) => (
+                <VarDropdownItem
+                  key={s.token}
+                  $active={idx === varActiveIndex}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    acceptVarSuggestion(s);
+                  }}
+                  onMouseEnter={() => setVarActiveIndex(idx)}
+                >
+                  {s.dynamic ? s.token : `{{${s.name}}}`}
+                </VarDropdownItem>
+              ))}
+            </VarDropdown>
+          )}
         </EditorShell>
       </EditorBody>
 

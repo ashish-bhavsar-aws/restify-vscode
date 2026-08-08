@@ -1148,6 +1148,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                 jsonFormatMode={request.bodyFormat || 'formatted'}
                 onJsonFormatModeChange={(bodyFormat) => onUpdate({ bodyFormat })}
                 placeholder={request.bodyType === 'json' ? '{\n}' : 'Enter request body…'}
+                variableNames={(environment?.variables || []).map((v) => v.key)}
               />
             </BodyEditorWrap>
           )}
@@ -1364,6 +1365,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               themeKind={themeKind}
               placeholder={'// Example: vars[\'authToken\'] = \'abc123\';'}
               dataTestId="code-editor-pre-script"
+              variableNames={(environment?.variables || []).map((v) => v.key)}
             />
           </div>
 
@@ -1392,6 +1394,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               themeKind={themeKind}
               placeholder={'// Example: vars[\'token\'] = response.body.access_token;'}
               dataTestId="code-editor-post-script"
+              variableNames={(environment?.variables || []).map((v) => v.key)}
             />
           </div>
         </TabPanel>

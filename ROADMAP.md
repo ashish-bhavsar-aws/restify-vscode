@@ -42,7 +42,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F15 | **Clipboard paste into KV tables** | 🟡 P2 | ✅ Paste tab/newline-delimited rows from Excel/CSV into Params/Headers/Form tables. *(done — pasting multi-row clipboard text (tabs or newlines) into a key or value cell bulk-inserts parsed rows at the cursor row, reusing an empty target row when present; single-cell paste is untouched)* |
 | F16 | **Dynamic variables** | 🟠 P1 | `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}`, `{{$randomAlpha}}`, `{{$processEnv}}`, `{{$localDateTime}}` like Postman. |
 | F17 | **Default dynamic headers** | 🟡 P2 | Add switchable default headers like `User-Agent`, `X-Request-Id`, `X-Correlation-Id`, or `Date` that can be injected automatically. *(done — settings toggles in Settings modal; injected at request time via `src/core/defaultHeaders.ts`, only when not already set explicitly; unit + E2E covered)* |
-| F18 | **Variable autocomplete** | 🟡 P2 | Suggest `{{envVar}}` names in URL/headers/body inputs (currently only highlight + unresolved coloring). |
+| F18 | **Variable autocomplete** | 🟡 P2 | ✅ Suggest `{{envVar}}` and `{{$dynamic}}` names in URL, header/param value cells, and the body/pre-script/post-script editors. *(done — shared `src/core/variableSuggestions.ts` pure logic (env prefix + `{{$` dynamic filtering, trailing-token replacement, caret math); wired into `UrlBar`, `KeyValueTable` value cells, and `CodeEditor` dropdown; 15 unit tests in `test/unit/variableSuggestions.test.ts`)* |
 | F19 | **Basic Auth via URL** | 🟡 P2 | Support `https://user:pass@host/` URL form and carry it into Authorization header. |
 | F20 | **Header presets / groups** | 🟡 P2 | Save reusable header sets and apply them to requests. |
 | F61 | **Request templates** | ⚪ P3 | Starter templates (REST, GraphQL, Health-check) on "New Request". |
@@ -143,7 +143,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F15 — Clipboard paste into KV tables
 - F16 — Dynamic variables
 - F17 — Default dynamic headers
-- F18 — Variable autocomplete
+- F18 — Variable autocomplete ✅
 - F19 — Header presets / groups
 - F22 — JSON schema validation ✅
 - F23 — JSONPath / XPath query
@@ -278,7 +278,7 @@ Focus: move from basic request sending to practical daily workflows while keepin
 - F14 — Bulk editor for headers/params
 - F15 — Clipboard paste into KV tables
 - F17 — Default dynamic headers ✅
-- F18 — Variable autocomplete
+- F18 — Variable autocomplete ✅
 - F20 — Header presets/groups
 - F44 — Environment import/export ✅
 

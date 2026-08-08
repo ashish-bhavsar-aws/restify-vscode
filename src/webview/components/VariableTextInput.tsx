@@ -12,6 +12,7 @@ export interface VariableTextInputProps {
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
   onFocus?: React.FocusEventHandler<HTMLInputElement>;
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
+  onPaste?: React.ClipboardEventHandler<HTMLInputElement>;
 }
 
 const Wrapper = styled.div`
@@ -69,7 +70,7 @@ const Input = styled.input`
   }
 `;
 
-export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, placeholder, onChange, className = '', type = 'text', variables, onKeyDown, onFocus, onBlur }) => {
+export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, placeholder, onChange, className = '', type = 'text', variables, onKeyDown, onFocus, onBlur, onPaste }) => {
   const [focused, setFocused] = useState(false);
   const [localValue, setLocalValue] = useState(value);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -146,6 +147,8 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
             focusInputWithSelection(start, end);
           }}
           onPaste={(e) => {
+            onPaste?.(e as React.ClipboardEvent<HTMLInputElement>);
+            if (e.defaultPrevented) return;
             e.preventDefault();
             const paste = e.clipboardData?.getData('text') ?? '';
             const el = e.currentTarget as HTMLElement;
@@ -181,6 +184,7 @@ export const VariableTextInput: React.FC<VariableTextInputProps> = ({ value, pla
           onFocus={(e) => { setFocused(true); onFocus?.(e); }}
           onBlur={(e) => { setFocused(false); onBlur?.(e); }}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
         />
       )}
     </Wrapper>

@@ -6,6 +6,12 @@ import VariableTextInput from './VariableTextInput';
 import { getPredefinedHeaderNames, getHeaderSuggestions } from '../constants/predefinedHeaders';
 import { isDynamicVariableToken } from '../../core/dynamicVarTokens';
 import { getDynamicVarSuggestions, applyDynamicVarSuggestion } from '../utils/dynamicVarSuggestions';
+import {
+  parsePaste,
+  parseBulkText,
+  serializeBulkText,
+  isBulkPaste,
+} from '../../core/kvParse';
 
 const hasUnresolvedVariables = (
   text: string,
@@ -216,7 +222,68 @@ interface KeyValueTableProps {
   onRemove: (index: number) => void;
   environment?: Environment | null;
   isHeaderTable?: boolean;
+  /** Bulk-insert rows starting at the given index (clipboard paste). */
+  onBulkInsert?: (rows: KVItem[], index: number) => void;
+  /** Replace the full row list (bulk editor parse-on-change). */
+  onReplaceAll?: (rows: KVItem[]) => void;
 }
+
+const KvToolbar = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid color-mix(in srgb, ${({ theme }) => theme.border} 40%, transparent);
+  flex-shrink: 0;
+`;
+
+const BulkToggle = styled.button<{ $active?: boolean }>`
+  background: none;
+  border: 1px solid ${({ theme, $active }) => ($active ? theme.accent : theme.border)};
+  color: ${({ theme, $active }) => ($active ? theme.accent : theme.muted)};
+  border-radius: ${({ theme }) => theme.radius};
+  font-size: 11px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: inherit;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.accent};
+    color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const BulkEditor = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+`;
+
+const BulkTextarea = styled.textarea`
+  flex: 1;
+  min-height: 160px;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: ${({ theme }) => theme.fg};
+  font-size: 12px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  padding: 10px 12px;
+  line-height: 1.6;
+
+  &::placeholder {
+    color: ${({ theme }) => theme.muted};
+  }
+`;
+
+const BulkHint = styled.div`
+  font-size: 10px;
+  color: ${({ theme }) => theme.muted};
+  padding: 0 12px 6px;
+  opacity: 0.8;
+  flex-shrink: 0;
+`;
 
 function scrollItemIntoView(container: HTMLDivElement | null, activeIndex: number) {
   if (!container) return;
@@ -239,6 +306,8 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   onRemove,
   environment,
   isHeaderTable = false,
+  onBulkInsert,
+  onReplaceAll,
 }) => {
   const variables = environment?.variables || [];
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -248,8 +317,33 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
   const [valueInput, setValueInput] = useState<string>('');
   const [keyActiveIndex, setKeyActiveIndex] = useState<number>(-1);
   const [valueActiveIndex, setValueActiveIndex] = useState<number>(-1);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
   const keyDropdownRef = useRef<HTMLDivElement>(null);
   const valueDropdownRef = useRef<HTMLDivElement>(null);
+
+  const bulkMode: 'headers' | 'params' = isHeaderTable ? 'headers' : 'params';
+
+  const openBulkEditor = () => {
+    setBulkText(serializeBulkText(items, bulkMode));
+    setBulkOpen(true);
+  };
+
+  const handleBulkChange = (text: string) => {
+    setBulkText(text);
+    if (!onReplaceAll) return;
+    const rows = parseBulkText(text, bulkMode);
+    if (rows.length > 0) onReplaceAll(rows as KVItem[]);
+  };
+
+  const handleCellPaste = (e: React.ClipboardEvent<HTMLInputElement>, rowIndex: number) => {
+    if (!onBulkInsert) return;
+    const text = e.clipboardData?.getData('text') ?? '';
+    if (!isBulkPaste(text)) return;
+    e.preventDefault();
+    const rows = parsePaste(text, bulkMode);
+    if (rows.length > 0) onBulkInsert(rows as KVItem[], rowIndex);
+  };
 
   const applyValueSuggestion = useCallback(
     (currentValue: string, suggestion: string): string =>
@@ -336,7 +430,40 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
 
   return (
     <KvWrap>
-      {items.map((item, i) => {
+      {onReplaceAll && (
+        <KvToolbar>
+          <BulkToggle
+            $active={bulkOpen}
+            data-testid="kv-bulk-toggle"
+            onClick={() => (bulkOpen ? setBulkOpen(false) : openBulkEditor())}
+          >
+            {bulkOpen ? 'Done' : 'Bulk Edit'}
+          </BulkToggle>
+        </KvToolbar>
+      )}
+
+      {bulkOpen ? (
+        <BulkEditor>
+          <BulkTextarea
+            data-testid="kv-bulk-editor"
+            value={bulkText}
+            onChange={(e) => handleBulkChange(e.target.value)}
+            placeholder={
+              bulkMode === 'headers'
+                ? 'Accept: application/json\nX-API-Key: abc123'
+                : 'id=1\nname=Example'
+            }
+            spellCheck={false}
+          />
+          <BulkHint>
+            {bulkMode === 'headers'
+              ? 'One header per line as Key: Value. Changes apply live.'
+              : 'One parameter per line as key=value. Changes apply live.'}
+          </BulkHint>
+        </BulkEditor>
+      ) : (
+        <>
+          {items.map((item, i) => {
         const hasUnresolvedVars = hasUnresolvedVariables(item.value, variables);
         const _resolvedValue = resolveVariables(item.value);
         const isFocused = focusedIndex === i;
@@ -392,6 +519,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                   setTimeout(() => { setShowKeyAutocomplete(null); setKeyActiveIndex(-1); }, 200);
                 }}
                 onKeyDown={(e) => handleKeyKeyDown(e, i, keySuggestions)}
+                onPaste={(e) => handleCellPaste(e, i)}
               />
               {keySuggestions.length > 0 && (
                 <AutocompleteDropdown
@@ -456,6 +584,7 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
                 $variant={valueVariant}
                 variables={variables}
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleValueKeyDown(e, i, valueSuggestions, item.value)}
+                onPaste={(e) => handleCellPaste(e, i)}
               />
 
               {valueSuggestions.length > 0 && (
@@ -496,10 +625,12 @@ export const KeyValueTable: React.FC<KeyValueTableProps> = ({
             </KvDel>
           </KvRow>
         );
-      })}
-      <AddRowBtn onClick={onAdd} data-testid="kv-add-row">
-        {addLabel}
-      </AddRowBtn>
+        })}
+          <AddRowBtn onClick={onAdd} data-testid="kv-add-row">
+            {addLabel}
+          </AddRowBtn>
+        </>
+      )}
     </KvWrap>
   );
 };

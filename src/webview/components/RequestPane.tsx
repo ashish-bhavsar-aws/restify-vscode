@@ -922,6 +922,26 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
     onUpdate({ [field]: (request[field] as KVItem[]).filter((_, i) => i !== index) });
   };
 
+  const bulkInsertKvRows = (field: 'queryParams' | 'headers' | 'urlencoded', index: number, rows: KVItem[]) => {
+    const current =
+      field === 'urlencoded'
+        ? (request.urlencoded || []) as KVItem[]
+        : (request[field] as KVItem[]);
+    const next = [...current];
+    const target = next[index];
+    // Reuse the empty target row as the first pasted row when present.
+    if (target && target.key === '' && target.value === '') {
+      next.splice(index, 1, ...rows);
+    } else {
+      next.splice(index, 0, ...rows);
+    }
+    onUpdate({ [field]: next });
+  };
+
+  const replaceAllKvRows = (field: 'queryParams' | 'headers' | 'urlencoded', rows: KVItem[]) => {
+    onUpdate({ [field]: rows });
+  };
+
   const updateFormDataRow = (index: number, updates: Partial<FormDataItem>) => {
     const next = [...(request.formData || [])];
     next[index] = { ...next[index], ...updates };
@@ -1071,6 +1091,8 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               onUpdate={(i, f, v) => updateKvList('queryParams', i, f, v)}
               onRemove={(i) => removeKvRow('queryParams', i)}
               environment={environment}
+              onBulkInsert={(rows, idx) => bulkInsertKvRows('queryParams', idx, rows)}
+              onReplaceAll={(rows) => replaceAllKvRows('queryParams', rows)}
             />
           </ScrollContainer>
         </TabPanel>
@@ -1088,6 +1110,8 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
               onRemove={(i) => removeKvRow('headers', i)}
               environment={environment}
               isHeaderTable={true}
+              onBulkInsert={(rows, idx) => bulkInsertKvRows('headers', idx, rows)}
+              onReplaceAll={(rows) => replaceAllKvRows('headers', rows)}
             />
           </ScrollContainer>
         </TabPanel>
@@ -1268,6 +1292,8 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
                   });
                 }}
                 environment={environment}
+                onBulkInsert={(rows, idx) => bulkInsertKvRows('urlencoded', idx, rows)}
+                onReplaceAll={(rows) => replaceAllKvRows('urlencoded', rows)}
               />
             </ScrollContainer>
           )}

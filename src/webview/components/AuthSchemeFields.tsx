@@ -138,7 +138,7 @@ export const InheritAuthFields: React.FC<Pick<SchemeFieldsProps, 'onAuthDataChan
   <AuthFieldsContainer>
     <OAuthHint>
       Use the authentication configured on the parent collection. Set it from
-      the collection's context menu in the sidebar ("Set Auth…"). Requests
+      the collection&apos;s context menu in the sidebar (&quot;Set Auth…&quot;). Requests
       outside a collection fall back to no auth.
     </OAuthHint>
   </AuthFieldsContainer>

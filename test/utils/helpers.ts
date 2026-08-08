@@ -298,16 +298,21 @@ export async function addHeader(
 
 export async function setAuthType(
   frame: Frame,
-  authType: 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2',
+  authType: 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2' | 'digest' | 'awssigv4' | 'jwt' | 'hawk' | 'inherit',
 ): Promise<void> {
   await clickRequestTab(frame, 'auth');
   await frame.waitForTimeout(500);
 
   const labelMap: Record<string, string> = {
     none: 'None',
+    inherit: 'Inherit from Collection',
     bearer: 'Bearer Token',
     basic: 'Basic Auth',
     apikey: 'API Key',
+    digest: 'Digest Auth',
+    awssigv4: 'AWS Signature v4',
+    jwt: 'JWT Bearer',
+    hawk: 'Hawk Auth',
     oauth2: 'OAuth 2.0',
   };
   const searchLabel = labelMap[authType] || authType;
@@ -437,6 +442,84 @@ export async function fillApiKeyAuth(
       }
     }
   }
+}
+
+// ─── New auth scheme fillers ──────────────────────────────────────
+
+export async function fillDigestAuth(
+  frame: Frame,
+  username: string,
+  password: string,
+): Promise<void> {
+  await setAuthType(frame, 'digest');
+  await frame.waitForTimeout(500);
+  await clickDisplayAndFill(frame, 0, username);
+  const displays = frame.locator('#req-pane [data-testid="variable-text-display"]');
+  if (await displays.count() >= 2) {
+    await displays.nth(1).scrollIntoViewIfNeeded();
+    await frame.waitForTimeout(200);
+  }
+  await clickDisplayAndFill(frame, 1, password);
+}
+
+export async function fillSigV4Auth(
+  frame: Frame,
+  opts: { accessKey: string; secretKey: string; region: string; service: string; sessionToken?: string },
+): Promise<void> {
+  await setAuthType(frame, 'awssigv4');
+  await frame.waitForTimeout(500);
+  const values = [opts.accessKey, opts.secretKey, opts.sessionToken ?? '', opts.region, opts.service];
+  for (let i = 0; i < values.length; i++) {
+    const displays = frame.locator('#req-pane [data-testid="variable-text-display"]');
+    if (await displays.count() > i) {
+      await displays.nth(i).scrollIntoViewIfNeeded();
+      await frame.waitForTimeout(150);
+    }
+    await clickDisplayAndFill(frame, i, values[i]);
+  }
+}
+
+export async function fillJwtAuth(
+  frame: Frame,
+  opts: { secret: string; issuer?: string; subject?: string; expiresIn?: string; headerName?: string },
+): Promise<void> {
+  await setAuthType(frame, 'jwt');
+  await frame.waitForTimeout(500);
+  // Panel field order for HS256: secret (0), kid (1), iss (2), sub (3),
+  // aud (4), expires (5), claims (6), header (7). Fill only the fields that
+  // were provided so unspecified ones keep their defaults (e.g. the default
+  // header name "Authorization").
+  const pairs: Array<[number, string]> = [
+    [0, opts.secret],
+    [2, opts.issuer ?? ''],
+    [3, opts.subject ?? ''],
+    [5, opts.expiresIn ?? '3600'],
+  ];
+  if (opts.headerName) pairs.push([7, opts.headerName]);
+  for (const [target, value] of pairs) {
+    const displays = frame.locator('#req-pane [data-testid="variable-text-display"]');
+    if (await displays.count() > target) {
+      await displays.nth(target).scrollIntoViewIfNeeded();
+      await frame.waitForTimeout(150);
+    }
+    await clickDisplayAndFill(frame, target, value);
+  }
+}
+
+export async function fillHawkAuth(
+  frame: Frame,
+  id: string,
+  key: string,
+): Promise<void> {
+  await setAuthType(frame, 'hawk');
+  await frame.waitForTimeout(500);
+  await clickDisplayAndFill(frame, 0, id);
+  const displays = frame.locator('#req-pane [data-testid="variable-text-display"]');
+  if (await displays.count() >= 2) {
+    await displays.nth(1).scrollIntoViewIfNeeded();
+    await frame.waitForTimeout(200);
+  }
+  await clickDisplayAndFill(frame, 1, key);
 }
 
 // ─── Environment Manager ──────────────────────────────────────────

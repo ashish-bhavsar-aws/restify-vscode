@@ -797,6 +797,89 @@ app.post('/api/auth/verify', (req, res) => {
 });
 
 /**
+ * HTTP Digest (RFC 7616) challenge-response endpoint.
+ * Credentials: digestuser / digestpass, realm "restify", qop "auth".
+ */
+app.get('/api/auth/digest', (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (!/^\s*digest\b/i.test(auth)) {
+    res.setHeader(
+      'WWW-Authenticate',
+      'Digest realm="restify", nonce="e2e-nonce-1234567890", qop="auth", algorithm=MD5',
+    );
+    return res.status(401).json({ error: 'digest challenge' });
+  }
+  const parts = {};
+  auth.replace(/^\s*digest\s+/i, '')
+    .split(',')
+    .forEach((pair) => {
+      const idx = pair.indexOf('=');
+      if (idx < 0) return;
+      const key = pair.slice(0, idx).trim().toLowerCase();
+      let value = pair.slice(idx + 1).trim();
+      if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+      parts[key] = value;
+    });
+  const { username, realm = 'restify', nonce, nc, cnonce, qop, response, uri, method = 'GET' } = parts;
+  if (username !== 'digestuser') return res.status(401).json({ error: 'bad user' });
+  const md5 = (s) => crypto.createHash('md5').update(s).digest('hex');
+  const ha1 = md5(`${username}:${realm}:digestpass`);
+  const ha2 = md5(`${method}:${uri}`);
+  const expected = md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`);
+  if (expected !== response) return res.status(401).json({ error: 'bad response' });
+  res.json({ authenticated: true, scheme: 'digest', username });
+});
+
+/**
+ * AWS Signature Version 4 validation.
+ * Checks the header is well-formed (Credential, SignedHeaders, Signature,
+ * X-Amz-Date present). Returns 200 when valid.
+ */
+app.get('/api/auth/sigv4', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const match = /^AWS4-HMAC-SHA256 Credential=([^,]+), SignedHeaders=([^,]+), Signature=([a-f0-9]{64})$/i.exec(auth.trim());
+  const amzDate = req.headers['x-amz-date'];
+  if (!match || !amzDate) {
+    return res.status(401).json({ error: 'invalid sigv4 header' });
+  }
+  res.json({
+    authenticated: true,
+    scheme: 'awssigv4',
+    credential: match[1],
+    signedHeaders: match[2].split(';'),
+    'x-amz-date': amzDate,
+  });
+});
+
+/**
+ * JWT bearer validation (HS256 with secret "test-secret").
+ */
+app.get('/api/auth/jwt', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const token = /^\s*bearer\s+(.+)$/i.exec(auth)?.[1];
+  if (!token) return res.status(401).json({ error: 'missing bearer token' });
+  const [headB64, payloadB64, sigB64] = token.split('.');
+  if (!headB64 || !payloadB64 || !sigB64) return res.status(401).json({ error: 'malformed jwt' });
+  const hmac = crypto.createHmac('sha256', 'test-secret');
+  hmac.update(`${headB64}.${payloadB64}`);
+  const expected = hmac.digest('base64url');
+  if (expected !== sigB64) return res.status(401).json({ error: 'bad signature' });
+  const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+  if (!payload.exp || payload.exp * 1000 < Date.now()) return res.status(401).json({ error: 'expired' });
+  res.json({ authenticated: true, scheme: 'jwt', sub: payload.sub, iss: payload.iss });
+});
+
+/**
+ * Hawk MAC validation — checks the Authorization header is well-formed.
+ */
+app.get('/api/auth/hawk', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const match = /^Hawk id="([^"]+)", ts="(\d+)", nonce="([^"]+)", mac="([A-Za-z0-9+/=]+)"/i.exec(auth.trim());
+  if (!match) return res.status(401).json({ error: 'invalid hawk header' });
+  res.json({ authenticated: true, scheme: 'hawk', id: match[1] });
+});
+
+/**
  * @swagger
  * /api/csv:
  *   get:

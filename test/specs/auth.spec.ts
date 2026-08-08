@@ -22,6 +22,10 @@ import {
   fillBearerToken,
   fillBasicAuth,
   fillApiKeyAuth,
+  fillDigestAuth,
+  fillSigV4Auth,
+  fillJwtAuth,
+  fillHawkAuth,
 } from '../utils/helpers';
 import type { Frame } from '@playwright/test';
 
@@ -94,6 +98,69 @@ test.describe('Authentication', () => {
     logCheck('API Key in query response', body.includes('query-key-123'));
     expect(body).toContain('query-key-123');
     await screenshot(app.window, 'auth-apikey-query');
+  });
+
+  test('Digest auth completes the 401 challenge round-trip', async () => {
+    log('--- Digest auth ---');
+    await fillDigestAuth(mainFrame!, 'digestuser', 'digestpass');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/digest'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    const body = await getResponseText(mainFrame!);
+    logCheck('Digest authenticated in response', body.includes('digestuser'));
+    expect(body).toContain('digestuser');
+    expect(body).toContain('digest');
+    await screenshot(app.window, 'auth-digest');
+  });
+
+  test('AWS SigV4 header is well-formed and accepted', async () => {
+    log('--- AWS SigV4 ---');
+    await fillSigV4Auth(mainFrame!, {
+      accessKey: 'AKIAIOSFODNN7EXAMPLE',
+      secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      region: 'us-east-1',
+      service: 'execute-api',
+    });
+    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/sigv4'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    const body = await getResponseText(mainFrame!);
+    logCheck('SigV4 accepted', body.includes('awssigv4'));
+    expect(body).toContain('awssigv4');
+    expect(body).toContain('AKIAIOSFODNN7EXAMPLE');
+    await screenshot(app.window, 'auth-sigv4');
+  });
+
+  test('JWT bearer token is signed and validated', async () => {
+    log('--- JWT bearer ---');
+    await fillJwtAuth(mainFrame!, {
+      secret: 'test-secret',
+      issuer: 'restify-e2e',
+      subject: 'e2e-user',
+      expiresIn: '3600',
+    });
+    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/jwt'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    const body = await getResponseText(mainFrame!);
+    logCheck('JWT accepted', body.includes('jwt'));
+    expect(body).toContain('jwt');
+    expect(body).toContain('restify-e2e');
+    expect(body).toContain('e2e-user');
+    await screenshot(app.window, 'auth-jwt');
+  });
+
+  test('Hawk MAC authorization is accepted', async () => {
+    log('--- Hawk auth ---');
+    await fillHawkAuth(mainFrame!, 'dh37fgj492je', 'werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn');
+    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/hawk'));
+    const ok = await waitForResponse(mainFrame!, 15_000);
+    expect(ok).toBe(true);
+    const body = await getResponseText(mainFrame!);
+    logCheck('Hawk accepted', body.includes('hawk'));
+    expect(body).toContain('hawk');
+    expect(body).toContain('dh37fgj492je');
+    await screenshot(app.window, 'auth-hawk');
   });
 
   test('No auth sends no Authorization header', async () => {

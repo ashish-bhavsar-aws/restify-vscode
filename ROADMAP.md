@@ -60,7 +60,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F27 | **Timeline / time breakdown** | 🟡 P2 | TTFB, transfer, DNS, TLS stages (needs refactor of `_doRequest` timing). |
 | F28 | **Streaming / SSE support** | ⚪ P3 | Incremental body rendering for chunked/`text/event-stream` responses. |
 | F29 | **Response cache / offline replay** | ⚪ P3 | Replay cached responses without a network round-trip. |
-| F30 | **Notification on long request** | 🟡 P2 | Toast/status-bar notify when a request completes in background. |
+| F30 | **Notification on long request** | 🟡 P2 | ✅ Toast/status-bar notify when a request completes in background. *(done — after a request finishes, a VS Code notification is shown when the duration exceeds a threshold (default 5 s) while the window is unfocused (`src/core/completionNotify.ts`); Settings → General adds **Notify on long requests** + **Long Request Threshold**; 9 unit tests + E2E in `completion-notify.spec.ts`)* |
 
 ### 1.4 Collections & Workflow
 
@@ -149,7 +149,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F23 — JSONPath / XPath query
 - F24 — Response beautify options
 - F25 — Save response to file ✅
-- F30 — Notification on long request
+- F30 — Notification on long request ✅
 - F44 — Environment import/export ✅
 - F46 — WebSocket client
 - F52 — Multi-tab / multiple panels

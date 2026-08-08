@@ -215,6 +215,8 @@ export interface SettingsState {
   certificates: CertEntry[];
   showActivityLog: boolean;
   defaultTimeout: number;   // default request timeout in ms
+  notifyOnLongRequest: boolean;
+  longRequestThresholdMs: number;
   defaultHeaders: DefaultHeadersConfig;
   soapSecurity: SoapSecurityEntry[]; // global WS-Security defaults by hostname
 }
@@ -240,6 +242,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   certificates: [],
   showActivityLog: true,
   defaultTimeout: 30000,
+  notifyOnLongRequest: true,
+  longRequestThresholdMs: 5000,
   defaultHeaders: {
     userAgent: false,
     requestId: false,

@@ -87,6 +87,8 @@ export interface SettingsState {
   certificates: CertEntry[];
   showActivityLog: boolean;
   defaultTimeout: number;
+  notifyOnLongRequest: boolean;
+  longRequestThresholdMs: number;
   defaultHeaders: {
     userAgent: boolean;
     requestId: boolean;
@@ -1137,6 +1139,8 @@ export class StorageManager {
       certificates: saved.certificates ?? [],
       showActivityLog: saved.showActivityLog ?? true,
       defaultTimeout: saved.defaultTimeout ?? 30000,
+      notifyOnLongRequest: saved.notifyOnLongRequest ?? true,
+      longRequestThresholdMs: saved.longRequestThresholdMs ?? 5000,
       defaultHeaders: {
         userAgent: saved.defaultHeaders?.userAgent ?? false,
         requestId: saved.defaultHeaders?.requestId ?? false,

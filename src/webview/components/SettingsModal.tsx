@@ -424,6 +424,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
   const [showActivityLog, setShowActivityLog] = useState(true);
   const [defaultTimeout, setDefaultTimeout] = useState(30000);
+  const [notifyOnLongRequest, setNotifyOnLongRequest] = useState(true);
+  const [notifyThreshold, setNotifyThreshold] = useState(5000);
   const [defaultHeaders, setDefaultHeaders] = useState<SettingsState['defaultHeaders']>({
     userAgent: false,
     requestId: false,
@@ -514,6 +516,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setCertificates(initialSettings.certificates || []);
       setShowActivityLog(initialSettings.showActivityLog !== false);
       setDefaultTimeout(initialSettings.defaultTimeout ?? 30000);
+      setNotifyOnLongRequest(initialSettings.notifyOnLongRequest !== false);
+      setNotifyThreshold(initialSettings.longRequestThresholdMs ?? 5000);
       setDefaultHeaders(
         initialSettings.defaultHeaders || {
           userAgent: false,
@@ -567,6 +571,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         typeof defaultTimeout === 'number' && defaultTimeout > 0
           ? defaultTimeout
           : 30000,
+      notifyOnLongRequest,
+      longRequestThresholdMs:
+        typeof notifyThreshold === 'number' && notifyThreshold > 0
+          ? notifyThreshold
+          : 5000,
       defaultHeaders,
       soapSecurity: soapEntries,
     });
@@ -803,6 +812,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               />
               <HelperText>
                 Default timeout applied to requests that don&apos;t specify one.
+              </HelperText>
+
+              <CheckboxLabel data-testid="notify-long-request-toggle">
+                <input
+                  type="checkbox"
+                  checked={notifyOnLongRequest}
+                  onChange={(e) => setNotifyOnLongRequest(e.target.checked)}
+                />
+                Notify on long requests
+              </CheckboxLabel>
+              <HelperText>
+                Show a notification when a request takes longer than the
+                threshold below while the window isn&apos;t focused.
+              </HelperText>
+
+              <Label>Long Request Threshold (ms)</Label>
+              <Input
+                type="number"
+                min={100}
+                placeholder="5000"
+                value={notifyThreshold}
+                onChange={(e) => setNotifyThreshold(Number(e.target.value))}
+              />
+              <HelperText>
+                Requests taking longer than this trigger the completion
+                notification.
               </HelperText>
             </Section>
 

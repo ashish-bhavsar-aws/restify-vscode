@@ -44,6 +44,8 @@ import {
   validateResponseIfEnabled,
   extensionForContentType,
   suggestResponseFilename,
+  shouldNotifyOnCompletion,
+  formatCompletionNotification,
   type CoreRequestForBody,
   type OAuth2Config,
   type ResolvedSoapSecurity,
@@ -1356,6 +1358,8 @@ export class RestifyPanel {
         /* empty */
       }
 
+      this._notifyRequestComplete({ method, url: finalUrl, status: finalResult.status, durationMs: duration });
+
       // Measure history add time
       try {
         const hStart = Date.now();
@@ -1467,6 +1471,7 @@ export class RestifyPanel {
         error: err.message,
         duration,
       });
+      this._notifyRequestComplete({ method, url: finalUrl, status: 0, durationMs: duration });
       this.storageManager.addToHistory({
         method,
         url: finalUrl,
@@ -1933,6 +1938,15 @@ export class RestifyPanel {
         );
       }
     }
+  }
+
+  private _notifyRequestComplete(opts: { method: string; url: string; status: number; durationMs: number }): void {
+    const settings = this.storageManager.getSettings();
+    const testThreshold = Number(process.env.RESTIFY_TEST_NOTIFY_THRESHOLD_MS || "");
+    const background = process.env.RESTIFY_TEST_NOTIFY_THRESHOLD_MS !== undefined || !vscode.window.state.focused;
+    const thresholdMs = Number.isFinite(testThreshold) && testThreshold > 0 ? testThreshold : settings.longRequestThresholdMs;
+    if (!shouldNotifyOnCompletion({ enabled: settings.notifyOnLongRequest, durationMs: opts.durationMs, thresholdMs, background })) return;
+    vscode.window.showInformationMessage(`Request completed: ${formatCompletionNotification(opts)}`);
   }
 
   private _defaultSaveUri(fileName: string): vscode.Uri {

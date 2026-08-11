@@ -86,6 +86,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'toggleHistoryPin':
           this.storageManager.toggleHistoryPin(msg.id);
           break;
+        case 'newRequest':
+          vscode.commands.executeCommand('restify.newRequest');
+          break;
         case 'clearHistory':
           vscode.window
             .showWarningMessage(

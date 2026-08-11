@@ -9,6 +9,8 @@ export interface TabItem {
   dirty: boolean;
   active: boolean;
   loading: boolean;
+  /** F58: HTTP method, rendered as a colored chip when provided. */
+  method?: string;
 }
 
 interface TabBarProps {
@@ -17,6 +19,27 @@ interface TabBarProps {
   onClose: (id: string) => void;
   onAdd: () => void;
 }
+
+const METHOD_COLORS: Record<string, string> = {
+  GET: 'var(--tag-get)',
+  POST: 'var(--tag-post)',
+  PUT: 'var(--tag-put)',
+  DELETE: 'var(--tag-delete)',
+  PATCH: 'var(--tag-patch)',
+  HEAD: 'var(--tag-head)',
+  OPTIONS: 'var(--tag-options)',
+};
+
+const MethodChip = styled.span<{ $method: string }>`
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  color: ${({ $method }) => METHOD_COLORS[$method.toUpperCase()] || 'var(--muted)'};
+`;
 
 const Bar = styled.div`
   display: flex;
@@ -103,6 +126,7 @@ const TabBar: React.FC<TabBarProps> = ({ tabs, onSelect, onClose, onAdd }) => (
         onClick={() => onSelect(tab.id)}
       >
         {tab.dirty && <DirtyDot />}
+        {tab.method && <MethodChip $method={tab.method}>{tab.method.toUpperCase()}</MethodChip>}
         <Label>{tab.label}</Label>
         <Close
           title="Close tab"

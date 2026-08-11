@@ -52,7 +52,8 @@ const SESSION_ID: string = (() => {
 
 /**
  * Suggested display name for an unsaved request, derived from method + URL
- * path. Returns "" when no usable URL is present.
+ * path (used for the VS Code window title). Returns "" when no usable URL is
+ * present.
  */
 const suggestedRequestName = (req: RequestState): string => {
   if (!req.url) return "";
@@ -64,6 +65,13 @@ const suggestedRequestName = (req: RequestState): string => {
   } catch {
     return "";
   }
+};
+
+/** Short tab label without the method prefix — the TabBar shows a colored
+ *  method chip instead, so the method is not repeated in the label. */
+const tabLabelShort = (tab: TabState): string => {
+  if (hasRealName(tab.request)) return tab.request.name!;
+  return suggestedRequestName(tab.request).replace(/^[A-Z]+ /, "") || "New Request";
 };
 
 /** True when the request still carries its default placeholder name. */
@@ -943,10 +951,11 @@ export const MainPanel: React.FC = () => {
       <TabBar
         tabs={tabs.map((t) => ({
           id: t.id,
-          label: tabLabel(t),
+          label: tabLabelShort(t),
           dirty: t.isDirty,
           active: t.id === activeTab.id,
           loading: t.loading,
+          method: t.request.method,
         }))}
         onSelect={selectTab}
         onClose={closeTab}

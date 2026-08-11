@@ -6,6 +6,7 @@ import {
   faFileExport, faFileImport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
   faPlay, faStop, faXmark, faCircleCheck, faCircleXmark, faStar, faListUl, faCode,
+  faPaperPlane, faPlus,
 } from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
   id: string; method: string; url: string; status: number;
@@ -476,6 +477,26 @@ const EmptySub = styled.div`
   opacity: 0.6;
 `;
 
+const EmptyCta = styled.button`
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  background: ${({ theme }) => theme.accent};
+  color: ${({ theme }) => theme.accentFg};
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 0.85;
+  }
+`;
+
 const Caret = styled.span<{ $open: boolean }>`
   font-size: 10px;
   transition: transform 0.2s;
@@ -788,7 +809,8 @@ export const Sidebar: React.FC = () => {
           onDelete={(id) => post({ command: 'deleteHistoryItem', id })}
           onClear={() => post({ command: 'clearHistory' })}
           onTogglePin={(id) => post({ command: 'toggleHistoryPin', id })}
-          onSaveToCollection={(id, collectionName, groupId) => post({ command: 'saveHistoryToCollection', id, collectionName, groupId })} />
+          onSaveToCollection={(id, collectionName, groupId) => post({ command: 'saveHistoryToCollection', id, collectionName, groupId })}
+          onNewRequest={() => post({ command: 'newRequest' })} />
       )}
       {sidebarType === 'collections' && (
         <CollectionsPanel collections={collections} search={search}
@@ -843,8 +865,9 @@ interface HistoryPanelProps {
   onDelete(id: string): void; onClear(): void;
   onTogglePin(id: string): void;
   onSaveToCollection(id: string, collectionName: string, groupId?: string): void;
+  onNewRequest(): void;
 }
-const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onTogglePin, onSaveToCollection }) => {
+const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onTogglePin, onSaveToCollection, onNewRequest }) => {
   const [saveTarget, setSaveTarget] = useState<HistoryEntry | null>(null);
   const [selectedCol, setSelectedCol] = useState('');
   const [newColName, setNewColName] = useState('');
@@ -888,10 +911,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collection
       {filtered.length === 0
         ? <Empty>
             <EmptyIcon>
-              <img src={(window as any).restifyMedia?.sidebarIcon || ''} alt="Restify" />
+              <Icon icon={faPaperPlane} size={28} style={{ opacity: 0.4 }} />
             </EmptyIcon>
             <div>No requests yet</div>
             <EmptySub>Execute a request to see it here</EmptySub>
+            <EmptyCta data-testid="history-empty-new-request" onClick={onNewRequest}>
+              <Icon icon={faPlus} size={11} /> New Request
+            </EmptyCta>
           </Empty>
         : filtered.map(entry => {
             const sc = !entry.status || entry.status === 0 ? 'err' : entry.status < 300 ? 'ok' : entry.status < 400 ? 'warn' : 'err';
@@ -1248,7 +1274,14 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
     </Toolbar>
     <List onKeyDown={listNavKeyDown}>
       {filtered.length === 0
-        ? <Empty><EmptyIcon><Icon icon={faFolder} size={28} style={{ opacity: 0.4 }} /></EmptyIcon><div>No collections</div><EmptySub>Save requests to organize them</EmptySub></Empty>
+        ? <Empty>
+            <EmptyIcon><Icon icon={faFolder} size={28} style={{ opacity: 0.4 }} /></EmptyIcon>
+            <div>No collections</div>
+            <EmptySub>Save requests to organize them</EmptySub>
+            <EmptyCta data-testid="collections-empty-new" onClick={() => setShowNew(true)}>
+              <Icon icon={faPlus} size={11} /> New Collection
+            </EmptyCta>
+          </Empty>
         : filtered.map(col => {
             const topReqs = col.requests || [];
             const groups = col.groups || [];

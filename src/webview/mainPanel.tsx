@@ -502,16 +502,27 @@ export const MainPanel: React.FC = () => {
         }
         case "scriptResult": {
           const tid = msg.tabId ?? activeTabIdRef.current;
+          // F40: merge rather than replace so request-level and collection-level
+          // script results both accumulate on the same tab.
           patchTab(tid, (t) => ({
             ...t,
             requestInfo: {
               ...(t.requestInfo || {}),
               scriptRunning: false,
-              scriptLogs: msg.result?.logs || [],
+              scriptLogs: [
+                ...(t.requestInfo?.scriptLogs || []),
+                ...(msg.result?.logs || []),
+              ],
               scriptSuccess: msg.result?.success !== false,
               scriptError: msg.result?.error,
-              scriptVariables: msg.result?.variables || {},
-              scriptTests: msg.result?.tests || {},
+              scriptVariables: {
+                ...(t.requestInfo?.scriptVariables || {}),
+                ...(msg.result?.variables || {}),
+              },
+              scriptTests: {
+                ...(t.requestInfo?.scriptTests || {}),
+                ...(msg.result?.tests || {}),
+              },
             },
           }));
           break;

@@ -420,4 +420,96 @@ Bob,"quoted ""value"""`);
       expect(results[0].iteration).toBeUndefined();
     });
   });
+
+  describe("F40 collection-level scripts", () => {
+    it("runs the collection pre-script before each request and chains its vars", async () => {
+      const results = await runCollectionRequests({
+        requests: [
+          req({
+            id: "a",
+            url: baseUrl("/require-auth"),
+            headers: [{ key: "Authorization", value: "Bearer {{token}}" }],
+          }),
+        ],
+        preScript: `set('token', 'abc123');`,
+        timeout: 5000,
+      });
+      expect(results[0].status).toBe(200);
+      expect(results[0].error).toBeUndefined();
+    });
+
+    it("runs the request pre-script after the collection one (its vars win)", async () => {
+      const results = await runCollectionRequests({
+        requests: [
+          req({
+            id: "a",
+            url: baseUrl("/echo"),
+            preScript: `set('who', 'request');`,
+            queryParams: [{ key: "who", value: "{{who}}", enabled: true }],
+          }),
+        ],
+        preScript: `set('who', 'collection');`,
+        timeout: 5000,
+      });
+      expect(results[0].url).toContain("who=request");
+    });
+
+    it("merges collection-level test assertions with request-level ones", async () => {
+      const results = await runCollectionRequests({
+        requests: [
+          req({
+            id: "a",
+            url: baseUrl("/ok"),
+            script: `tests['req ok'] = response.status === 200;`,
+          }),
+        ],
+        testScript: `
+          tests['collection 2xx'] = response.status >= 200 && response.status < 300;
+        `,
+        timeout: 5000,
+      });
+      expect(results[0].tests).toEqual({
+        "req ok": true,
+        "collection 2xx": true,
+      });
+      expect(results[0].testSummary).toEqual({ passed: 2, failed: 0 });
+    });
+
+    it("collects failing collection-level assertions into the summary", async () => {
+      const results = await runCollectionRequests({
+        requests: [
+          req({
+            id: "a",
+            url: baseUrl("/status/500"),
+            script: `tests['req pass'] = true;`,
+          }),
+        ],
+        testScript: `tests['collection 2xx'] = response.status < 400;`,
+        timeout: 5000,
+      });
+      expect(results[0].testSummary).toEqual({ passed: 1, failed: 1 });
+    });
+
+    it("aborts the request when the collection pre-script fails", async () => {
+      const results = await runCollectionRequests({
+        requests: [req({ id: "a", url: baseUrl("/ok") })],
+        preScript: `throw new Error('collection pre boom');`,
+        timeout: 5000,
+      });
+      expect(results[0].error).toContain("Pre-request script failed");
+      expect(results[0].status).toBe(0);
+    });
+
+    it("runs collection scripts on every request in the run", async () => {
+      const results = await runCollectionRequests({
+        requests: [
+          req({ id: "a", url: baseUrl("/require-auth"), headers: [{ key: "Authorization", value: "Bearer {{token}}" }] }),
+          req({ id: "b", url: baseUrl("/require-auth"), headers: [{ key: "Authorization", value: "Bearer {{token}}" }] }),
+        ],
+        preScript: `set('token', 'abc123');`,
+        timeout: 5000,
+      });
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+    });
+  });
 });

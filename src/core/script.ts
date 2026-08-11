@@ -8,6 +8,56 @@ export interface ScriptResult {
   error?: string;
 }
 
+/** Context object passed into a user script's sandbox as globals. */
+export interface ScriptContext {
+  request?: Record<string, any>;
+  params?: Array<{ key?: string; value?: string }>;
+  response?: Record<string, any>;
+  headers?: unknown;
+  status?: number;
+  statusText?: string;
+  [key: string]: unknown;
+}
+
+export type ScriptSequenceResult = ScriptResult & {
+  tests: Record<string, boolean>;
+};
+
+/**
+ * Run a sequence of user scripts against the same context (e.g. collection-level
+ * then request-level). Stops at the first failure. Extracted variables and
+ * assertions from each script are merged into a single result, so later scripts
+ * in the sequence see earlier ones' `set()` values as `{{key}}` after the run.
+ */
+export async function runScriptSequence(
+  scripts: string[],
+  context: ScriptContext = {},
+  timeoutMs = 5000,
+): Promise<ScriptSequenceResult> {
+  const logs: string[] = [];
+  let variables: Record<string, any> = {};
+  let tests: Record<string, boolean> = {};
+
+  for (const script of scripts) {
+    if (!(script || "").trim()) continue;
+    const result = await executeUserScript(script, context, timeoutMs);
+    logs.push(...result.logs);
+    if (!result.success) {
+      return {
+        success: false,
+        variables: { ...variables, ...result.variables },
+        logs,
+        tests: { ...tests, ...result.tests },
+        error: result.error,
+      };
+    }
+    variables = { ...variables, ...result.variables };
+    tests = { ...tests, ...result.tests };
+  }
+
+  return { success: true, variables, logs, tests };
+}
+
 export async function executeUserScript(
   script: string,
   context: Record<string, unknown>,

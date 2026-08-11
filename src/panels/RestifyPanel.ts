@@ -14,7 +14,6 @@ import {
   applyDefaultHeaders,
   applyHeadersToRequest,
   applyQueryParams,
-  executeUserScript,
   getHeaderValue,
   getHeaderArray,
   getCookieHeader,
@@ -46,6 +45,8 @@ import {
   suggestResponseFilename,
   shouldNotifyOnCompletion,
   formatCompletionNotification,
+  runPreScriptPipeline,
+  runCollectionTestScript,
   type CoreRequestForBody,
   type OAuth2Config,
   type ResolvedSoapSecurity,
@@ -883,56 +884,26 @@ export class RestifyPanel {
     };
 
     const requestData = executionReq;
-    const preScript = (requestData.preScript || "").trim();
-    if (preScript) {
-      const scriptResult = await executeUserScript(
-        preScript,
+    // F40: collection-level pre-request script runs first, then the request's own.
+    const colScripts = this.storageManager.getCollectionScripts(req._collectionId);
+    const preScripts = [colScripts.preScript, requestData.preScript].filter((s) => (s || "").trim()) as string[];
+
+    if (preScripts.length > 0) {
+      const pre = await runPreScriptPipeline(
         {
-          request: requestData,
-          variables: {},
-          params: requestData.queryParams,
+          postError: (error, duration) => this.panel.webview.postMessage({ command: "requestError", tabId, error, duration }),
+          appendActivity: (title, detail) => this.activityProvider?.append(title, detail, "error"),
+          addFailedHistory: async (error, duration) => this.storageManager.addToHistory({
+            method: req.method || "GET", url: req.url || "", name: this._historyName(historyReq, req.method || "GET", req.url || ""),
+            status: 0, error, duration, request: historyReq, activeEnvironmentId: this.storageManager.getActiveEnvironment()?.id || null,
+          }),
+          setScriptVariables: async (variables) => this._handleMessage({ command: "setScriptVariables", variables }),
         },
-        5000,
+        preScripts,
+        requestData,
+        startTime,
       );
-
-      if (!scriptResult.success) {
-        const duration = Date.now() - startTime;
-        this.panel.webview.postMessage({
-          command: "requestError", tabId,
-          error: `Pre-request script failed: ${scriptResult.error}`,
-          duration,
-        });
-        this.activityProvider?.append(
-          "Pre-request script failed",
-          [`Method: ${req.method || "GET"}`, `URL: ${req.url || ""}`, `Error: ${scriptResult.error}`].join("\n"),
-          "error",
-        );
-        this.storageManager.addToHistory({
-          method: req.method || "GET",
-          url: req.url || "",
-          name: this._historyName(historyReq, req.method || "GET", req.url || ""),
-          status: 0,
-          error: `Pre-request script failed: ${scriptResult.error}`,
-          duration,
-          request: historyReq,
-          activeEnvironmentId:
-            this.storageManager.getActiveEnvironment()?.id || null,
-        });
-        if (Object.keys(scriptResult.variables).length > 0) {
-          await this._handleMessage({
-            command: "setScriptVariables",
-            variables: scriptResult.variables,
-          });
-        }
-        return;
-      }
-
-      if (Object.keys(scriptResult.variables).length > 0) {
-        await this._handleMessage({
-          command: "setScriptVariables",
-          variables: scriptResult.variables,
-        });
-      }
+      if (pre.aborted) return;
     }
 
     const rawUrl = resolveVars(requestData.url);
@@ -1363,6 +1334,30 @@ export class RestifyPanel {
       }
 
       this._notifyRequestComplete({ method, url: finalUrl, status: finalResult.status, durationMs: duration });
+
+      // F40: run the collection-level test script host-side and merge its
+      // assertions with any request-level script results already reported.
+      if ((colScripts.testScript || "").trim()) {
+        try {
+          const { result: testResult } = await runCollectionTestScript(
+            colScripts.testScript as string,
+            responseData,
+          );
+          this.panel.webview.postMessage({ command: "scriptResult", tabId, result: testResult });
+          if (Object.keys(testResult.variables).length > 0) {
+            await this._handleMessage({
+              command: "setScriptVariables",
+              variables: testResult.variables,
+            });
+          }
+        } catch (colTestErr) {
+          this.activityProvider?.append(
+            "Collection test script failed",
+            colTestErr instanceof Error ? colTestErr.message : String(colTestErr),
+            "error",
+          );
+        }
+      }
 
       // Measure history add time
       try {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { executeUserScript } from '../../src/core/script';
+import { executeUserScript, runScriptSequence } from '../../src/core/script';
 
 describe('executeUserScript', () => {
   it('runs a simple script and returns logs and variables', async () => {
@@ -112,5 +112,45 @@ describe('test assertions (tests object)', () => {
       'status OK': true,
       'content-type json': true,
     });
+  });
+});
+
+describe('runScriptSequence', () => {
+  it('runs scripts in order, merging vars and tests across them', async () => {
+    const result = await runScriptSequence([
+      `set('a', '1'); tests['first'] = true;`,
+      `set('b', '2'); tests['second'] = response.status === 200;`,
+    ], { response: { status: 200 } });
+
+    expect(result.success).toBe(true);
+    expect(result.variables).toEqual({ a: '1', b: '2' });
+    expect(result.tests).toEqual({ first: true, second: true });
+  });
+
+  it('stops at the first failing script and reports the error', async () => {
+    const result = await runScriptSequence([
+      `tests['ran'] = true;`,
+      `throw new Error('boom');`,
+      `tests['never'] = true;`,
+    ]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('boom');
+    expect(result.tests).toEqual({ ran: true });
+    expect(result.tests['never']).toBeUndefined();
+  });
+
+  it('skips empty scripts in the sequence', async () => {
+    const result = await runScriptSequence(['', '  ', `set('x', 1);`]);
+    expect(result.success).toBe(true);
+    expect(result.variables).toEqual({ x: 1 });
+  });
+
+  it('exposes the context globals to every script', async () => {
+    const result = await runScriptSequence([
+      `tests['status'] = status === 201;`,
+    ], { response: { status: 201 }, status: 201 });
+
+    expect(result.tests).toEqual({ status: true });
   });
 });

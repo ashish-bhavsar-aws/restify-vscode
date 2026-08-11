@@ -513,6 +513,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         signal: controller.signal,
         cookies,
         iterationData,
+        preScript: col.preScript,
+        testScript: col.testScript,
         onCookiesChanged: (next) => {
           cookies = next;
           this.storageManager.saveCookies(next);

@@ -5,7 +5,7 @@ import {
   faMagnifyingGlass, faFloppyDisk, faTrash, faPen,
   faFileExport, faFileImport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
-  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark, faStar, faListUl,
+  faPlay, faStop, faXmark, faCircleCheck, faCircleXmark, faStar, faListUl, faCode,
 } from '@fortawesome/free-solid-svg-icons';
 interface HistoryEntry {
   id: string; method: string; url: string; status: number;
@@ -14,7 +14,7 @@ interface HistoryEntry {
 interface CollectionRequest { id?: string; method: string; url: string; name?: string; }
 interface CollectionGroup { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; }
 interface CollectionVar { key: string; value: string; }
-interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; variables?: CollectionVar[]; }
+interface Collection { id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[]; variables?: CollectionVar[]; preScript?: string; testScript?: string; }
 type SidebarType = 'history' | 'collections' | 'environments';
 interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; }
 interface RunEntry {
@@ -824,6 +824,10 @@ export const Sidebar: React.FC = () => {
           onSaveCollectionVariables={(id, variables) => {
             const col = collections.find((c) => c.id === id);
             if (col) post({ command: 'saveCollection', data: { ...col, variables: variables.filter(v => v.key.trim()) } });
+          }}
+          onSaveCollectionScripts={(id, preScript, testScript) => {
+            const col = collections.find((c) => c.id === id);
+            if (col) post({ command: 'saveCollection', data: { ...col, preScript, testScript } });
           }} />
       )}
       <RunnerResultsModal runState={runState}
@@ -963,6 +967,7 @@ interface CollectionsPanelProps {
   onRunCollection(collectionId: string): void;
   onRunGroup(collectionId: string, groupId: string): void;
   onSaveCollectionVariables(collectionId: string, variables: CollectionVar[]): void;
+  onSaveCollectionScripts(collectionId: string, preScript: string, testScript: string): void;
   triggerNew?: boolean;
   onTriggerNewDone?(): void;
 }
@@ -1193,7 +1198,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   onCopyRequest, onMoveRequest: _onMoveRequest, onReorderRequest: _onReorderRequest,   onRenameCollection, onRenameRequest,
   onExportAllCollections, onExportCollection, onImport,
   onSaveGroup, onDeleteGroup, onRenameGroup, onDeleteGroupRequest, onMoveRequestToGroup,
-  onRunCollection, onRunGroup, onSaveCollectionVariables, triggerNew, onTriggerNewDone
+  onRunCollection, onRunGroup, onSaveCollectionVariables, onSaveCollectionScripts, triggerNew, onTriggerNewDone
 }) => {
   const [showNew, setShowNew] = useState(false);
   useEffect(() => { if (triggerNew) { setShowNew(true); onTriggerNewDone?.(); } }, [triggerNew, onTriggerNewDone]);
@@ -1204,6 +1209,7 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
   const [showNewGroupFor, setShowNewGroupFor] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
   const [editingVarsFor, setEditingVarsFor] = useState<{ id: string; name: string; variables: CollectionVar[] } | null>(null);
+  const [editingScriptsFor, setEditingScriptsFor] = useState<{ id: string; name: string; preScript: string; testScript: string } | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [topLevelDropTarget, setTopLevelDropTarget] = useState<string | null>(null);
 
@@ -1300,6 +1306,10 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                   <IconButton title="Variables" data-testid="collection-vars-btn"
                     onClick={e => { e.stopPropagation(); setEditingVarsFor({ id: col.id, name: col.name, variables: (col.variables || []).map(v => ({ key: v.key, value: v.value })) }); }}>
                     <Icon icon={faListUl} size={12} />
+                  </IconButton>
+                  <IconButton title="Scripts" data-testid="collection-scripts-btn"
+                    onClick={e => { e.stopPropagation(); setEditingScriptsFor({ id: col.id, name: col.name, preScript: col.preScript || '', testScript: col.testScript || '' }); }}>
+                    <Icon icon={faCode} size={12} />
                   </IconButton>
                   <IconButton title="Export collection" onClick={e => { e.stopPropagation(); onExportCollection(col.id); }}><Icon icon={faFileExport} size={12} /></IconButton>
                   <IconButton title="Delete" onClick={e => { e.stopPropagation(); onDeleteCollection(col.id); }}><Icon icon={faTrash} size={12} /></IconButton>
@@ -1425,6 +1435,19 @@ const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
         onSave={(variables) => {
           onSaveCollectionVariables(editingVarsFor.id, variables);
           setEditingVarsFor(null);
+        }}
+      />
+    )}
+    {editingScriptsFor && (
+      <CollectionScriptsModal
+        title={editingScriptsFor.name}
+        preScript={editingScriptsFor.preScript}
+        testScript={editingScriptsFor.testScript}
+        onChange={(preScript, testScript) => setEditingScriptsFor({ ...editingScriptsFor, preScript, testScript })}
+        onCancel={() => setEditingScriptsFor(null)}
+        onSave={(preScript, testScript) => {
+          onSaveCollectionScripts(editingScriptsFor.id, preScript, testScript);
+          setEditingScriptsFor(null);
         }}
       />
     )}
@@ -1610,6 +1633,77 @@ const CollectionVarsModal: React.FC<{
           <PrimaryButton data-testid="vars-save-btn" onClick={() => onSave(variables)}>Save</PrimaryButton>
         </ModalActions>
       </VarsModalBox>
+    </ModalOverlay>
+  );
+};
+
+/* ─── Collection scripts editor (F40) ────────────────────── */
+const ScriptsModalBox = styled(ModalBox)`
+  max-width: 560px;
+  width: 94%;
+`;
+
+const ScriptsLabel = styled(ModalLabel)`
+  margin-top: 10px;
+`;
+
+const ScriptInput = styled.textarea`
+  width: 100%;
+  min-height: 120px;
+  background: ${({ theme }) => theme.inputBg};
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: ${({ theme }) => theme.radius};
+  color: ${({ theme }) => theme.fg};
+  padding: 8px 10px;
+  font-size: 11px;
+  font-family: ${({ theme }) => theme.monoFamily};
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.accent};
+  }
+`;
+
+const CollectionScriptsModal: React.FC<{
+  title: string;
+  preScript: string;
+  testScript: string;
+  onChange(pre: string, test: string): void;
+  onCancel(): void;
+  onSave(pre: string, test: string): void;
+}> = ({ title, preScript, testScript, onChange, onCancel, onSave }) => {
+  return (
+    <ModalOverlay $open onClick={onCancel}>
+      <ScriptsModalBox data-testid="collection-scripts-modal" onClick={e => e.stopPropagation()}>
+        <h3>Scripts · {title}</h3>
+        <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px', lineHeight: 1.4 }}>
+          Collection-level scripts run for every request in this collection.
+          Pre-request runs before each request&apos;s own script; Tests run after.
+        </p>
+        <ScriptsLabel>Pre-request script</ScriptsLabel>
+        <ScriptInput
+          data-testid="collection-pre-script"
+          placeholder={'// Runs before every request\nset("key", "value");'}
+          value={preScript}
+          onChange={e => onChange(e.target.value, testScript)}
+          spellCheck={false}
+        />
+        <ScriptsLabel>Tests</ScriptsLabel>
+        <ScriptInput
+          data-testid="collection-test-script"
+          placeholder={'// Runs after every response\ntests["status is 2xx"] = response.status >= 200 && response.status < 300;'}
+          value={testScript}
+          onChange={e => onChange(preScript, e.target.value)}
+          spellCheck={false}
+        />
+        <ModalActions>
+          <GhostButton data-testid="scripts-cancel-btn" onClick={onCancel}>Cancel</GhostButton>
+          <PrimaryButton data-testid="scripts-save-btn" onClick={() => onSave(preScript, testScript)}>Save</PrimaryButton>
+        </ModalActions>
+      </ScriptsModalBox>
     </ModalOverlay>
   );
 };

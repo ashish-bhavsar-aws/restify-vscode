@@ -13,7 +13,7 @@ import {
   getHeaderValue,
   removeHeader,
 } from "./headers";
-import { executeUserScript } from "./script";
+import { runScriptSequence } from "./script";
 import {
   isRedirectStatus,
   getRedirectMethod,
@@ -122,6 +122,16 @@ export interface CollectionRunnerOptions {
    * carries its 0-based `iteration`.
    */
   iterationData?: Record<string, string>[];
+  /**
+   * F40: collection-level pre-request script, run before each request's own
+   * pre-request script.
+   */
+  preScript?: string;
+  /**
+   * F40: collection-level test script, run after each request's own test
+   * script. Its assertions are merged with the request-level ones.
+   */
+  testScript?: string;
 }
 
 export interface ExecuteRunnerResult {
@@ -403,22 +413,26 @@ export async function executeRunnerRequest(
   let bodyText: string | undefined;
   let responseHeaders: Record<string, string | string[]> | undefined;
 
-  const preScript = (req.preScript || "").trim();
-  if (preScript) {
-    const scriptResult = await executeUserScript(
-      preScript,
-      { request: { ...req }, variables: {}, params: req.queryParams },
+  // F40: collection-level pre-request script runs first, then the request's own.
+  const preScripts: string[] = [];
+  if ((options.preScript || "").trim()) preScripts.push(options.preScript as string);
+  if ((req.preScript || "").trim()) preScripts.push(req.preScript as string);
+
+  if (preScripts.length > 0) {
+    const preResult = await runScriptSequence(
+      preScripts,
+      { request: { ...req }, params: req.queryParams },
       5000,
     );
-    if (!scriptResult.success) {
-      entry.error = `Pre-request script failed: ${scriptResult.error}`;
+    if (!preResult.success) {
+      entry.error = `Pre-request script failed: ${preResult.error}`;
       entry.statusText = "Error";
       entry.duration = Date.now() - startTime;
       return { entry, extractedVariables };
     }
-    if (Object.keys(scriptResult.variables).length > 0) {
-      extractedVariables = { ...extractedVariables, ...scriptResult.variables };
-      mergeExtractedVariables(variables, scriptResult.variables);
+    if (Object.keys(preResult.variables).length > 0) {
+      extractedVariables = { ...extractedVariables, ...preResult.variables };
+      mergeExtractedVariables(variables, preResult.variables);
     }
   }
 
@@ -496,29 +510,32 @@ export async function executeRunnerRequest(
       string | string[]
     >;
 
-    const postScript = (req.script || "").trim();
-    if (postScript) {
-      const scriptResult = await executeUserScript(
-        postScript,
-        {
-          response: {
-            status: result.status,
-            statusText: result.statusText,
-            headers: normalizeResponseHeaders(result.headers as any),
-            body: bodyText,
-          },
+    // F40: request-level test script runs first, then the collection-level one;
+    // their assertions and extracted variables are merged.
+    const postScripts: string[] = [];
+    if ((req.script || "").trim()) postScripts.push(req.script as string);
+    if ((options.testScript || "").trim()) postScripts.push(options.testScript as string);
+
+    const postResult = await runScriptSequence(
+      postScripts,
+      {
+        response: {
+          status: result.status,
+          statusText: result.statusText,
+          headers: normalizeResponseHeaders(result.headers as any),
+          body: bodyText,
         },
-        5000,
-      );
-      entry.tests = scriptResult.tests;
-      const total = Object.keys(scriptResult.tests || {}).length;
-      const passed = Object.values(scriptResult.tests || {}).filter(Boolean).length;
-      entry.testSummary = { passed, failed: total - passed };
-      if (Object.keys(scriptResult.variables).length > 0) {
-        extractedVariables = { ...extractedVariables, ...scriptResult.variables };
-        mergeExtractedVariables(variables, scriptResult.variables);
-      }
+      },
+      5000,
+    );
+    entry.tests = postResult.tests;
+    if (Object.keys(postResult.variables).length > 0) {
+      extractedVariables = { ...extractedVariables, ...postResult.variables };
+      mergeExtractedVariables(variables, postResult.variables);
     }
+    const total = Object.keys(entry.tests).length;
+    const passed = Object.values(entry.tests).filter(Boolean).length;
+    entry.testSummary = { passed, failed: total - passed };
   } catch (err: any) {
     entry.duration = Date.now() - startTime;
     if (isCancelledError(err)) {

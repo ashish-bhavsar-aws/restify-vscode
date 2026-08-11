@@ -75,7 +75,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F37 | **Mock server generation** | ⚪ P3 | Spin up a local mock server from collection responses (e.g., Prism-style). |
 | F38 | **Documentation generation** | ⚪ P3 | Publish a human-readable HTML/Markdown docs page from a collection. |
 | F39 | **Workspace file format** | 🟡 P2 | `.restify` project files committed to a repo (like Postman workspaces / `.http` files), with git-friendly diff. |
-| F40 | **Collection-level scripts** | 🟡 P2 | Pre-request/test scripts inherited by all children requests. |
+| F40 | **Collection-level scripts** | 🟡 P2 | ✅ Pre-request/test scripts inherited by all children requests. *(done — `preScript`/`testScript` on `Collection` + a **Scripts** button on each collection row opening an editor modal; `runScriptSequence` in `src/core/script.ts` merges collection+request scripts into one ordered pipeline (collection pre-request → request pre-request → request tests → collection tests) with vars and assertions merged; single requests run it via `runPreScriptPipeline`/`runCollectionTestScript` in `src/core/collectionScripts.ts`, the collection runner threads `preScript`/`testScript` through `CollectionRunnerOptions`; unit tests in `test/unit/collectionScripts.test.ts` + `test/unit/script.test.ts` + `test/unit/collectionRunner.test.ts`)* |
 
 ### 1.5 Environments & Storage
 
@@ -237,7 +237,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.
 - [ ] F26 response diff, F27 timeline breakdown, F24 response tree view.
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
-- [ ] F39 workspace `.restify` files, F40 collection-level scripts.
+- [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
 - [ ] F47 gRPC, F29 response cache/offline replay, F55/F56 editor polish.
 
 ---

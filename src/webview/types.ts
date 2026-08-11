@@ -162,6 +162,10 @@ export interface Collection {
   groups?: CollectionGroup[];
   /** F42: collection-level variables inherited by every request in the collection. */
   variables?: KVItem[];
+  /** F40: collection-level pre-request script run before every child request. */
+  preScript?: string;
+  /** F40: collection-level test script run after every child request's own tests. */
+  testScript?: string;
 }
 
 export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];

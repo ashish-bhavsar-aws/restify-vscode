@@ -60,6 +60,10 @@ export interface Collection {
   };
   /** F42: collection-level variables inherited by every request in the collection. */
   variables?: EnvVariable[];
+  /** F40: collection-level pre-request script run before every child request. */
+  preScript?: string;
+  /** F40: collection-level test script run after every child request's own tests. */
+  testScript?: string;
 }
 
 export interface CertEntry {
@@ -627,6 +631,13 @@ export class StorageManager {
   // ─── Collections ──────────────────────────────────────────
   getCollections(): Collection[] {
     return this.globalState.get("restify.collections", []);
+  }
+
+  /** F40: collection-level scripts inherited by a child request. */
+  getCollectionScripts(collectionId?: string): { preScript?: string; testScript?: string } {
+    if (!collectionId) return {};
+    const col = this.getCollections().find((c) => String(c.id) === String(collectionId));
+    return { preScript: col?.preScript, testScript: col?.testScript };
   }
 
   saveCollection(collection: Collection): void {

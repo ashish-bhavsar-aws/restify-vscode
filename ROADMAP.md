@@ -235,7 +235,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 ### Phase 5 — Experimental / Long-term (P3)
 - [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.
-- [x] F26 response diff, F27 timeline breakdown, ~~F24 response tree view~~ ✅.
+- [ ] F26 response diff, [x] F27 timeline breakdown, ~~F24 response tree view~~ ✅.
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
 - [ ] F47 gRPC, F29 response cache/offline replay, F55/F56 editor polish.

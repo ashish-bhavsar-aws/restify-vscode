@@ -36,7 +36,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 |---|---------|----------|-------|
 | F10 | **Pre-request scripts** | 🟠 P1 | Only post-response scripts exist (`scriptExecutor.ts`). Add pre-request hooks (set variables, sign payloads, randomize data). |
 | F11 | **OAuth 2.0 flow** | 🟠 P1 | ✅ Authorization code + client credentials + password grant with token refresh. *(done — `src/core/oauth2.ts` incl. token cache + refresh + PKCE; E2E in `feature2.spec.ts`)* |
-| F12 | **More auth types** | 🟡 P2 | AWS SigV4, Digest Auth, Hawk, NTLM, JWT-bearer, per-request "inherit from collection". |
+| F12 | **More auth types** | 🟡 P2 | ✅ AWS SigV4, Digest, Hawk, NTLM, JWT-bearer, per-request "inherit from collection". *(done — SigV4/Digest/Hawk/JWT/inherit in `src/core/auth.ts`; NTLM = hand-rolled MD4 + NTLMv2 (`src/core/ntlm.ts`, no new deps) with the Type 1 → Type 2 → Type 3 handshake driven by `src/core/authChallenge.ts` (401 `WWW-Authenticate` retry shared with Digest); NTLM username/password/domain/workstation fields in the Auth UI (`NtlmAuthFields`); 22 unit tests in `test/unit/ntlm.test.ts` + `test/unit/authChallenge.test.ts`)* |
 | F13 | **cURL command import** | 🟠 P1 | ✅ Paste a `curl ...` command to build a full request (flags: `-X`, `-H`, `-d`, `-F`, `-u`, `--data-binary`, `--url`). Reverse of existing codegen. *(done — `src/core/curlParser.ts` tokenizer + parser; `restify.importCurl` command with input box + clipboard auto-detect; unit tests (17) + E2E tests)* |
 | F14 | **Bulk editor for headers/params** | 🟡 P2 | ✅ Postman-style raw key-value text editor with parse-on-change. *(done — `src/core/kvParse.ts` shared parse/serialize (`Key: Value` for headers, `key=value` for params, tab-delimited paste), a **Bulk Edit** toggle on Params/Headers/urlencoded tables that live-parses into rows on each keystroke; 17 unit tests in `test/unit/kvParse.test.ts`)* |
 | F15 | **Clipboard paste into KV tables** | 🟡 P2 | ✅ Paste tab/newline-delimited rows from Excel/CSV into Params/Headers/Form tables. *(done — pasting multi-row clipboard text (tabs or newlines) into a key or value cell bulk-inserts parsed rows at the cursor row, reusing an empty target row when present; single-cell paste is untouched)* |
@@ -224,6 +224,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 ### Phase 4 — Productivity & UX (P2)
 - [x] F11 **OAuth 2.0**: authorization-code flow with system browser + redirect listener; token cache; refresh; PKCE. *(done — `src/core/oauth2.ts`: authorization-code + client-credentials + password grants, token cache keyed by token-URL/client/scopes, refresh, PKCE challenge; unit-tested + E2E for client-credentials/password in `feature2.spec.ts`; authorization-code grant covered by unit tests, loopback redirect listener included)*
+- [x] F12 **More auth types**: AWS SigV4, Digest, Hawk, NTLM, JWT-bearer, per-request inherit. *(done — SigV4/Digest/Hawk/JWT/inherit in `src/core/auth.ts`; NTLM via `src/core/ntlm.ts` (hand-rolled MD4 + NTLMv2) + `src/core/authChallenge.ts` 401 retry; 22 unit tests in `ntlm.test.ts`/`authChallenge.test.ts`)*
 - [x] F22 **JSON schema validation** of responses (paste schema or pull from imported OpenAPI). *(done — Ajv draft-07 validation host-side in `src/core/schemaValidation.ts`, request Schema tab (editor + validate toggle + badge dot), response Schema tab (valid/error summary with instance paths), OpenAPI imports resolve & attach 2xx JSON response schemas; 12 unit tests + E2E in `schema-validation.spec.ts`)*
 - [x] F23 **JSONPath/XPath query** in response viewer. *(done — JSONPath query mode in the response search bar: subset evaluator + filters in `src/core/jsonPath.ts`, matches highlighted in the CodeMirror viewer and listed as `path → value`; 15 unit tests + E2E in `jsonpath.spec.ts`)*
 - [x] F25 **Save response to file**; F30 **completion notifications**.
@@ -282,6 +283,7 @@ Focus: move from basic request sending to practical daily workflows while keepin
 - F18 — Variable autocomplete ✅
 - F19 — Basic Auth via URL ✅
 - F20 — Header presets/groups ✅
+- F12 — More auth types (SigV4/Digest/Hawk/NTLM/JWT/inherit) ✅
 - F44 — Environment import/export ✅
 
 ### Release 3 — Ecosystem and editor integration (target: 4+ weeks)

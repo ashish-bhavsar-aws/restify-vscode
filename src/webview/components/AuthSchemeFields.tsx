@@ -317,3 +317,40 @@ export const HawkAuthFields: React.FC<SchemeFieldsProps> = ({ authData, environm
     />
   </AuthFieldsContainer>
 );
+
+export const NtlmAuthFields: React.FC<SchemeFieldsProps> = ({ authData, environment, onAuthDataChange }) => (
+  <AuthFieldsContainer>
+    <OAuthHint>
+      NTLM challenge-response authentication (IIS / SharePoint / SMB gateways).
+      The extension performs the 3-step negotiate handshake automatically.
+    </OAuthHint>
+    <FieldLabel style={{ marginTop: 8 }}>Username</FieldLabel>
+    <AuthInput
+      value={authData.ntlmUsername || ''}
+      placeholder="DOMAIN\\user or {{variable_name}}"
+      onChange={(v) => onAuthDataChange({ ntlmUsername: v })}
+      variables={environment?.variables}
+    />
+    <PasswordField
+      label="Password"
+      placeholder="password or {{variable_name}}"
+      value={authData.ntlmPassword || ''}
+      onChange={(v) => onAuthDataChange({ ntlmPassword: v })}
+      variables={environment?.variables}
+    />
+    <FieldLabel style={{ marginTop: 8 }}>Domain (optional)</FieldLabel>
+    <AuthInput
+      value={authData.ntlmDomain || ''}
+      placeholder="CORP or {{variable_name}}"
+      onChange={(v) => onAuthDataChange({ ntlmDomain: v })}
+      variables={environment?.variables}
+    />
+    <FieldLabel style={{ marginTop: 8 }}>Workstation (optional)</FieldLabel>
+    <AuthInput
+      value={authData.ntlmWorkstation || ''}
+      placeholder="hostname or {{variable_name}}"
+      onChange={(v) => onAuthDataChange({ ntlmWorkstation: v })}
+      variables={environment?.variables}
+    />
+  </AuthFieldsContainer>
+);

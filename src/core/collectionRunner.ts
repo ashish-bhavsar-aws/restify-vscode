@@ -459,7 +459,8 @@ export async function executeRunnerRequest(
   applyHeadersToRequest(headers, serialized.headers, serialized.forceHeaders);
 
   const authType = (req.authType || "none") as AuthType;
-  if (authType !== "digest") {
+  // digest/ntlm are challenge-response schemes driven by the caller.
+  if (authType !== "digest" && authType !== "ntlm") {
     const applied = applyAuthHeaders(headers, authType, (req.authData || {}) as AuthDataLike, {
       resolve,
       method,

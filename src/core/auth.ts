@@ -57,6 +57,10 @@ export interface AuthDataLike {
   hawkId?: string;
   hawkKey?: string;
   hawkAlgorithm?: "sha256" | "sha1";
+  ntlmUsername?: string;
+  ntlmPassword?: string;
+  ntlmDomain?: string;
+  ntlmWorkstation?: string;
 }
 
 export type AuthType =
@@ -66,6 +70,7 @@ export type AuthType =
   | "apikey"
   | "oauth2"
   | "digest"
+  | "ntlm"
   | "awssigv4"
   | "jwt"
   | "hawk"
@@ -624,7 +629,7 @@ export function resolveAuthForRequest(
  *
  * `digest` and `ntlm` are challenge-response schemes and are intentionally not
  * handled here — callers perform the 401 round-trip and then use
- * `buildDigestAuthorization`.
+ * `buildDigestAuthorization` / `buildNtlmType1` / `buildNtlmType3`.
  */
 export function applyAuthHeaders(
   headers: Record<string, string>,
@@ -654,6 +659,7 @@ export function applyAuthHeaders(
     case "none":
     case "inherit":
     case "digest":
+    case "ntlm":
       break;
     case "bearer":
       if (authData.token) {

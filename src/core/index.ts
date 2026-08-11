@@ -1,4 +1,5 @@
 export * from "./auth";
+export * from "./authChallenge";
 export * from "./body";
 export * from "./collectionRunner";
 export * from "./collectionScripts";
@@ -21,6 +22,7 @@ export * from "./responseSave";
 export * from "./script";
 export * from "./soapSecurity";
 export * from "./timings";
+export * from "./ntlm";
 export * from "./schemaValidation";
 export * from "./jsonPath";
 export * from "./url";

@@ -29,6 +29,7 @@ import {
   SigV4AuthFields,
   JwtAuthFields,
   HawkAuthFields,
+  NtlmAuthFields,
   JwtAlgorithmDropdown,
   HawkAlgorithmDropdown,
 } from './AuthSchemeFields';
@@ -768,6 +769,7 @@ const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
   { value: 'basic', label: 'Basic Auth' },
   { value: 'apikey', label: 'API Key' },
   { value: 'digest', label: 'Digest Auth' },
+  { value: 'ntlm', label: 'NTLM Auth' },
   { value: 'awssigv4', label: 'AWS Signature v4' },
   { value: 'jwt', label: 'JWT Bearer' },
   { value: 'hawk', label: 'Hawk Auth' },
@@ -1799,6 +1801,10 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ authType, authData, environment, 
 
       {authType === 'digest' && (
         <DigestAuthFields authData={authData} environment={environment} onAuthDataChange={onAuthDataChange} />
+      )}
+
+      {authType === 'ntlm' && (
+        <NtlmAuthFields authData={authData} environment={environment} onAuthDataChange={onAuthDataChange} />
       )}
 
       {authType === 'awssigv4' && (

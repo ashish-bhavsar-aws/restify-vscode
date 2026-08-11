@@ -36,9 +36,7 @@ import {
   looksEncrypted,
   resolveSoapSecurity,
   applyAuthHeaders,
-  buildDigestAuthorization,
   resolveAuthForRequest,
-  getHeader,
   buildRequestResult,
   validateResponseIfEnabled,
   extensionForContentType,
@@ -54,6 +52,10 @@ import {
   type AuthType,
   type CollectionAuthLike,
 } from "../core";
+import {
+  buildChallengeCredentials,
+  retryWithChallengeAuth,
+} from "../core/authChallenge";
 import {
   parsePostmanEnvironment,
   parseRestifyEnvironment,
@@ -121,6 +123,7 @@ interface RequestData {
     | "apikey"
     | "oauth2"
     | "digest"
+    | "ntlm"
     | "awssigv4"
     | "jwt"
     | "hawk"
@@ -151,6 +154,10 @@ interface RequestData {
     tokenScope?: string;
     digestUsername?: string;
     digestPassword?: string;
+    ntlmUsername?: string;
+    ntlmPassword?: string;
+    ntlmDomain?: string;
+    ntlmWorkstation?: string;
     awsAccessKey?: string;
     awsSecretKey?: string;
     awsSessionToken?: string;
@@ -996,7 +1003,7 @@ export class RestifyPanel {
     const settings = this.storageManager.getSettings();
     applyDefaultHeaders(headers, settings.defaultHeaders, this.extensionVersion, undefined, resolveVars);
 
-    // Apply auth host-side (F12); digest's header is computed after a 401 round-trip.
+    // Apply auth host-side (F12); digest/NTLM headers are computed after a 401 round-trip.
     let authTypeToApply = (requestData.authType || "none") as AuthType;
     let authDataToApply = requestData.authData || {};
     if (authTypeToApply === "inherit") {
@@ -1004,13 +1011,13 @@ export class RestifyPanel {
       authTypeToApply = resolved.authType;
       authDataToApply = resolved.authData;
     }
-    let digestCreds: { username: string; password: string } | null = null;
-    if (authTypeToApply === "digest") {
-      digestCreds = {
-        username: resolveVars(authDataToApply.digestUsername || ""),
-        password: resolveVars(authDataToApply.digestPassword || ""),
-      };
-    } else {
+    const challengeCreds = buildChallengeCredentials(
+      authTypeToApply,
+      authDataToApply,
+      { method, url: finalUrl, body },
+      resolveVars,
+    );
+    if (!challengeCreds) {
       const applied = applyAuthHeaders(headers, authTypeToApply, authDataToApply, {
         resolve: resolveVars, method, url: finalUrl, body, headers,
       });
@@ -1098,6 +1105,13 @@ export class RestifyPanel {
     this._activeController = controller;
     this._tabControllers.set(tabId, controller);
 
+    const requestOptions = {
+      followRedirects: req.followRedirects !== false,
+      maxRedirects: DEFAULT_MAX_REDIRECTS,
+      timeout: timeoutMs,
+      signal: controller.signal,
+    };
+
     try {
       const netStart = Date.now();
       const result = await this._doRequest(
@@ -1107,35 +1121,22 @@ export class RestifyPanel {
         body,
         verifySsl,
         proxyOpts,
-        {
-          followRedirects: req.followRedirects !== false,
-          maxRedirects: DEFAULT_MAX_REDIRECTS,
-          timeout: timeoutMs,
-          signal: controller.signal,
-        },
+        requestOptions,
       );
 
-      // HTTP Digest (RFC 7616): first attempt gets a 401 challenge, then we
-      // compute the Authorization header and retry once.
-      let finalResult = result;
-      if (digestCreds && result.status === 401) {
-        const challenge = getHeader(result.headers, "www-authenticate");
-        if (challenge && /^\s*digest\b/i.test(challenge)) {
-          try {
-            const authValue = buildDigestAuthorization(challenge, { method, url: finalUrl, body }, digestCreds);
-            setHeader(headers, "Authorization", authValue);
-            finalResult = await this._doRequest(method, finalUrl, headers, body, verifySsl, proxyOpts, {
-              followRedirects: req.followRedirects !== false,
-              maxRedirects: DEFAULT_MAX_REDIRECTS,
-              timeout: timeoutMs,
-              signal: controller.signal,
-            });
-            this.activityProvider?.append("Digest auth", "Retried the request with the digest challenge response.", "info");
-          } catch (digestErr) {
-            this.activityProvider?.append("Digest auth failed", digestErr instanceof Error ? digestErr.message : String(digestErr), "error");
-          }
-        }
-      }
+      // HTTP Digest (RFC 7616) and NTLM (challenge-response): the first attempt
+      // gets a 401 challenge, then we compute the Authorization header and retry.
+      const finalResult =
+        challengeCreds && result.status === 401
+          ? await retryWithChallengeAuth(
+              result,
+              challengeCreds,
+              headers,
+              (opts) => this._doRequest(method, finalUrl, headers, body, verifySsl, proxyOpts, opts),
+              requestOptions,
+              this.activityProvider ?? undefined,
+            )
+          : result;
       try {
         this.panel.webview.postMessage({
           command: "debugLog", tabId,

@@ -54,6 +54,7 @@ export interface RequestState {
     | 'apikey'
     | 'oauth2'
     | 'digest'
+    | 'ntlm'
     | 'awssigv4'
     | 'jwt'
     | 'hawk'
@@ -106,6 +107,11 @@ export interface RequestState {
     hawkId?: string;
     hawkKey?: string;
     hawkAlgorithm?: 'sha256' | 'sha1';
+    // NTLM
+    ntlmUsername?: string;
+    ntlmPassword?: string;
+    ntlmDomain?: string;
+    ntlmWorkstation?: string;
   };
   /** Which collection this request was loaded from, for "inherit" auth. */
   _collectionId?: string;

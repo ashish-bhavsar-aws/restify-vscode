@@ -17,6 +17,7 @@ import {
   isFileLikeResponse,
   isTextLike,
 } from "./responsePreview";
+import type { RequestTimings } from "./timings";
 
 export interface RequestResult {
   status: number;
@@ -30,6 +31,8 @@ export interface RequestResult {
   fileMimeType?: string;
   fileBase64?: string;
   filePreviewType?: string;
+  /** F27: per-stage network timings measured from the request start. */
+  timings?: RequestTimings;
 }
 
 /**
@@ -44,6 +47,7 @@ export function buildRequestResult(
   headers: http.IncomingHttpHeaders,
   rawData: Buffer,
   requestPathOrUrl: string,
+  timings?: RequestTimings,
 ): RequestResult {
   // Decompress the wire bytes so the viewer receives decoded content.
   const data = decompressBody(
@@ -73,6 +77,7 @@ export function buildRequestResult(
       body: data.toString("utf8"),
       bodySize: data.length,
       isFileResponse: false,
+      timings,
     };
   }
 
@@ -102,5 +107,6 @@ export function buildRequestResult(
     fileMimeType: safeMimeType,
     fileBase64,
     filePreviewType,
+    timings,
   };
 }

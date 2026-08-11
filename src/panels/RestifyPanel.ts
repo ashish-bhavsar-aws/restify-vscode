@@ -1202,6 +1202,7 @@ export class RestifyPanel {
         fileMimeType: finalResult.fileMimeType,
         fileBase64: finalResult.fileBase64,
         filePreviewType: finalResult.filePreviewType,
+        timings: finalResult.timings,
       };
 
       const schemaValidation = validateResponseIfEnabled(req, responseBody);
@@ -1763,6 +1764,7 @@ export class RestifyPanel {
             raw.headers,
             raw.data,
             typeof options.path === "string" ? options.path : "",
+            raw.timings,
           );
         }
 
@@ -1883,6 +1885,7 @@ export class RestifyPanel {
       raw.headers,
       raw.data,
       url,
+      raw.timings,
     );
   }
 

@@ -57,7 +57,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F24 | **Response beautify options** | 🟡 P2 | ✅ Word wrap, font size, line numbers, collapse/expand tree view of JSON. *(done — `ResponseViewerSettings` (`wrap`/`lineNumbers`/`fontSize`) persisted via Settings (survives restarts); a toolbar above the response body toggles wrap + line numbers, steps font size (10–20 px via `src/webview/utils/responseViewer.ts`), and collapses/expands all code folds via CM `foldAll`/`unfoldAll` — available for JSON, XML, and HTML (and text gets wrap/lines/font-size); per-node folding was already present via `foldGutter`; unit tests in `test/unit/responseViewer.test.ts`)* |
 | F25 | **Save response to file** | 🟡 P2 | ✅ Download raw body (not just binary file responses) to disk. *(done — response actions gain a **Save** button that opens the OS save dialog with a content-type-derived extension (`src/core/responseSave.ts`); filename auto-suggested from the request URL; `_downloadFile` refactored onto a shared `_saveViaDialog` helper; 12 unit tests + E2E in `save-response.spec.ts`)* |
 | F26 | **Response diff** | ⚪ P3 | Compare two responses/requests side-by-side. |
-| F27 | **Timeline / time breakdown** | 🟡 P2 | TTFB, transfer, DNS, TLS stages (needs refactor of `_doRequest` timing). |
+| F27 | **Timeline / time breakdown** | 🟡 P2 | ✅ TTFB, transfer, DNS, TLS stages. *(done — `performHttpRequest` (`src/core/http.ts`) now measures per-stage offsets via `process.hrtime.bigint()`: DNS lookup, TCP connect, TLS secureConnect, request-flush (`finish`), TTFB (first response byte), and body received (`end`); captured in `RawHttpResult.timings`, threaded through `buildRequestResult` → `RequestResult.timings` → `responseData` (auto-persisted in history); `src/core/timings.ts` is a pure module with `RequestTimings`/`timingStages()` (delta computation, skips unmeasured stages like TLS on plain http); the response pane gains a **Timeline** tab (clock icon) with a waterfall bar, total/TTFB/wall-clock stats, and an offset/duration/share table; 9 unit tests in `test/unit/timings.test.ts`)* |
 | F28 | **Streaming / SSE support** | ⚪ P3 | Incremental body rendering for chunked/`text/event-stream` responses. |
 | F29 | **Response cache / offline replay** | ⚪ P3 | Replay cached responses without a network round-trip. |
 | F30 | **Notification on long request** | 🟡 P2 | ✅ Toast/status-bar notify when a request completes in background. *(done — after a request finishes, a VS Code notification is shown when the duration exceeds a threshold (default 5 s) while the window is unfocused (`src/core/completionNotify.ts`); Settings → General adds **Notify on long requests** + **Long Request Threshold**; 9 unit tests + E2E in `completion-notify.spec.ts`)* |
@@ -235,7 +235,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 ### Phase 5 — Experimental / Long-term (P3)
 - [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.
-- [ ] F26 response diff, F27 timeline breakdown, ~~F24 response tree view~~ ✅.
+- [x] F26 response diff, F27 timeline breakdown, ~~F24 response tree view~~ ✅.
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
 - [ ] F47 gRPC, F29 response cache/offline replay, F55/F56 editor polish.
@@ -304,7 +304,7 @@ Focus: make Restify fit into broader developer workflows and existing API toolch
 Focus: more advanced API workflows and long-term differentiation.
 
 - F26 — Response diff
-- F27 — Timeline breakdown
+- ~~F27 — Timeline breakdown~~ ✅
 - F28 — Streaming/SSE
 - F36 — OpenAPI explorer
 - F37 — Mock server generation

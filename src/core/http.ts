@@ -1,12 +1,17 @@
 import * as http from "http";
 import * as https from "https";
+import * as net from "net";
+import * as tls from "tls";
 import { MAX_RESPONSE_SIZE } from "./constants";
+import { emptyTimings, type RequestTimings } from "./timings";
 
 export interface RawHttpResult {
   status: number;
   statusText: string;
   headers: http.IncomingHttpHeaders;
   data: Buffer;
+  /** F27: per-stage timings measured from the request start. */
+  timings: RequestTimings;
 }
 
 const CANCELLED_ERROR = "Request cancelled";
@@ -31,6 +36,9 @@ export function performHttpRequest(
   return new Promise((resolve, reject) => {
     let settled = false;
     let req: http.ClientRequest | null = null;
+    const timings = emptyTimings();
+    const time0 = process.hrtime.bigint();
+    const timeMs = (): number => Number(process.hrtime.bigint() - time0) / 1e6;
 
     const finish = (fn: (value: any) => void, value: any): void => {
       if (settled) return;
@@ -53,6 +61,8 @@ export function performHttpRequest(
 
     try {
       req = lib.request(options, (res) => {
+        // First response byte (TTFB).
+        timings.wait = timeMs();
         const chunks: Buffer[] = [];
         let totalSize = 0;
         let aborted = false;
@@ -70,6 +80,7 @@ export function performHttpRequest(
         });
         res.on("end", () => {
           if (aborted || settled) return;
+          timings.receive = timeMs();
           onStage?.("end", {
             status: res.statusCode,
             size: Buffer.concat(chunks).length,
@@ -79,6 +90,7 @@ export function performHttpRequest(
             statusText: res.statusMessage || "",
             headers: res.headers,
             data: Buffer.concat(chunks),
+            timings,
           });
         });
       });
@@ -86,6 +98,33 @@ export function performHttpRequest(
       finish(reject, err);
       return;
     }
+
+    // F27: capture DNS / TCP / TLS stage timings off the underlying socket.
+    req.on("socket", (socket: net.Socket) => {
+      const onLookup = (): void => {
+        timings.dns = timeMs();
+      };
+      const onConnect = (): void => {
+        timings.connect = timeMs();
+      };
+      const onSecureConnect = (): void => {
+        timings.secureConnect = timeMs();
+      };
+      socket.once("lookup", onLookup);
+      socket.once("connect", onConnect);
+      (socket as tls.TLSSocket).once("secureConnect", onSecureConnect);
+      // Avoid leaking `once` listeners when a request is aborted before the
+      // socket ever fires these events (e.g. cancelled during connection).
+      req.once("close", () => {
+        socket.removeListener("lookup", onLookup);
+        socket.removeListener("connect", onConnect);
+        socket.removeListener("secureConnect", onSecureConnect);
+      });
+    });
+    // Request headers + body flushed.
+    req.once("finish", () => {
+      timings.send = timeMs();
+    });
 
     req.on("error", (err) => {
       onStage?.("error", { message: err?.message || String(err) });

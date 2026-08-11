@@ -20,6 +20,7 @@ export * from "./responseResult";
 export * from "./responseSave";
 export * from "./script";
 export * from "./soapSecurity";
+export * from "./timings";
 export * from "./schemaValidation";
 export * from "./jsonPath";
 export * from "./url";

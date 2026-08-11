@@ -7,11 +7,12 @@ import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList, faChevronRight,
   faArrowUp, faList, faLink, faFileCode, faFileLines, faDownload, faCode, faCookieBite,
-  faFlaskVial, faListCheck, faFloppyDisk,
+  faFlaskVial, faListCheck, faFloppyDisk, faClock,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 import { ResponseSearchBar, type ResponseSearchMode } from './ResponseSearchBar';
 import { queryJsonPathInText } from '../../core/jsonPath';
+import { TimelineView } from './TimelineView';
 
 const LARGE_RESPONSE_THRESHOLD = 500 * 1024;
 const FILE_PREVIEW_RENDER_THRESHOLD = 5 * 1024 * 1024;
@@ -170,7 +171,7 @@ interface ResponsePaneProps {
   onViewerChange?: (viewer: ResponseViewerSettings) => void;
 }
 
-type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw';
+type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw' | 'timeline';
 
 /* ─── Styled Components ──────────────────────────────────── */
 
@@ -1718,7 +1719,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
 
       {/* Tab bar */}
       <TabBar id="res-tabs">
-        {(['body', 'headers', 'cookies', 'tests', 'schema', 'logs', 'raw'] as ResTab[]).map((tab) => (
+        {(['body', 'headers', 'cookies', 'tests', 'schema', 'logs', 'raw', 'timeline'] as ResTab[]).map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}
@@ -1734,6 +1735,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 : tab === 'tests' ? faFlaskVial
                 : tab === 'schema' ? faListCheck
                 : tab === 'logs' ? faClipboardList
+                : tab === 'timeline' ? faClock
                 : faFileCode
               }
               size={12}
@@ -1914,6 +1916,15 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
       {activeTab === 'raw' && (
         <TabContent>
           <ResponseBody>{response.body}</ResponseBody>
+        </TabContent>
+      )}
+
+      {/* Timeline tab (F27) */}
+      {activeTab === 'timeline' && (
+        <TabContent>
+          <ScrollArea>
+            <TimelineView timings={response.timings} duration={response.duration} />
+          </ScrollArea>
         </TabContent>
       )}
     </ResponsePaneWrapper>

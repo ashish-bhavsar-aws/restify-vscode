@@ -1,3 +1,5 @@
+import type { RequestTimings } from "../core/timings";
+
 export interface KVItem {
   key: string;
   value: string;
@@ -133,6 +135,8 @@ export interface ResponseState {
   fileMimeType?: string;
   fileBase64?: string;
   filePreviewType?: 'text' | 'csv' | 'pdf' | 'excel' | 'none';
+  /** F27: per-stage network timings (DNS/TCP/TLS/TTFB/transfer). */
+  timings?: RequestTimings;
 }
 
 export interface EnvVariable extends KVItem {

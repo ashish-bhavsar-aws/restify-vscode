@@ -112,6 +112,7 @@ export interface SettingsState {
   };
   soapSecurity: SoapSecurityEntry[];
   headerPresets: HeaderPreset[];
+  responseViewer: { wrap: boolean; lineNumbers: boolean; fontSize: number };
 }
 
 export class StorageManager {
@@ -1251,6 +1252,11 @@ export class StorageManager {
           enabled: h?.enabled !== false,
         })),
       })),
+      responseViewer: {
+        wrap: saved.responseViewer?.wrap ?? true,
+        lineNumbers: saved.responseViewer?.lineNumbers ?? true,
+        fontSize: saved.responseViewer?.fontSize ?? 12,
+      },
     };
   }
 

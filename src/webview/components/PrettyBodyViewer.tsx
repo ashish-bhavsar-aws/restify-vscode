@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import styled, { useTheme } from 'styled-components';
 import { EditorState, Extension, RangeSetBuilder } from '@codemirror/state';
-import { foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { foldAll, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting, unfoldAll } from '@codemirror/language';
 import { html } from '@codemirror/lang-html';
 import { json } from '@codemirror/lang-json';
 import { xml } from '@codemirror/lang-xml';
@@ -19,9 +19,22 @@ import {
 } from '@codemirror/view';
 import ReactDOM from 'react-dom/client';
 import { Icon } from './FaIcon';
-import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+import {
+  faAlignJustify,
+  faAnglesDown,
+  faAnglesUp,
+  faChevronDown,
+  faChevronRight,
+  faListOl,
+  faMinus,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons';
 import { defaultKeymap } from '@codemirror/commands';
 import { tags } from '@lezer/highlight';
+import {
+  clampFontSize,
+  stepFontSize,
+} from '../utils/responseViewer';
 
 
 type PrettyLanguage = 'json' | 'xml' | 'html' | 'text';
@@ -36,6 +49,13 @@ interface PrettyBodyViewerProps {
   className?: string;
   highlightRanges?: Array<{ from: number; to: number }>;
   onActivate?: () => void;
+  /** F24: viewer display options (a toolbar is shown when handlers are wired). */
+  wrap?: boolean;
+  showLineNumbers?: boolean;
+  fontSize?: number;
+  onWrapChange?: (wrap: boolean) => void;
+  onLineNumbersChange?: (show: boolean) => void;
+  onFontSizeChange?: (size: number) => void;
 }
 
 function escapeRegex(s: string) {
@@ -289,11 +309,69 @@ const PrettyBodyViewerWrap = styled.div`
   line-height: 1.6;
 `;
 
+const ViewerShell = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+`;
+
+const ViewerToolbar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  background: color-mix(in srgb, ${({ theme }) => theme.surface} 92%, transparent);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+`;
+
+const ToolbarBtn = styled.button<{ $active?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: ${({ $active, theme }) => $active
+    ? `color-mix(in srgb, ${theme.accent} 15%, transparent)`
+    : 'transparent'};
+  border: 1px solid ${({ $active, theme }) => $active ? theme.accent : theme.border};
+  color: ${({ $active, theme }) => $active ? theme.accent : theme.muted};
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.6;
+  transition: all .15s;
+  white-space: nowrap;
+
+  &:hover {
+    color: ${({ theme }) => theme.fg};
+    background: ${({ theme }) => theme.hover};
+  }
+`;
+
+const ToolbarSep = styled.div`
+  width: 1px;
+  height: 16px;
+  background: ${({ theme }) => theme.border};
+  margin: 0 4px;
+`;
+
+const FontSizeValue = styled.span`
+  min-width: 28px;
+  text-align: center;
+  font-size: 11px;
+  color: ${({ theme }) => theme.muted};
+`;
+
 const ResponseViewer = styled(PrettyBodyViewerWrap)`
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
 
   .cm-editor {
-    min-height: 100%;
+    height: 100%;
     outline: none;
   }
 
@@ -316,6 +394,12 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   className = '',
   highlightRanges = [],
   onActivate,
+  wrap = true,
+  showLineNumbers = true,
+  fontSize = 12,
+  onWrapChange,
+  onLineNumbersChange,
+  onFontSizeChange,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -335,105 +419,113 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
     []
   );
 
-  const extensions = useMemo(() => [
-    lineNumbers(),
-    foldGutter({
-      markerDOM(open) {
-        const marker = document.createElement('span');
-        marker.className = 'cm-response-fold-marker';
-        try {
-          const root = ReactDOM.createRoot(marker);
-          root.render(<Icon icon={open ? faChevronDown : faChevronRight} size={13} />);
-        } catch {
-          marker.textContent = open ? '⌄' : '›';
-        }
-        return marker;
-      },
-    }),
-    highlightSpecialChars(),
-    drawSelection(),
-    highlightActiveLine(),
-    syntaxHighlighting(responseHighlightStyle),
-    languageExtension(language),
-    searchHighlightExtension(search),
-    jsonPathHighlightExtension(highlightRanges),
-    keymap.of([...foldKeymap, ...defaultKeymap]),
-    EditorState.readOnly.of(true),
-    EditorView.editable.of(false),
-    EditorView.lineWrapping,
-    EditorView.theme({
-      '&': {
-        backgroundColor: theme.inputBg,
-        color: theme.inputFg,
-        fontSize: '12px',
-        height: '100%',
-      },
-      '.cm-scroller': {
-        fontFamily: theme.monoFamily,
-        lineHeight: '1.6',
-      },
-      '.cm-content': {
-        padding: '8px 0',
-      },
-      '.cm-line': {
-        padding: '0 12px',
-      },
-      '.cm-gutters': {
-        backgroundColor: theme.lineNumberBg,
-        color: theme.lineNumberFg,
-        borderRight: `1px solid ${theme.border}`,
-      },
-      '.cm-foldGutter': {
-        minWidth: '18px',
-      },
-      '.cm-foldGutter .cm-gutterElement': {
-        alignItems: 'center',
-        cursor: 'pointer',
-        display: 'flex',
-        justifyContent: 'center',
-        padding: '0 4px',
-      },
-      '.cm-response-fold-marker': {
-        color: theme.lineNumberFg,
-        fontSize: '13px',
-        lineHeight: '1',
-        opacity: '0.8',
-      },
-      '.cm-foldPlaceholder': {
-        backgroundColor: theme.accent,
-        border: `1px solid ${theme.border}`,
-        borderRadius: '3px',
-        color: theme.accentFg,
-        cursor: 'pointer',
-        margin: '0 2px',
-        padding: '0 4px',
-      },
-      '.cm-activeLine': {
-        backgroundColor: 'transparent',
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: 'transparent',
-      },
-      '.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
-        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
-      },
-      '.cm-selectionBackground': {
-        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
-      },
-      '.cm-content ::selection': {
-        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
-      },
-      '.cm-line::selection': {
-        backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
-      },
-      '.cm-response-jsonpath-match': {
-        backgroundColor: `color-mix(in srgb, ${theme.accent} 38%, transparent)`,
-        outline: `1px solid ${theme.accent}`,
-        borderRadius: '2px',
-      },
-      ...getSyntaxColors(isDark),
-    }),
-  ], [language, search, theme, isDark, highlightRanges]);
+  const foldable = language !== 'text';
+  const showToolbar = !!(onWrapChange || onLineNumbersChange || onFontSizeChange);
+
+  const extensions = useMemo(() => {
+    const ext: Extension[] = [
+      highlightSpecialChars(),
+      drawSelection(),
+      highlightActiveLine(),
+      syntaxHighlighting(responseHighlightStyle),
+      languageExtension(language),
+      searchHighlightExtension(search),
+      jsonPathHighlightExtension(highlightRanges),
+      keymap.of([...foldKeymap, ...defaultKeymap]),
+      EditorState.readOnly.of(true),
+      EditorView.editable.of(false),
+      EditorView.theme({
+        '&': {
+          backgroundColor: theme.inputBg,
+          color: theme.inputFg,
+          fontSize: `${clampFontSize(fontSize)}px`,
+          height: '100%',
+        },
+        '.cm-scroller': {
+          fontFamily: theme.monoFamily,
+          lineHeight: '1.6',
+        },
+        '.cm-content': {
+          padding: '8px 0',
+        },
+        '.cm-line': {
+          padding: '0 12px',
+        },
+        '.cm-gutters': {
+          backgroundColor: theme.lineNumberBg,
+          color: theme.lineNumberFg,
+          borderRight: `1px solid ${theme.border}`,
+        },
+        '.cm-foldGutter': {
+          minWidth: '18px',
+        },
+        '.cm-foldGutter .cm-gutterElement': {
+          alignItems: 'center',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '0 4px',
+        },
+        '.cm-response-fold-marker': {
+          color: theme.lineNumberFg,
+          fontSize: '13px',
+          lineHeight: '1',
+          opacity: '0.8',
+        },
+        '.cm-foldPlaceholder': {
+          backgroundColor: theme.accent,
+          border: `1px solid ${theme.border}`,
+          borderRadius: '3px',
+          color: theme.accentFg,
+          cursor: 'pointer',
+          margin: '0 2px',
+          padding: '0 4px',
+        },
+        '.cm-activeLine': {
+          backgroundColor: 'transparent',
+        },
+        '.cm-activeLineGutter': {
+          backgroundColor: 'transparent',
+        },
+        '.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+          backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
+        },
+        '.cm-selectionBackground': {
+          backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
+        },
+        '.cm-content ::selection': {
+          backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
+        },
+        '.cm-line::selection': {
+          backgroundColor: `color-mix(in srgb, ${theme.accent} 70%, transparent)`,
+        },
+        '.cm-response-jsonpath-match': {
+          backgroundColor: `color-mix(in srgb, ${theme.accent} 38%, transparent)`,
+          outline: `1px solid ${theme.accent}`,
+          borderRadius: '2px',
+        },
+        ...getSyntaxColors(isDark),
+      }),
+    ];
+    if (showLineNumbers) ext.push(lineNumbers());
+    if (foldable) {
+      ext.push(foldGutter({
+        markerDOM(open) {
+          const marker = document.createElement('span');
+          marker.className = 'cm-response-fold-marker';
+          try {
+            const root = ReactDOM.createRoot(marker);
+            root.render(<Icon icon={open ? faChevronDown : faChevronRight} size={13} />);
+          } catch {
+            marker.textContent = open ? '⌄' : '›';
+          }
+          return marker;
+        },
+      }));
+    }
+    if (wrap) ext.push(EditorView.lineWrapping);
+    return ext;
+  }, [language, search, theme, isDark, highlightRanges, showLineNumbers, foldable, wrap, fontSize]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -454,6 +546,18 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
     };
   }, [displayText, extensions]);
 
+  const collapseAll = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    foldAll(view);
+  };
+
+  const expandAll = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    unfoldAll(view);
+  };
+
   if (!text && placeholder) {
     return (
       <PrettyBodyViewerWrap className={className} onMouseDown={onActivate}>
@@ -463,10 +567,65 @@ export const PrettyBodyViewer: React.FC<PrettyBodyViewerProps> = ({
   }
 
   return (
-    <ResponseViewer
-      ref={hostRef}
-      className={className}
-      onMouseDown={onActivate}
-    />
+    <ViewerShell className={className} onMouseDown={onActivate}>
+      {showToolbar && (
+        <ViewerToolbar data-testid="response-viewer-toolbar">
+          {onWrapChange && (
+            <ToolbarBtn
+              $active={wrap}
+              data-testid="viewer-wrap-btn"
+              title={wrap ? 'Word wrap: on' : 'Word wrap: off'}
+              onClick={() => onWrapChange(!wrap)}
+            >
+              <Icon icon={faAlignJustify} size={11} />
+              Wrap
+            </ToolbarBtn>
+          )}
+          {onLineNumbersChange && (
+            <ToolbarBtn
+              $active={showLineNumbers}
+              data-testid="viewer-line-numbers-btn"
+              title={showLineNumbers ? 'Line numbers: on' : 'Line numbers: off'}
+              onClick={() => onLineNumbersChange(!showLineNumbers)}
+            >
+              <Icon icon={faListOl} size={11} />
+              Lines
+            </ToolbarBtn>
+          )}
+          {onFontSizeChange && (
+            <>
+              <ToolbarSep />
+              <ToolbarBtn
+                data-testid="viewer-font-dec-btn"
+                title="Decrease font size"
+                onClick={() => onFontSizeChange(stepFontSize(fontSize, -1))}
+              >
+                <Icon icon={faMinus} size={11} />
+              </ToolbarBtn>
+              <FontSizeValue data-testid="viewer-font-size">{clampFontSize(fontSize)}</FontSizeValue>
+              <ToolbarBtn
+                data-testid="viewer-font-inc-btn"
+                title="Increase font size"
+                onClick={() => onFontSizeChange(stepFontSize(fontSize, 1))}
+              >
+                <Icon icon={faPlus} size={11} />
+              </ToolbarBtn>
+            </>
+          )}
+          {foldable && (
+            <>
+              <ToolbarSep />
+              <ToolbarBtn data-testid="viewer-collapse-all-btn" title="Collapse all" onClick={collapseAll}>
+                <Icon icon={faAnglesDown} size={11} />
+              </ToolbarBtn>
+              <ToolbarBtn data-testid="viewer-expand-all-btn" title="Expand all" onClick={expandAll}>
+                <Icon icon={faAnglesUp} size={11} />
+              </ToolbarBtn>
+            </>
+          )}
+        </ViewerToolbar>
+      )}
+      <ResponseViewer ref={hostRef} />
+    </ViewerShell>
   );
 };

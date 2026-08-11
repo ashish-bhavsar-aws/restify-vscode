@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { SettingsState, CertEntry, SoapSecurityEntry, KVItem } from '../types';
+import { SettingsState, CertEntry, SoapSecurityEntry, KVItem, DEFAULT_RESPONSE_VIEWER } from '../types';
 import { KeyValueTable } from './KeyValueTable';
 
 interface SettingsModalProps {
@@ -579,6 +579,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       defaultHeaders,
       soapSecurity: soapEntries,
       headerPresets: initialSettings?.headerPresets ?? [],
+      responseViewer: initialSettings?.responseViewer ?? { ...DEFAULT_RESPONSE_VIEWER },
     });
   };
 

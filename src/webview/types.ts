@@ -222,6 +222,15 @@ export interface DefaultHeadersConfig {
   custom?: KVItem[];
 }
 
+export interface ResponseViewerSettings {
+  /** Wrap long lines in the response body viewer. */
+  wrap: boolean;
+  /** Show line numbers in the response body viewer. */
+  lineNumbers: boolean;
+  /** Font size (px) of the response body viewer. */
+  fontSize: number;
+}
+
 export interface SettingsState {
   proxy: string;
   proxyAuthorization: string;
@@ -234,7 +243,14 @@ export interface SettingsState {
   defaultHeaders: DefaultHeadersConfig;
   soapSecurity: SoapSecurityEntry[]; // global WS-Security defaults by hostname
   headerPresets: HeaderPreset[];
+  responseViewer: ResponseViewerSettings; // F24: body viewer display options
 }
+
+export const DEFAULT_RESPONSE_VIEWER: ResponseViewerSettings = {
+  wrap: true,
+  lineNumbers: true,
+  fontSize: 12,
+};
 
 export interface OAuth2ConfigPayload {
   grantType: 'authorization_code' | 'client_credentials' | 'password';
@@ -268,6 +284,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   },
   soapSecurity: [],
   headerPresets: [],
+  responseViewer: { ...DEFAULT_RESPONSE_VIEWER },
 };
 
 export const DEFAULT_REQUEST: RequestState = {

@@ -54,7 +54,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 |---|---------|----------|-------|
 | F22 | **JSON schema validation** | 🟡 P2 | ✅ Validate response body against a JSON Schema (from OpenAPI or pasted). *(done — `src/core/schemaValidation.ts` Ajv draft-07 validation (host-side, serializable results); request **Schema** tab with editor + validate toggle + badge; response **Schema** tab with valid/error summary; OpenAPI imports attach the resolved 2xx JSON response schema; 12 unit tests + E2E in `schema-validation.spec.ts`)* |
 | F23 | **JSONPath / XPath / filter** | 🟡 P2 | ✅ Query the JSON response body with a JSONPath expression and highlight results. *(done — `src/core/jsonPath.ts` subset evaluator (`$`, `.name`, `[n]`, `[*]`, `..name`, `[?(filter)]` with `==/!=/</>/<=/>=`) + pretty-print offset mapping for exact match highlighting; search bar gains a **Text / JSONPath** mode toggle, match count, and a results list of `path → value`; 15 unit tests + E2E in `jsonpath.spec.ts`)* |
-| F24 | **Response beautify options** | 🟡 P2 | Word wrap, font size, line numbers, collapse/expand tree view of JSON. |
+| F24 | **Response beautify options** | 🟡 P2 | ✅ Word wrap, font size, line numbers, collapse/expand tree view of JSON. *(done — `ResponseViewerSettings` (`wrap`/`lineNumbers`/`fontSize`) persisted via Settings (survives restarts); a toolbar above the response body toggles wrap + line numbers, steps font size (10–20 px via `src/webview/utils/responseViewer.ts`), and collapses/expands all code folds via CM `foldAll`/`unfoldAll` — available for JSON, XML, and HTML (and text gets wrap/lines/font-size); per-node folding was already present via `foldGutter`; unit tests in `test/unit/responseViewer.test.ts`)* |
 | F25 | **Save response to file** | 🟡 P2 | ✅ Download raw body (not just binary file responses) to disk. *(done — response actions gain a **Save** button that opens the OS save dialog with a content-type-derived extension (`src/core/responseSave.ts`); filename auto-suggested from the request URL; `_downloadFile` refactored onto a shared `_saveViaDialog` helper; 12 unit tests + E2E in `save-response.spec.ts`)* |
 | F26 | **Response diff** | ⚪ P3 | Compare two responses/requests side-by-side. |
 | F27 | **Timeline / time breakdown** | 🟡 P2 | TTFB, transfer, DNS, TLS stages (needs refactor of `_doRequest` timing). |
@@ -147,7 +147,7 @@ This section separates the highest-priority features from the broader roadmap in
 - F19 — Basic Auth via URL ✅
 - F22 — JSON schema validation ✅
 - F23 — JSONPath / XPath query
-- F24 — Response beautify options
+- F24 — Response beautify options ✅
 - F25 — Save response to file ✅
 - F30 — Notification on long request ✅
 - F44 — Environment import/export ✅
@@ -235,7 +235,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 ### Phase 5 — Experimental / Long-term (P3)
 - [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.
-- [ ] F26 response diff, F27 timeline breakdown, F24 response tree view.
+- [ ] F26 response diff, F27 timeline breakdown, ~~F24 response tree view~~ ✅.
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
 - [ ] F47 gRPC, F29 response cache/offline replay, F55/F56 editor polish.
@@ -297,7 +297,7 @@ Focus: make Restify fit into broader developer workflows and existing API toolch
 - F11 — OAuth 2.0 ✅
 - F22 — JSON schema validation ✅
 - F23 — JSONPath/XPath query ✅
-- F24 — Response beautify options
+- F24 — Response beautify options ✅
 - F46 — WebSocket client ✅
 
 ### Release 4 — Advanced and experimental (target: later)

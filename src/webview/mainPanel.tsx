@@ -23,6 +23,7 @@ import {
   Environment,
   Collection,
   SettingsState,
+  ResponseViewerSettings,
   OAuth2ConfigPayload,
 } from "./types";
 import {
@@ -792,10 +793,20 @@ export const MainPanel: React.FC = () => {
   };
 
   const handleSaveSettings = (newSettings: SettingsState) => {
-    const merged: SettingsState = { ...newSettings, headerPresets: settings.headerPresets };
+    const merged: SettingsState = {
+      ...newSettings,
+      headerPresets: settings.headerPresets,
+      responseViewer: settings.responseViewer,
+    };
     setSettings(merged);
     post({ command: "saveSettings", settings: merged });
     setSettingsModalOpen(false);
+  };
+
+  const handleViewerChange = (responseViewer: ResponseViewerSettings) => {
+    const next: SettingsState = { ...settings, responseViewer };
+    setSettings(next);
+    post({ command: "saveSettings", settings: next });
   };
 
   const handleSaveHeaderPreset = (name: string, headers: KVItem[]) => {
@@ -1070,6 +1081,8 @@ export const MainPanel: React.FC = () => {
             onDownloadFile={handleDownloadFile}
             onSaveResponse={handleSaveResponse}
             post={post}
+            viewer={settings.responseViewer}
+            onViewerChange={handleViewerChange}
           />
         </SplitPane>
       </MainArea>

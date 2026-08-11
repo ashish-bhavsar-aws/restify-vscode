@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { ResponseState, getStatusClass } from '../types';
+import { ResponseState, getStatusClass, ResponseViewerSettings, DEFAULT_RESPONSE_VIEWER } from '../types';
 import { Icon } from './FaIcon';
 import { PdfViewer } from './PdfViewer';
 import {
@@ -165,6 +165,9 @@ interface ResponsePaneProps {
   onDownloadFile?: (payload: { fileName: string; mimeType: string; fileBase64: string }) => void;
   onSaveResponse?: (payload: { body: string; contentType?: string; suggestName?: string }) => void;
   post?: (msg: any) => void;
+  /** F24: response body viewer display options (persisted via settings). */
+  viewer?: ResponseViewerSettings;
+  onViewerChange?: (viewer: ResponseViewerSettings) => void;
 }
 
 type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw';
@@ -437,6 +440,10 @@ const BodyContentWrapper = styled.div`
 
 const ContentPadding = styled.div`
   padding: 8px;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 `;
 
 /* ─── Headers Table ───────────────────────────────────── */
@@ -1495,7 +1502,7 @@ const FilePreview: React.FC<{ response: ResponseState; search: string; post?: (m
 
 /* ─── Main Component ──────────────────────────────────── */
 
-export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, schemaValidation, onDownloadFile, onSaveResponse, post }) => {
+export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, schemaValidation, onDownloadFile, onSaveResponse, post, viewer, onViewerChange }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
@@ -1555,6 +1562,19 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
     () => parseResponseCookies(response?.headers),
     [response?.headers],
   );
+
+  // F24: viewer display options wired to the persisted settings.
+  const viewerSettings = viewer ?? DEFAULT_RESPONSE_VIEWER;
+  const patchViewer = (patch: Partial<ResponseViewerSettings>) =>
+    onViewerChange?.({ ...viewerSettings, ...patch });
+  const viewerProps = {
+    wrap: viewerSettings.wrap,
+    showLineNumbers: viewerSettings.lineNumbers,
+    fontSize: viewerSettings.fontSize,
+    onWrapChange: (wrap: boolean) => patchViewer({ wrap }),
+    onLineNumbersChange: (lineNumbers: boolean) => patchViewer({ lineNumbers }),
+    onFontSizeChange: (fontSize: number) => patchViewer({ fontSize }),
+  };
 
   const handleCopy = () => {
     if (response?.body) {
@@ -1777,17 +1797,19 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             </LargeResponseWarning>
           )}
           {/* Body content */}
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {response.isFileResponse && response.fileBase64 ? (
-              <FilePreview response={response} search={bodySearch} post={send} />
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                <FilePreview response={response} search={bodySearch} post={send} />
+              </div>
             ) : isLikelyJson(response.body, response.headers) ? (
-              <ContentPadding><PrettyBodyViewer text={response.body} language="json" search={searchMode === 'jsonpath' ? '' : bodySearch} highlightRanges={jsonPathHighlightRanges} /></ContentPadding>
+              <ContentPadding><PrettyBodyViewer {...viewerProps} text={response.body} language="json" search={searchMode === 'jsonpath' ? '' : bodySearch} highlightRanges={jsonPathHighlightRanges} /></ContentPadding>
             ) : isLikelyHtml(response.body, response.headers) ? (
-              <ContentPadding><PrettyBodyViewer text={response.body} language="html" search={bodySearch} /></ContentPadding>
+              <ContentPadding><PrettyBodyViewer {...viewerProps} text={response.body} language="html" search={bodySearch} /></ContentPadding>
             ) : isLikelyXml(response.body, response.headers) ? (
-              <ContentPadding><PrettyBodyViewer text={response.body} language="xml" search={bodySearch} /></ContentPadding>
+              <ContentPadding><PrettyBodyViewer {...viewerProps} text={response.body} language="xml" search={bodySearch} /></ContentPadding>
             ) : (
-              <ContentPadding><PrettyBodyViewer text={searchableText} language="text" search={bodySearch} /></ContentPadding>
+              <ContentPadding><PrettyBodyViewer {...viewerProps} text={searchableText} language="text" search={bodySearch} /></ContentPadding>
             )}
           </div>
         </BodyContentWrapper>

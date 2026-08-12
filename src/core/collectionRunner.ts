@@ -24,6 +24,11 @@ import {
 import { DEFAULT_TIMEOUT_MS, DEFAULT_MAX_REDIRECTS } from "./constants";
 import { applyAuthHeaders, type AuthType, type AuthDataLike } from "./auth";
 import { getCookieHeader, parseSetCookies, storeCookies, StoredCookie } from "./cookies";
+import {
+  runInterceptorPipeline,
+  type RequestInterceptor,
+  type InterceptorRequest,
+} from "./interceptors";
 
 /**
  * Collection runner — sequential execution of a folder/collection reusing the
@@ -132,6 +137,10 @@ export interface CollectionRunnerOptions {
    * script. Its assertions are merged with the request-level ones.
    */
   testScript?: string;
+  /**
+   * F50: interceptors (retry / HTTP log) applied to each request in the run.
+   */
+  interceptors?: RequestInterceptor[];
 }
 
 export interface ExecuteRunnerResult {
@@ -268,19 +277,28 @@ async function doOne(
   rejectUnauthorized: boolean,
   timeoutMs: number,
   signal?: AbortSignal,
+  interceptors: RequestInterceptor[] = [],
 ): Promise<RawHttpResult> {
-  const parsedUrl = new URL(url);
-  const isHttps = parsedUrl.protocol === "https:";
-  const lib = isHttps ? https : http;
-  const requestOptions = {
-    method,
-    headers,
-    rejectUnauthorized,
-    hostname: parsedUrl.hostname,
-    port: parsedUrl.port ? parseInt(parsedUrl.port, 10) : isHttps ? 443 : 80,
-    path: parsedUrl.pathname + parsedUrl.search,
-  } as http.RequestOptions;
-  return performHttpRequest(lib, requestOptions, body, timeoutMs, signal);
+  // F50: run the interceptor pipeline (retry / HTTP log) around the request.
+  return runInterceptorPipeline({
+    request: { url, method, headers: { ...headers }, body },
+    interceptors,
+    signal,
+    perform: (req: InterceptorRequest) => {
+      const parsedUrl = new URL(req.url);
+      const isHttps = parsedUrl.protocol === "https:";
+      const lib = isHttps ? https : http;
+      const requestOptions = {
+        method: req.method,
+        headers: req.headers,
+        rejectUnauthorized,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port ? parseInt(parsedUrl.port, 10) : isHttps ? 443 : 80,
+        path: parsedUrl.pathname + parsedUrl.search,
+      } as http.RequestOptions;
+      return performHttpRequest(lib, requestOptions, req.body, timeoutMs, signal);
+    },
+  });
 }
 
 async function performWithRedirects(
@@ -330,6 +348,7 @@ async function performWithRedirects(
       rejectUnauthorized,
       timeoutMs,
       options.signal,
+      runnerOptions.interceptors,
     );
 
     captureCookies(result, currentUrl);
@@ -382,6 +401,7 @@ async function performWithRedirects(
     rejectUnauthorized,
     timeoutMs,
     options.signal,
+    runnerOptions.interceptors,
   );
 }
 

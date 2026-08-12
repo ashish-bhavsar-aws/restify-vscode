@@ -38,6 +38,10 @@ import {
   validateResponseIfEnabled,
   runPreScriptPipeline,
   runCollectionTestScript,
+  buildRequestInterceptors,
+  runInterceptorPipeline,
+  type InterceptorRequest,
+  type RequestInterceptor,
   type CoreRequestForBody,
   type ResolvedSoapSecurity,
   type RequestResult,
@@ -69,6 +73,8 @@ export interface RequestExecutorDeps {
   extensionVersion: string;
   getSessionId: () => string;
   onSetVariables: (variables: any) => void;
+  /** F50: sink for the HTTP-log interceptor (output channel). */
+  logLine?: (line: string) => void;
 }
 
 export class RequestExecutor {
@@ -251,6 +257,11 @@ export class RequestExecutor {
     const settings = this.deps.storage.getSettings();
     applyDefaultHeaders(headers, settings.defaultHeaders, this.deps.extensionVersion, undefined, resolveVars);
 
+    // F50: request/response interceptors from settings (retry + HTTP log).
+    const interceptors = buildRequestInterceptors(settings, {
+      log: this.deps.logLine,
+    });
+
     // F49: compress the request body (gzip/deflate/br) when enabled. Applied
     // before auth so payload-based signatures (e.g. SigV4) hash what is sent.
     const compression = requestData.compressRequest;
@@ -391,6 +402,7 @@ export class RequestExecutor {
         proxyOpts,
         requestOptions,
         onStreamEvent,
+        interceptors,
       );
 
       // HTTP Digest (RFC 7616) and NTLM (challenge-response): the first attempt
@@ -411,6 +423,7 @@ export class RequestExecutor {
                   proxyOpts,
                   opts,
                   onStreamEvent,
+                  interceptors,
                 ),
               requestOptions,
               this.deps.activity ?? undefined,
@@ -766,6 +779,7 @@ export class RequestExecutor {
       useHttp2?: boolean;
     } = {},
     onStreamEvent?: (event: StreamEvent) => void,
+    interceptors: RequestInterceptor[] = [],
   ): Promise<RequestResult> {
     const maxRedirects =
       options.followRedirects === false
@@ -790,6 +804,7 @@ export class RequestExecutor {
         options.signal,
         onStreamEvent,
         options.useHttp2,
+        interceptors,
       );
 
       // Capture Set-Cookie from every hop so redirects accumulate cookies too.
@@ -857,6 +872,7 @@ export class RequestExecutor {
       options.signal,
       onStreamEvent,
       options.useHttp2,
+      interceptors,
     );
   }
 
@@ -871,6 +887,7 @@ export class RequestExecutor {
     signal?: AbortSignal,
     onStreamEvent?: (event: StreamEvent) => void,
     useHttp2?: boolean,
+    interceptors: RequestInterceptor[] = [],
   ): Promise<RequestResult> {
     const parsedUrl = new URL(url);
 
@@ -898,22 +915,32 @@ export class RequestExecutor {
       if (cookieHeader) setHeader(headers, "Cookie", cookieHeader);
     }
 
-    const raw = await performRequest({
-      url,
-      method,
-      headers,
-      body,
-      rejectUnauthorized,
-      timeoutMs,
+    const baseHeaders = { ...headers };
+    // F50: run the interceptor pipeline (retry / HTTP log) around the
+    // transport call. Each attempt rebuilds transport options from the
+    // (possibly interceptor-mutated) request snapshot.
+    const raw = await runInterceptorPipeline({
+      request: { url, method, headers: baseHeaders, body },
+      interceptors,
       signal,
-      useHttp2,
-      tls:
-        parsedUrl.protocol === "https:"
-          ? (getCertificatesForHost(this.deps.storage, parsedUrl.hostname) ?? undefined)
-          : undefined,
-      stream,
-      onStage: (stage, info) => this.debugLog(stage, info),
-      proxy: proxyOpts ?? undefined,
+      perform: (req: InterceptorRequest) =>
+        performRequest({
+          url: req.url,
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
+          rejectUnauthorized,
+          timeoutMs,
+          signal,
+          useHttp2,
+          tls:
+            parsedUrl.protocol === "https:"
+              ? (getCertificatesForHost(this.deps.storage, parsedUrl.hostname) ?? undefined)
+              : undefined,
+          stream,
+          onStage: (stage, info) => this.debugLog(stage, info),
+          proxy: proxyOpts ?? undefined,
+        }),
     });
     return buildRequestResult(
       raw.status,

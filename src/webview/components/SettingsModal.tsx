@@ -469,9 +469,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     keystore: 'p12',
   });
 
+  const [retryEnabled, setRetryEnabled] = useState(false);
+  const [retryMaxAttempts, setRetryMaxAttempts] = useState(3);
+  const [retryDelayMs, setRetryDelayMs] = useState(500);
+  const [retryStatuses, setRetryStatuses] = useState('429, 500, 502, 503, 504');
+  const [retryNetworkErrors, setRetryNetworkErrors] = useState(true);
+  const [logEnabled, setLogEnabled] = useState(false);
+  const [logHeaders, setLogHeaders] = useState(false);
+
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'proxy' | 'soap'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'proxy' | 'soap' | 'interceptors'>('general');
 
   useEffect(() => {
     if (initialSettings) {
@@ -529,6 +537,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       );
 
       setSoapEntries(initialSettings.soapSecurity || []);
+      setRetryEnabled(initialSettings.interceptors?.retry?.enabled ?? false);
+      setRetryMaxAttempts(initialSettings.interceptors?.retry?.maxAttempts ?? 3);
+      setRetryDelayMs(initialSettings.interceptors?.retry?.retryDelayMs ?? 500);
+      setRetryStatuses(
+        (initialSettings.interceptors?.retry?.retryStatuses ?? [429, 500, 502, 503, 504]).join(', ')
+      );
+      setRetryNetworkErrors(initialSettings.interceptors?.retry?.retryOnNetworkError ?? true);
+      setLogEnabled(initialSettings.interceptors?.logging?.enabled ?? false);
+      setLogHeaders(initialSettings.interceptors?.logging?.logHeaders ?? false);
     }
 
     if (!open) {
@@ -580,6 +597,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       soapSecurity: soapEntries,
       headerPresets: initialSettings?.headerPresets ?? [],
       responseViewer: initialSettings?.responseViewer ?? { ...DEFAULT_RESPONSE_VIEWER },
+      interceptors: {
+        retry: {
+          enabled: retryEnabled,
+          maxAttempts: Math.max(1, Number(retryMaxAttempts) || 3),
+          retryDelayMs: Math.max(0, Number(retryDelayMs) || 500),
+          retryStatuses: retryStatuses
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => /^\d+$/.test(s))
+            .map((s) => Number(s)),
+          retryOnNetworkError: retryNetworkErrors,
+        },
+        logging: {
+          enabled: logEnabled,
+          logHeaders,
+        },
+      },
     });
   };
 
@@ -785,6 +819,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             aria-selected={activeTab === 'soap'}
           >
             SOAP Security
+          </TabButton>
+          <TabButton
+            $active={activeTab === 'interceptors'}
+            onClick={() => setActiveTab('interceptors')}
+            data-testid="settings-tab-interceptors"
+            role="tab"
+            aria-selected={activeTab === 'interceptors'}
+          >
+            Interceptors
           </TabButton>
         </TabBar>
 
@@ -1153,6 +1196,100 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <SecondaryButton onClick={addSoapEntry} data-testid="soap-entry-add">+ Add WS-Security Entry</SecondaryButton>
             </CertForm>
           </Section>
+        )}
+
+        {activeTab === 'interceptors' && (
+          <>
+            <Section>
+              <h4>Retry</h4>
+              <HelperText>
+                Retry requests that fail with a transient error. Applied to every
+                request (main panel and collection runner).
+              </HelperText>
+              <CheckboxLabel data-testid="interceptor-retry-toggle">
+                <input
+                  type="checkbox"
+                  checked={retryEnabled}
+                  onChange={(e) => setRetryEnabled(e.target.checked)}
+                />
+                Enable automatic retries
+              </CheckboxLabel>
+
+              {retryEnabled && (
+                <>
+                  <Label>Max Attempts</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={retryMaxAttempts}
+                    data-testid="interceptor-retry-attempts"
+                    onChange={(e) => setRetryMaxAttempts(Number(e.target.value))}
+                  />
+                  <HelperText>
+                    Total attempts including the first. 1 disables retrying.
+                  </HelperText>
+
+                  <Label>Retry Delay (ms)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={retryDelayMs}
+                    data-testid="interceptor-retry-delay"
+                    onChange={(e) => setRetryDelayMs(Number(e.target.value))}
+                  />
+
+                  <Label>Retry Status Codes</Label>
+                  <Input
+                    value={retryStatuses}
+                    placeholder="429, 500, 502, 503, 504"
+                    data-testid="interceptor-retry-statuses"
+                    onChange={(e) => setRetryStatuses(e.target.value)}
+                  />
+                  <HelperText>
+                    Comma-separated HTTP status codes that trigger a retry.
+                  </HelperText>
+
+                  <CheckboxLabel data-testid="interceptor-retry-network-toggle">
+                    <input
+                      type="checkbox"
+                      checked={retryNetworkErrors}
+                      onChange={(e) => setRetryNetworkErrors(e.target.checked)}
+                    />
+                    Retry on network / connection errors
+                  </CheckboxLabel>
+                </>
+              )}
+            </Section>
+
+            <Section>
+              <h4>HTTP Log</h4>
+              <HelperText>
+                Log every request and response to the &quot;Restify: HTTP
+                Log&quot; output channel. Open it from the Output panel or via
+                the &quot;Restify: Show HTTP Log&quot; command.
+              </HelperText>
+              <CheckboxLabel data-testid="interceptor-logging-toggle">
+                <input
+                  type="checkbox"
+                  checked={logEnabled}
+                  onChange={(e) => setLogEnabled(e.target.checked)}
+                />
+                Enable HTTP logging
+              </CheckboxLabel>
+
+              {logEnabled && (
+                <CheckboxLabel data-testid="interceptor-logging-headers-toggle">
+                  <input
+                    type="checkbox"
+                    checked={logHeaders}
+                    onChange={(e) => setLogHeaders(e.target.checked)}
+                  />
+                  Include request headers in the log
+                </CheckboxLabel>
+              )}
+            </Section>
+          </>
         )}
 
         {message && (

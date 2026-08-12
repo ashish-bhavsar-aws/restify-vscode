@@ -17,6 +17,7 @@ export * from "./headers";
 export * from "./headerPresets";
 export * from "./http";
 export * from "./http2";
+export * from "./interceptors";
 export * from "./oauth2";
 export * from "./redirects";
 export * from "./responsePreview";

@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
 import { StorageManager } from '../../storage/StorageManager';
 import { parseIterationData, runCollectionRequests } from '../../core/collectionRunner';
+import { buildRequestInterceptors } from '../../core/interceptors';
 import { showOpenDialog } from '../dialogStub';
 import { flattenCollectionRequests } from './sidebarHelpers';
+
+let httpLogChannel: vscode.OutputChannel | null = null;
 
 export class CollectionRunner {
   private _runController?: AbortController;
@@ -110,6 +113,12 @@ export class CollectionRunner {
         iterationData,
         preScript: col.preScript,
         testScript: col.testScript,
+        interceptors: buildRequestInterceptors(this.storage.getSettings(), {
+          log: (line) => {
+            httpLogChannel ??= vscode.window.createOutputChannel("Restify: HTTP Log");
+            httpLogChannel.appendLine(line);
+          },
+        }),
         onCookiesChanged: (next) => {
           cookies = next;
           this.storage.saveCookies(next);

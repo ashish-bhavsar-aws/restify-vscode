@@ -263,6 +263,13 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // F50: reveal the shared "Restify: HTTP Log" output channel (singleton by name).
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.showHttpLog', () => {
+      vscode.window.createOutputChannel('Restify: HTTP Log').show();
+    })
+  );
+
   vscode.commands.executeCommand('restify.openMain');
 
   storageManager.onDidChange(() => {

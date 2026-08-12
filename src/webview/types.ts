@@ -1,4 +1,5 @@
 import type { RequestTimings } from "../core/timings";
+import type { InterceptorSettings } from "../core/interceptors";
 
 export interface KVItem {
   key: string;
@@ -282,6 +283,7 @@ export interface SettingsState {
   soapSecurity: SoapSecurityEntry[]; // global WS-Security defaults by hostname
   headerPresets: HeaderPreset[];
   responseViewer: ResponseViewerSettings; // F24: body viewer display options
+  interceptors: InterceptorSettings; // F50: retry + HTTP log toggles
 }
 
 export const DEFAULT_RESPONSE_VIEWER: ResponseViewerSettings = {
@@ -323,6 +325,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   soapSecurity: [],
   headerPresets: [],
   responseViewer: { ...DEFAULT_RESPONSE_VIEWER },
+  interceptors: {
+    retry: { enabled: false, maxAttempts: 3, retryDelayMs: 500, retryStatuses: [429, 500, 502, 503, 504], retryOnNetworkError: true },
+    logging: { enabled: false, logHeaders: false },
+  },
 };
 
 export const DEFAULT_REQUEST: RequestState = {

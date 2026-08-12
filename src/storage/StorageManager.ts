@@ -10,6 +10,10 @@ import {
 } from "../core/variableScope";
 import type { OAuth2Token, AuthType, AuthDataLike } from "../core";
 import type { HeaderPreset } from "../core/headerPresets";
+import {
+  DEFAULT_LOGGING_INTERCEPTOR,
+  DEFAULT_RETRY_INTERCEPTOR,
+} from "../core/interceptors";
 
 export interface EnvVariable {
   key: string;
@@ -113,6 +117,17 @@ export interface SettingsState {
   soapSecurity: SoapSecurityEntry[];
   headerPresets: HeaderPreset[];
   responseViewer: { wrap: boolean; lineNumbers: boolean; fontSize: number };
+  /** F50: request/response interceptor toggles (retry, HTTP log). */
+  interceptors: {
+    retry: {
+      enabled: boolean;
+      maxAttempts: number;
+      retryDelayMs: number;
+      retryStatuses: number[];
+      retryOnNetworkError: boolean;
+    };
+    logging: { enabled: boolean; logHeaders: boolean };
+  };
 }
 
 export class StorageManager {
@@ -1256,6 +1271,24 @@ export class StorageManager {
         wrap: saved.responseViewer?.wrap ?? true,
         lineNumbers: saved.responseViewer?.lineNumbers ?? true,
         fontSize: saved.responseViewer?.fontSize ?? 12,
+      },
+      interceptors: {
+        retry: {
+          enabled: saved.interceptors?.retry?.enabled ?? DEFAULT_RETRY_INTERCEPTOR.enabled,
+          maxAttempts:
+            saved.interceptors?.retry?.maxAttempts ?? DEFAULT_RETRY_INTERCEPTOR.maxAttempts,
+          retryDelayMs:
+            saved.interceptors?.retry?.retryDelayMs ?? DEFAULT_RETRY_INTERCEPTOR.retryDelayMs,
+          retryStatuses:
+            saved.interceptors?.retry?.retryStatuses ?? [...DEFAULT_RETRY_INTERCEPTOR.retryStatuses],
+          retryOnNetworkError:
+            saved.interceptors?.retry?.retryOnNetworkError ?? DEFAULT_RETRY_INTERCEPTOR.retryOnNetworkError,
+        },
+        logging: {
+          enabled: saved.interceptors?.logging?.enabled ?? DEFAULT_LOGGING_INTERCEPTOR.enabled,
+          logHeaders:
+            saved.interceptors?.logging?.logHeaders ?? DEFAULT_LOGGING_INTERCEPTOR.logHeaders,
+        },
       },
     };
   }

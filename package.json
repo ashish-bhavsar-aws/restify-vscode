@@ -163,6 +163,12 @@
         "title": "Export Request to .http",
         "category": "Restify",
         "icon": "$(export)"
+      },
+      {
+        "command": "restify.showHttpLog",
+        "title": "Show HTTP Log",
+        "category": "Restify",
+        "icon": "$(output)"
       }
     ],
     "menus": {

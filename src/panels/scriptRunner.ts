@@ -3,8 +3,12 @@
  *
  * The webview CSP blocks eval/Worker, so pre-request and post-response scripts
  * run here and report results back over postMessage. Kept in its own module so
- * the main panel stays within the maintainability line budget (F60).
+ * the main panel stays within the maintainability line budget (F60). The
+ * actual sandbox/`vm` work is delegated to `executeUserScript` (src/core/script.ts)
+ * so the `pm` assertion API (F33) is consistent everywhere.
  */
+import { executeUserScript } from "../core/script";
+
 interface ScriptReportContext {
   post: (message: any) => void;
   appendActivity?: (title: string, detail?: string, level?: "info" | "warning" | "error") => void;
@@ -17,29 +21,6 @@ export async function runScriptAndReport(
   tabId: string,
   ctx: ScriptReportContext,
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-  const vm = require("vm") as typeof import("vm");
-  const logs: string[] = [];
-  const variables: Record<string, any> = {};
-  const tests: Record<string, boolean> = {};
-  const vars = variables;
-
-  const log = (...args: any[]) =>
-    logs.push(
-      args
-        .map((a) => {
-          try {
-            return typeof a === "string" ? a : JSON.stringify(a);
-          } catch {
-            return String(a);
-          }
-        })
-        .join(" "),
-    );
-  const set = (k: string, v: any) => {
-    variables[String(k)] = v;
-  };
-
   let parsedBody: any = response?.body ?? "";
   try {
     parsedBody = JSON.parse(parsedBody);
@@ -53,83 +34,33 @@ export async function runScriptAndReport(
     headers: response?.headers ?? {},
     body: parsedBody,
     rawBody: response?.body ?? "",
+    responseTime: response?.duration ?? 0,
   };
 
-  try {
-    const context = vm.createContext({
-      response: responseObj,
-      headers: responseObj.headers,
-      status: responseObj.status,
-      statusText: responseObj.statusText,
-      set,
-      log,
-      vars,
-      variables,
-      tests,
-      console: { log, warn: log, error: log, info: log },
-    });
+  const result = await executeUserScript(script, {
+    response: responseObj,
+    headers: responseObj.headers,
+    status: responseObj.status,
+    statusText: responseObj.statusText,
+  });
 
-    const wrapped = "(async function(){" + script + "})();";
-    // vm.runInContext with timeout only covers synchronous part; we race the promise
-    const resultPromise = vm.runInContext(wrapped, context, {
-      timeout: 5000,
-    });
+  ctx.post({ command: "scriptResult", tabId, result });
+  ctx.appendActivity?.(
+    result.success ? "Script completed" : "Script failed",
+    [
+      `Result: ${result.success ? "success" : "failed"}`,
+      `Logs: ${result.logs.length}`,
+      `Variables set: ${Object.keys(result.variables).length}`,
+      ...(Object.keys(result.variables).length > 0
+        ? [`Variable names: ${Object.keys(result.variables).join(", ")}`]
+        : []),
+      ...(!result.success && result.error ? [`Error: ${result.error}`] : []),
+    ].join("\n"),
+    result.success ? "info" : "error",
+  );
 
-    if (resultPromise && typeof (resultPromise as any).then === "function") {
-      await Promise.race([
-        resultPromise,
-        new Promise<void>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Script timed out after 5s")),
-            5000,
-          ),
-        ),
-      ]);
-    }
-
-    ctx.post({
-      command: "scriptResult",
-      tabId,
-      result: { success: true, variables, logs, tests },
-    });
-    ctx.appendActivity?.(
-      "Script completed",
-      [
-        "Result: success",
-        `Logs: ${logs.length}`,
-        `Variables set: ${Object.keys(variables).length}`,
-        ...(Object.keys(variables).length > 0
-          ? [`Variable names: ${Object.keys(variables).join(", ")}`]
-          : []),
-      ].join("\n"),
-      "info",
-    );
-
-    // Save extracted variables to the active environment (reuse existing logic).
-    if (Object.keys(variables).length > 0) {
-      await ctx.onSetVariables?.(variables);
-    }
-  } catch (err: any) {
-    ctx.post({
-      command: "scriptResult",
-      tabId,
-      result: {
-        success: false,
-        variables,
-        logs,
-        tests,
-        error: err?.message ?? String(err),
-      },
-    });
-    ctx.appendActivity?.(
-      "Script failed",
-      [
-        "Result: failed",
-        `Logs before error: ${logs.length}`,
-        `Variables set: ${Object.keys(variables).length}`,
-        `Error: ${err?.message ?? String(err)}`,
-      ].join("\n"),
-      "error",
-    );
+  // Save extracted variables to the active environment (reuse existing logic).
+  if (Object.keys(result.variables).length > 0) {
+    await ctx.onSetVariables?.(result.variables);
   }
 }

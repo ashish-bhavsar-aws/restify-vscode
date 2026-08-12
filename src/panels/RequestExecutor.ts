@@ -631,7 +631,7 @@ export class RequestExecutor {
         try {
           const { result: testResult } = await runCollectionTestScript(
             colScripts.testScript as string,
-            responseData,
+            { ...responseData, responseTime: duration },
           );
           this.deps.postMessage({ command: "scriptResult", tabId, result: testResult });
           if (Object.keys(testResult.variables).length > 0) {

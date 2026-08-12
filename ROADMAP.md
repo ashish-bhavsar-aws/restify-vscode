@@ -68,7 +68,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 |---|---------|----------|-------|
 | F31 | **Collection runner** | 🟠 P1 | ✅ Run all requests in a collection/folder sequentially; show per-request pass/fail + timing results grid. *(done — `src/core/collectionRunner.ts` + sidebar runner modal; E2E in `feature4.spec.ts`)* |
 | F32 | **Data-driven runs** | 🟡 P2 | ✅ Iterate a collection against CSV/JSON data files (each row injects variables). *(done — `iterationData` in `collectionRunner.ts` + `_pickIterationData` file picker in `SidebarProvider.ts`; unit-tested)* |
-| F33 | **Test/assertion scripts** | 🟠 P1 | Postman-style `tests` tab: assertions render as pass/fail badges in the response pane (builds on existing script engine). |
+| F33 | **Test/assertion scripts** | 🟠 P1 | ✅ Postman-style `tests` tab: assertions render as pass/fail badges in the response pane. *(done — `src/core/pm.ts` adds a Postman-compatible `pm` API to test scripts: `pm.test(name, fn)` records pass/fail + per-assertion failure messages, `pm.expect(...)` (chai-style matchers incl. `.to.equal/.include/.match/.be.*/.have.length/.have.property/.not`), `pm.response` (`.to.have.status/statusText/header/body/jsonBody`, `.json()/.text()/.code/.responseTime`), and `pm.environment`/`pm.variables` (map to script vars); `ScriptResult` gains `testMessages` merged across `runScriptSequence`; the Tests tab now renders the failure message under each failed assertion and the sandbox gains `setTimeout`/`clearTimeout` for async scripts; the panel `scriptRunner` was deduped to delegate to `executeUserScript` so request/collection scripts all share the same sandbox; 24 unit tests in `test/unit/pm.test.ts`, E2E in `feature4.spec.ts`)* |
 | F34 | **Export to OpenAPI / HAR / .http** | 🟡 P2 | Reverse of the importers. Postman export already supported via `importCollection`. |
 | F35 | **Import HAR / Insomnia / .http** | 🟡 P2 | Extend importers beyond Postman + OpenAPI. |
 | F36 | **OpenAPI viewer / explorer** | ⚪ P3 | Render an OpenAPI spec as browsable endpoints with generated requests (currently only imports spec → collections). |
@@ -95,7 +95,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F47 | **gRPC support** | ⚪ P3 | Import `.proto`, invoke unary/server-streaming calls. |
 | F48 | **HTTP/2 support** | ⚪ P3 | ✅ `http2` module for h2 endpoints. *(done — `src/core/transport.ts` (`performRequest`) picks the HTTP/2 transport when the per-request **HTTP/2** toggle is on (ALPN `h2` for `https:`, prior-knowledge `h2c` for `http:`), stripping HTTP/1.1-only headers and honoring timeout/abort/mTLS/streaming; HTTP/2 bypasses the configured proxy and falls back to HTTP/1.1 when one is active; `src/core/http2.ts` + unit tests in `test/unit/http2.test.ts` + `test/unit/transport.test.ts`)* |
 | F49 | **Request compression** | ⚪ P3 | ✅ Compress request body (gzip/deflate) with `Content-Encoding`. *(done — `src/core/compress.ts` (`compressRequestBody` + `contentEncodingHeader`), applied host-side before auth so payload signatures hash what is actually sent; sets `Content-Encoding` + `Content-Length` on the compressed bytes and skips empty bodies or a user-supplied encoding; per-request **Compress body** select (None/Gzip/Deflate/Brotli) in the Body tab (`BodyCompressBar`); unit tests in `test/unit/compress.test.ts`)* |
-| F50 | **Interceptors / middleware** | ⚪ P3 | Pipeline hooks around request/response lifecycle. |
+| F50 | **Interceptors / middleware** | ⚪ P3 | ✅ Request/response pipeline hooks. *(done — `src/core/interceptors.ts` defines `RequestInterceptor` (beforeRequest/afterResponse/shouldRetry) + `runInterceptorPipeline`; `retryInterceptor` retries network errors and configured status codes with backoff and abort-honoring delays; `loggingInterceptor` writes `->`/`<-` request/response lines (with optional headers) to the shared **Restify: HTTP Log** output channel; Settings → General gains retry/logging toggles and `restify.showHttpLog` reveals the log; the pipeline wraps the main-panel executor (`RequestExecutor`), the collection runner, and the sidebar runner; 18 unit tests in `test/unit/interceptors.test.ts`)* |
 | F57 | **HTTP/3 (QUIC) support** | ⚪ P3 | HTTP/3 runs over QUIC/UDP; Node core has no HTTP/3 client, so this needs a native dependency (e.g. `http3`/quiche) that ships per-platform binaries. Cannot go through the HTTP proxy either — revisit after F48 proves the HTTP/2 non-proxy path. |
 | F61 | **SOAP/WSDL import and SOAP body generation** | 🟡 P2 | ✅ Import a SOAP service definition (WSDL), generate method-specific SOAP request envelopes, set proper SOAP headers, and prefill body templates for each operation. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included — settings-driven by hostname via Settings → SOAP Security)* |
 
@@ -237,7 +237,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 
 ### Phase 5 — Experimental / Long-term (P3)
 - [x] F48 HTTP/2.
-- [ ] F50 interceptors, F57 HTTP/3 (QUIC).
+- [x] F50 interceptors (retry + HTTP log pipeline), [ ] F57 HTTP/3 (QUIC).
 - [ ] F26 response diff, [x] F27 timeline breakdown, ~~F24 response tree view~~ ✅.
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
@@ -316,7 +316,7 @@ Focus: more advanced API workflows and long-term differentiation.
 - F47 — gRPC support
 - ~~F48 — HTTP/2 support~~ ✅
 - ~~F49 — Request compression~~ ✅
-- F50 — Interceptors/middleware
+- ~~F50 — Interceptors/middleware~~ ✅
 - F57 — HTTP/3 (QUIC) support
 
 ---

@@ -4,6 +4,7 @@ import {
   ScriptRunningBox,
   Spinner,
   TestResultIcon,
+  TestResultMsg,
   TestResultName,
   TestResultRow,
   TestResultsWrapper,
@@ -32,11 +33,15 @@ export const TestResults: React.FC<TestResultsProps> = ({ request }) => {
   }
 
   const tests: Record<string, boolean> = request?.scriptTests || {};
+  const messages: Record<string, string> = request?.scriptTestMessages || {};
   const entries = Object.entries(tests);
   if (entries.length === 0) {
     return (
       <EmptyHint>
-        No test assertions defined. Use <code>{'tests["name"] = true'}</code> in your post-response script.
+        No test assertions defined. Use{' '}
+        <code>{'tests["name"] = true'}</code> or{' '}
+        <code>{'pm.test("name", () => pm.expect(...))'}</code> in your
+        post-response script.
       </EmptyHint>
     );
   }
@@ -54,10 +59,15 @@ export const TestResults: React.FC<TestResultsProps> = ({ request }) => {
         <TestSummaryTotal>{entries.length} total</TestSummaryTotal>
       </TestSummaryBar>
       {entries.map(([name, result]) => (
-        <TestResultRow key={name} $passed={result}>
-          <TestResultIcon $passed={result}>{result ? '✓' : '✗'}</TestResultIcon>
-          <TestResultName>{name}</TestResultName>
-        </TestResultRow>
+        <div key={name}>
+          <TestResultRow $passed={result}>
+            <TestResultIcon $passed={result}>{result ? '✓' : '✗'}</TestResultIcon>
+            <TestResultName>{name}</TestResultName>
+          </TestResultRow>
+          {!result && messages[name] && (
+            <TestResultMsg>{messages[name]}</TestResultMsg>
+          )}
+        </div>
       ))}
     </TestResultsWrapper>
   );

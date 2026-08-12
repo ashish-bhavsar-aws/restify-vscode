@@ -545,6 +545,7 @@ export async function executeRunnerRequest(
           statusText: result.statusText,
           headers: normalizeResponseHeaders(result.headers as any),
           body: bodyText,
+          responseTime: result.timings?.receive ?? 0,
         },
       },
       5000,

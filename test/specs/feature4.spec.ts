@@ -226,6 +226,32 @@ test.describe('Feature 4 (F31-F40) — Collections & Workflow', () => {
     await screenshot(app.window, 'f33-fail-indicator');
   });
 
+  // ── F33: pm.test / pm.expect assertions with failure messages ─────
+
+  test('F33 - pm.test assertions render with failure messages', async () => {
+    log('--- F33: pm.test failure messages ---');
+    await writeTestScript(
+      mainFrame!,
+      `pm.test("pm status is 200", () => pm.expect(response.status).to.equal(200));` +
+      `pm.test("pm has json body", () => pm.response.to.have.jsonBody("total", 2));` +
+      `pm.test("pm wrong value", () => pm.expect(response.status).to.equal(500));`,
+    );
+    await mainFrame!.waitForTimeout(300);
+    await setUrlAndSend(mainFrame!, mockUrl('/api/json-response'));
+    const ok = await waitForResponse(mainFrame!, 20_000);
+    expect(ok).toBe(true);
+    await clickResponsePaneTab(mainFrame!, 'tests');
+    await mainFrame!.waitForTimeout(900);
+    const body = await getResponseText(mainFrame!);
+    logCheck('pm status test shown', body.includes('pm status is 200'));
+    expect(body).toContain('pm status is 200');
+    logCheck('pm json body test shown', body.includes('pm has json body'));
+    expect(body).toContain('pm has json body');
+    logCheck('pm failure message rendered', body.includes('expected 200 to equal 500'));
+    expect(body).toContain('expected 200 to equal 500');
+    await screenshot(app.window, 'f33-pm-assertions');
+  });
+
   // ── F33: Test results persist across tab switches ────────────────
 
   test('F33 - test results persist across tab switches', async () => {

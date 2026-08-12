@@ -1,10 +1,13 @@
 import type { Context } from 'vm';
+import { createPmSandbox } from './pm';
 
 export interface ScriptResult {
   success: boolean;
   variables: Record<string, any>;
   logs: string[];
   tests?: Record<string, boolean>;
+  /** F33: per-test failure messages (from `pm.test` assertion errors). */
+  testMessages?: Record<string, string>;
   error?: string;
 }
 
@@ -37,6 +40,7 @@ export async function runScriptSequence(
   const logs: string[] = [];
   let variables: Record<string, any> = {};
   let tests: Record<string, boolean> = {};
+  let testMessages: Record<string, string> = {};
 
   for (const script of scripts) {
     if (!(script || "").trim()) continue;
@@ -48,14 +52,16 @@ export async function runScriptSequence(
         variables: { ...variables, ...result.variables },
         logs,
         tests: { ...tests, ...result.tests },
+        testMessages: { ...testMessages, ...result.testMessages },
         error: result.error,
       };
     }
     variables = { ...variables, ...result.variables };
     tests = { ...tests, ...result.tests };
+    testMessages = { ...testMessages, ...result.testMessages };
   }
 
-  return { success: true, variables, logs, tests };
+  return { success: true, variables, logs, tests, testMessages };
 }
 
 export async function executeUserScript(
@@ -69,6 +75,7 @@ export async function executeUserScript(
   const logs: string[] = [];
   const variables: Record<string, any> = {};
   const tests: Record<string, boolean> = {};
+  const testMessages: Record<string, string> = {};
 
   const log = (...args: any[]): void => {
     logs.push(
@@ -88,11 +95,36 @@ export async function executeUserScript(
     variables[String(key)] = value;
   };
 
+  // F33: Postman-style `pm` assertion API (pm.test / pm.expect / pm.response).
+  const pm = createPmSandbox({
+    tests,
+    testMessages,
+    variables,
+    response: (context.response as any) ?? undefined,
+  });
+
+  // Timers for async scripts. Tracked so pending timers can be cleared when the
+  // script settles (they must not keep the host process alive after a run).
+  const timerHandles = new Set<ReturnType<typeof setTimeout>>();
+  const sandboxSetTimeout = (fn: () => void, ms: number) => {
+    const id = setTimeout(fn, ms);
+    timerHandles.add(id);
+    return id;
+  };
+  const sandboxClearTimeout = (id: ReturnType<typeof setTimeout>) => {
+    timerHandles.delete(id);
+    clearTimeout(id);
+  };
+
   const sandbox = {
     ...context,
     vars: variables,
     variables,
     tests,
+    testMessages,
+    pm,
+    setTimeout: sandboxSetTimeout,
+    clearTimeout: sandboxClearTimeout,
     set,
     log,
     console: { log, warn: log, error: log, info: log },
@@ -120,13 +152,19 @@ ${script}
       ]);
     }
 
-    return { success: true, variables, logs, tests };
+    for (const id of timerHandles) clearTimeout(id);
+    timerHandles.clear();
+
+    return { success: true, variables, logs, tests, testMessages };
   } catch (err: any) {
+    for (const id of timerHandles) clearTimeout(id);
+    timerHandles.clear();
     return {
       success: false,
       variables,
       logs,
       tests,
+      testMessages,
       error: err?.message ?? String(err),
     };
   }

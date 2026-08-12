@@ -647,6 +647,10 @@ export const MainPanel: React.FC = () => {
                 ...(t.requestInfo?.scriptTests || {}),
                 ...(msg.result?.tests || {}),
               },
+              scriptTestMessages: {
+                ...(t.requestInfo?.scriptTestMessages || {}),
+                ...(msg.result?.testMessages || {}),
+              },
             },
           }));
           break;

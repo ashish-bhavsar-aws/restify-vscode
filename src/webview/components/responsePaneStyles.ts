@@ -598,6 +598,13 @@ export const TestResultName = styled.span`
   flex: 1;
 `;
 
+export const TestResultMsg = styled.div`
+  padding: 2px 14px 8px 42px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: ${({ theme }) => theme.error};
+`;
+
 export const SchemaPath = styled.code`
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;

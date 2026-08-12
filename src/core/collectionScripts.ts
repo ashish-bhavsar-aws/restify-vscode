@@ -69,6 +69,8 @@ export interface CollectionTestResponse {
   statusText?: string;
   headers?: unknown;
   body?: string;
+  /** F33: total request duration (ms), exposed via `pm.response.responseTime`. */
+  responseTime?: number;
 }
 
 export interface CollectionTestRun {
@@ -99,6 +101,7 @@ export async function runCollectionTestScript(
       headers: response.headers,
       body: parsedBody,
       rawBody: response.body ?? "",
+      responseTime: response.responseTime ?? 0,
     },
     headers: response.headers,
     status: response.status,

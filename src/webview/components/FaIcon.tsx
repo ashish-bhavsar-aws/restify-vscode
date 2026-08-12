@@ -41,6 +41,7 @@ import {
   faClock,
   faArrowsRotate,
   faShieldHalved,
+  faBolt,
 } from '@fortawesome/free-solid-svg-icons';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 
@@ -50,7 +51,7 @@ library.add(
   faPaperPlane, faTerminal, faClipboardList, faList, faLink, faFileCode,
   faFileLines, faDownload, faTriangleExclamation, faCode, faPlus, faChevronRight,
   faTrash, faChevronDown, faUpload, faArrowUp, faBars, faEye, faEyeSlash,
-  faKey, faClock, faArrowsRotate, faShieldHalved
+  faKey, faClock, faArrowsRotate, faShieldHalved, faBolt
 );
 
 export type { IconProp };
@@ -68,6 +69,7 @@ export {
   faClock,
   faArrowsRotate,
   faShieldHalved,
+  faBolt,
   faList,
   faLink,
   faTerminal,

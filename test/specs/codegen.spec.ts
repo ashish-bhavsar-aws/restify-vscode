@@ -4,7 +4,6 @@ import {
   closeVSCode,
   screenshot,
   injectCursorOverlay,
-  clickInFrame,
   resetLog,
   log,
   logCheck,

@@ -105,12 +105,6 @@
         "category": "Restify"
       },
       {
-        "command": "restify.openWebSocket",
-        "title": "Open WebSocket Client",
-        "category": "Restify",
-        "icon": "$(remote-explorer)"
-      },
-      {
         "command": "restify.newRequest",
         "title": "New Request",
         "category": "Restify",

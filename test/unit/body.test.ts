@@ -3,7 +3,6 @@ import {
   serializeRequestBody,
   applyHeadersToRequest,
 } from "../../src/core/body";
-import type { CoreRequestForBody } from "../../src/core/body";
 
 const resolve = (s: string) => s;
 

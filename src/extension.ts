@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storage/StorageManager';
 import { RestifyPanel } from './panels/RestifyPanel';
-import { SidebarProvider } from './panels/SidebarProvider';
+import { SidebarProvider } from './panels/sidebar/SidebarProvider';
 import { ActivityProvider } from './panels/ActivityProvider';
-import { WebSocketPanel } from './panels/WebSocketPanel';
 import { parseCurl } from './core/curlParser';
 import { parseImportTextAuto, requestToHttpText } from './core/converters';
 import { showOpenDialog, showSaveDialog } from './panels/dialogStub';
@@ -25,7 +24,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Track all open panels to sync data
   const openPanels = new Set<RestifyPanel>();
-  const wsPanels = new Set<WebSocketPanel>();
 
   const historyProvider = new SidebarProvider(context, 'history', storageManager);
   const collectionsProvider = new SidebarProvider(
@@ -76,16 +74,6 @@ export async function activate(context: vscode.ExtensionContext) {
   vscode.commands.executeCommand('restify.openMain');
       }
     )
-  );
-
-  // F46: WebSocket client panel
-  context.subscriptions.push(
-    vscode.commands.registerCommand('restify.openWebSocket', () => {
-      const panel = new WebSocketPanel(context, storageManager, (instance) => {
-        wsPanels.delete(instance);
-      });
-      wsPanels.add(panel);
-    })
   );
 
   context.subscriptions.push(

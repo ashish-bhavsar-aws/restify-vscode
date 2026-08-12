@@ -114,7 +114,6 @@ export interface SoapRequestMeta {
   operations: SoapOperationMeta[];
 }
 
-const WSDL_NS = "http://schemas.xmlsoap.org/wsdl/";
 const XSD_NS = "http://www.w3.org/2001/XMLSchema";
 const SOAP11_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/";
 const SOAP12_ENV_NS = "http://www.w3.org/2003/05/soap-envelope";

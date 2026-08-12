@@ -11,8 +11,7 @@ import {
 } from '../utils/vscode';
 import {
   startMockServer,
-  mockUrl,
-  openWebSocketPanel,
+  openWebSocketClient,
   wsConnect,
   wsDisconnect,
 } from '../utils/helpers';
@@ -49,7 +48,7 @@ async function sendMessage(frame: Frame, data: string, binary = false): Promise<
   await frame.locator('[data-testid="ws-send-btn"]').click();
 }
 
-test.describe('F46 — WebSocket client panel', () => {
+test.describe('F46 — WebSocket client (unified panel)', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async () => {
@@ -58,7 +57,7 @@ test.describe('F46 — WebSocket client panel', () => {
     await startMockServer();
     app = await launchVSCode();
     await injectCursorOverlay(app.window);
-    wsFrame = await openWebSocketPanel(app);
+    wsFrame = await openWebSocketClient(app);
     log('=== [WebSocket] setup complete ===');
   });
 

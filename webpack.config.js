@@ -112,26 +112,4 @@ module.exports = [
     },
     resolve: { extensions: ['.tsx', '.ts', '.js'] },
   },
-
-  // ─── WebSocket Client Webview (React) ──────────────────────
-  {
-    name: 'websocket',
-    target: 'web',
-    mode: 'development',
-    entry: './src/webview/websocket.tsx',
-    output: {
-      filename: 'websocket.js',
-      path: path.resolve(__dirname, 'dist/webview'),
-    },
-    module: {
-      rules: [
-        {
-          test: /\.tsx?$/,
-          use: 'ts-loader',
-          exclude: /node_modules/,
-        },
-      ],
-    },
-    resolve: { extensions: ['.tsx', '.ts', '.js'] },
-  },
 ];

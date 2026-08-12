@@ -20,10 +20,33 @@ export function isCancelledError(err: unknown): boolean {
   return err instanceof Error && err.message === CANCELLED_ERROR;
 }
 
+/** True when a response content-type advertises a Server-Sent Events stream. */
+export function isEventStreamContentType(
+  contentType: string | string[] | undefined,
+): boolean {
+  return String(contentType ?? "").toLowerCase().includes("text/event-stream");
+}
+
+/** One incremental body event forwarded to the caller (F28). */
+export interface StreamEvent {
+  status: number;
+  statusText: string;
+  headers: http.IncomingHttpHeaders;
+  /** Present on chunk events; omitted on the initial headers event. */
+  chunk?: Buffer;
+}
+
+/** Streaming callbacks wired into a request (see `performHttpRequest`). */
+export interface HttpStreamCallbacks {
+  onResponse?: (event: Omit<StreamEvent, "chunk">) => void;
+  onChunk?: (event: StreamEvent) => void;
+}
+
 /**
  * Perform a single HTTP(S) request with timeout and abort support.
  * Resolves with the raw response bytes; caller is responsible for
- * decompression and content-negotiation.
+ * decompression and content-negotiation. Pass `stream` to receive the
+ * response headers and body chunks incrementally (F28).
  */
 export function performHttpRequest(
   lib: typeof http | typeof https,
@@ -32,6 +55,7 @@ export function performHttpRequest(
   timeoutMs: number,
   signal?: AbortSignal,
   onStage?: (stage: string, info: Record<string, unknown>) => void,
+  stream?: HttpStreamCallbacks,
 ): Promise<RawHttpResult> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -63,6 +87,12 @@ export function performHttpRequest(
       req = lib.request(options, (res) => {
         // First response byte (TTFB).
         timings.wait = timeMs();
+        const eventBase = {
+          status: res.statusCode || 0,
+          statusText: res.statusMessage || "",
+          headers: res.headers,
+        };
+        stream?.onResponse?.(eventBase);
         const chunks: Buffer[] = [];
         let totalSize = 0;
         let aborted = false;
@@ -76,6 +106,7 @@ export function performHttpRequest(
             );
             return;
           }
+          stream?.onChunk?.({ ...eventBase, chunk: buf });
           chunks.push(buf);
         });
         res.on("end", () => {

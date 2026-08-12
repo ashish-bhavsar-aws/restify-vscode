@@ -58,7 +58,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F25 | **Save response to file** | 🟡 P2 | ✅ Download raw body (not just binary file responses) to disk. *(done — response actions gain a **Save** button that opens the OS save dialog with a content-type-derived extension (`src/core/responseSave.ts`); filename auto-suggested from the request URL; `_downloadFile` refactored onto a shared `_saveViaDialog` helper; 12 unit tests + E2E in `save-response.spec.ts`)* |
 | F26 | **Response diff** | ⚪ P3 | Compare two responses/requests side-by-side. |
 | F27 | **Timeline / time breakdown** | 🟡 P2 | ✅ TTFB, transfer, DNS, TLS stages. *(done — `performHttpRequest` (`src/core/http.ts`) now measures per-stage offsets via `process.hrtime.bigint()`: DNS lookup, TCP connect, TLS secureConnect, request-flush (`finish`), TTFB (first response byte), and body received (`end`); captured in `RawHttpResult.timings`, threaded through `buildRequestResult` → `RequestResult.timings` → `responseData` (auto-persisted in history); `src/core/timings.ts` is a pure module with `RequestTimings`/`timingStages()` (delta computation, skips unmeasured stages like TLS on plain http); the response pane gains a **Timeline** tab (clock icon) with a waterfall bar, total/TTFB/wall-clock stats, and an offset/duration/share table; 9 unit tests in `test/unit/timings.test.ts`)* |
-| F28 | **Streaming / SSE support** | ⚪ P3 | Incremental body rendering for chunked/`text/event-stream` responses. |
+| F28 | **Streaming / SSE support** | ⚪ P3 | ✅ Incremental body rendering for chunked/`text/event-stream` responses. *(done — `performHttpRequest` accepts `HttpStreamCallbacks` (`onResponse`/`onChunk`) fired per data event; RestifyPanel gates them on `isEventStreamContentType` and forwards chunks via `createStreamForwarder` (`streamStart`/`streamChunk` postMessages); webview appends incremental chunks with a pulsing **LIVE** badge (`ResponsePane` `LiveChip`); body streams in plain-text viewer; unit tests in `test/unit/stream.test.ts`)* |
 | F29 | **Response cache / offline replay** | ⚪ P3 | Replay cached responses without a network round-trip. |
 | F30 | **Notification on long request** | 🟡 P2 | ✅ Toast/status-bar notify when a request completes in background. *(done — after a request finishes, a VS Code notification is shown when the duration exceeds a threshold (default 5 s) while the window is unfocused (`src/core/completionNotify.ts`); Settings → General adds **Notify on long requests** + **Long Request Threshold**; 9 unit tests + E2E in `completion-notify.spec.ts`)* |
 
@@ -91,11 +91,12 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 
 | # | Feature | Priority | Notes |
 |---|---------|----------|-------|
-| F46 | **WebSocket client** | 🟡 P2 | ✅ Connect, send/receive frames, message log — separate panel. *(done — `restify.openWebSocket` command opens a dedicated WebSocket panel; socket runs in the extension host via the `ws` package, frames stream to a React webview over postMessage; text/binary send, echo + server-pushed frames, hex rendering for binary, status badge, connection log; env-variable resolution in the URL; unit tests in `test/unit/websocket.test.ts`, E2E in `test/specs/websocket.spec.ts`)* |
+| F46 | **WebSocket client** | 🟡 P2 | ✅ Connect, send/receive frames, message log — unified main-panel type. *(done — the main panel now has a **REST | WebSocket** type toggle (Postman-style, above the URL bar) and the WS client renders in the same panel for `type: "ws"` tabs; socket runs in the extension host via the `ws` package (`src/panels/WsSessionManager.ts` per-tab sessions), frames stream to the webview over postMessage scoped by `tabId`; text/binary send, echo + server-pushed frames, hex rendering for binary, status pill, Bearer-token auth on the handshake, `{{var}}` resolution in URL + token; the old dedicated panel + `restify.openWebSocket` command were removed; unit tests in `test/unit/websocket.test.ts` + `test/unit/wsSessionManager.test.ts`, E2E in `test/specs/websocket.spec.ts`)* |
 | F47 | **gRPC support** | ⚪ P3 | Import `.proto`, invoke unary/server-streaming calls. |
-| F48 | **HTTP/2 support** | ⚪ P3 | `http2` module for h2 endpoints. |
-| F49 | **Request compression** | ⚪ P3 | Compress request body (gzip/deflate) with `Content-Encoding`. |
+| F48 | **HTTP/2 support** | ⚪ P3 | ✅ `http2` module for h2 endpoints. *(done — `src/core/transport.ts` (`performRequest`) picks the HTTP/2 transport when the per-request **HTTP/2** toggle is on (ALPN `h2` for `https:`, prior-knowledge `h2c` for `http:`), stripping HTTP/1.1-only headers and honoring timeout/abort/mTLS/streaming; HTTP/2 bypasses the configured proxy and falls back to HTTP/1.1 when one is active; `src/core/http2.ts` + unit tests in `test/unit/http2.test.ts` + `test/unit/transport.test.ts`)* |
+| F49 | **Request compression** | ⚪ P3 | ✅ Compress request body (gzip/deflate) with `Content-Encoding`. *(done — `src/core/compress.ts` (`compressRequestBody` + `contentEncodingHeader`), applied host-side before auth so payload signatures hash what is actually sent; sets `Content-Encoding` + `Content-Length` on the compressed bytes and skips empty bodies or a user-supplied encoding; per-request **Compress body** select (None/Gzip/Deflate/Brotli) in the Body tab (`BodyCompressBar`); unit tests in `test/unit/compress.test.ts`)* |
 | F50 | **Interceptors / middleware** | ⚪ P3 | Pipeline hooks around request/response lifecycle. |
+| F57 | **HTTP/3 (QUIC) support** | ⚪ P3 | HTTP/3 runs over QUIC/UDP; Node core has no HTTP/3 client, so this needs a native dependency (e.g. `http3`/quiche) that ships per-platform binaries. Cannot go through the HTTP proxy either — revisit after F48 proves the HTTP/2 non-proxy path. |
 | F61 | **SOAP/WSDL import and SOAP body generation** | 🟡 P2 | ✅ Import a SOAP service definition (WSDL), generate method-specific SOAP request envelopes, set proper SOAP headers, and prefill body templates for each operation. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included — settings-driven by hostname via Settings → SOAP Security)* |
 
 ### 1.7 Editor Integration & UX
@@ -230,12 +231,13 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F25 **Save response to file**; F30 **completion notifications**.
 - [x] F57 **History pins + fuzzy search**; [x] F54 **palette commands**. *(F54 done: `Restify: Send Request`, `Search in Collections`, `New from cURL`, New Request/Collection, Import Collection, Export All, Open Environments all registered and working in `src/extension.ts`; F57 done: fuzzy search on name/URL + pinned history entries (`pinned` flag on `HistoryEntry`, `StorageManager.toggleHistoryPin`, star toggle in `HistoryPanel` with pinned-first sorting); E2E in `feature6.spec.ts`)*
 - [x] F59 **Marketplace discoverability**: strengthen VS Code metadata, keywords, and extension search relevance.
-- [x] F46 **WebSocket client** (connect + send/receive frames + message log — dedicated panel).
+- [x] F46 **WebSocket client** (connect + send/receive frames + message log — unified main-panel type toggle; old dedicated panel + `restify.openWebSocket` command removed).
 - [x] F52 **Multi-tab request panels** *(done — `TabBar.tsx`, per-tab state in `mainPanel`, commit `904410a`)*.
 - [x] F61 **SOAP/WSDL import and SOAP body generation**: expose WSDL operations in the request UI and prepopulate SOAP request bodies. *(done — see Phase 3; WS-Security UsernameToken/encryption/decryption included)*
 
 ### Phase 5 — Experimental / Long-term (P3)
-- [ ] F28 SSE/streaming, F48 HTTP/2, F49 request compression, F50 interceptors.
+- [x] F48 HTTP/2.
+- [ ] F50 interceptors, F57 HTTP/3 (QUIC).
 - [ ] F26 response diff, [x] F27 timeline breakdown, ~~F24 response tree view~~ ✅.
 - [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
@@ -307,13 +309,15 @@ Focus: more advanced API workflows and long-term differentiation.
 
 - F26 — Response diff
 - ~~F27 — Timeline breakdown~~ ✅
-- F28 — Streaming/SSE
+- ~~F28 — Streaming/SSE~~ ✅
 - F36 — OpenAPI explorer
 - F37 — Mock server generation
 - F39 — Workspace file format
 - F47 — gRPC support
-- F48 — HTTP/2 support
+- ~~F48 — HTTP/2 support~~ ✅
+- ~~F49 — Request compression~~ ✅
 - F50 — Interceptors/middleware
+- F57 — HTTP/3 (QUIC) support
 
 ---
 

@@ -11,3 +11,9 @@ test/videos/*.webm
 test/logs
 test/*.html
 test/playwright-report/**
+
+# Local preview harness (vite config + build output + headless screenshots)
+preview/
+preview-dist/
+preview-shots/
+vite.preview.config.ts

@@ -5,7 +5,6 @@ import {
   screenshot,
   injectCursorOverlay,
   clickInFrame,
-  waitForElement,
   resetLog,
   log,
   logCheck,

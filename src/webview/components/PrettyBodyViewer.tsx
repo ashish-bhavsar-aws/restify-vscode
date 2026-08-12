@@ -19,6 +19,7 @@ import {
 } from '@codemirror/view';
 import ReactDOM from 'react-dom/client';
 import { Icon } from './FaIcon';
+import { escapeRegex } from '../utils/text';
 import {
   faAlignJustify,
   faAnglesDown,
@@ -58,9 +59,6 @@ interface PrettyBodyViewerProps {
   onFontSizeChange?: (size: number) => void;
 }
 
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 export function formatJSON(jsonString: string): string {
   try {

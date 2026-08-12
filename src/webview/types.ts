@@ -37,6 +37,8 @@ export interface SoapRequestMeta {
 
 export interface RequestState {
   name: string;
+  /** Request kind — REST/HTTP or the unified WebSocket client. */
+  type?: 'rest' | 'ws';
   method: string;
   url: string;
   headers: KVItem[];
@@ -44,6 +46,10 @@ export interface RequestState {
   bodyType: 'none' | 'json' | 'text' | 'xml' | 'form' | 'urlencoded' | 'graphql';
   body: string;
   bodyFormat?: 'formatted' | 'minified';
+  /** F49: compress the request body (gzip / deflate / br) before sending. */
+  compressRequest?: 'none' | 'gzip' | 'deflate' | 'br';
+  /** F48: send over HTTP/2 (ALPN) instead of HTTP/1.1. */
+  useHttp2?: boolean;
   formData: FormDataItem[];
   gqlQuery: string;
   gqlVars: string;
@@ -143,6 +149,28 @@ export interface ResponseState {
   filePreviewType?: 'text' | 'csv' | 'pdf' | 'excel' | 'none';
   /** F27: per-stage network timings (DNS/TCP/TLS/TTFB/transfer). */
   timings?: RequestTimings;
+  /** F28: response body is still being received (event-stream). */
+  isStreaming?: boolean;
+}
+
+export type WsSessionStatus = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
+
+export interface WsLogRow {
+  id: number;
+  ts: number;
+  direction: 'in' | 'out' | 'system';
+  kind: 'text' | 'binary' | 'system' | 'error';
+  text?: string;
+  hex?: string;
+  byteLength?: number;
+}
+
+/** Live state of a tab's WebSocket session, fed by the extension host. */
+export interface WsSessionState {
+  status: WsSessionStatus;
+  protocol?: string;
+  error?: string;
+  log: WsLogRow[];
 }
 
 export interface EnvVariable extends KVItem {
@@ -299,6 +327,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
 
 export const DEFAULT_REQUEST: RequestState = {
   name: 'New Request',
+  type: 'rest',
   method: 'GET',
   url: '',
   headers: [],
@@ -306,6 +335,8 @@ export const DEFAULT_REQUEST: RequestState = {
   bodyType: 'none',
   body: '',
   bodyFormat: 'formatted',
+  compressRequest: 'none',
+  useHttp2: false,
   formData: [],
   gqlQuery: '',
   gqlVars: '',

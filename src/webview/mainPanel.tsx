@@ -7,11 +7,12 @@ import { CodeGenModal } from "./components/CodeGenModal";
 import { UrlBar } from "./components/UrlBar";
 import { RequestPane } from "./components/RequestPane";
 import { ResponsePane } from "./components/ResponsePane";
+import { WebSocketClientView } from "./components/WebSocketClientView";
 import { SaveModal } from "./components/SaveModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { EnvManagerModal } from "./components/EnvManagerModal";
 import { VariablesHelpModal } from "./components/VariablesHelpModal";
-import { Icon, faShieldHalved, faArrowsRotate, faClock } from "./components/FaIcon";
+import { Icon, faShieldHalved, faArrowsRotate, faClock, faBolt } from "./components/FaIcon";
 
 import {
   DEFAULT_REQUEST,
@@ -25,6 +26,7 @@ import {
   SettingsState,
   ResponseViewerSettings,
   OAuth2ConfigPayload,
+  WsSessionState,
 } from "./types";
 import {
   isDynamicVariableToken,
@@ -152,6 +154,42 @@ const LoadingBar = styled.div<{ $active: boolean }>`
   flex-shrink: 0;
 `;
 
+const TypeToggleRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: ${({ theme }) => theme.surface};
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  flex-shrink: 0;
+`;
+
+const TypeToggle = styled.div`
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 6px;
+  background: ${({ theme }) => theme.surface2};
+`;
+
+const TypeSegment = styled.button<{ $active: boolean }>`
+  padding: 3px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: ${({ $active, theme }) => ($active ? theme.accent : "transparent")};
+  color: ${({ $active, theme }) => ($active ? theme.accentFg : theme.muted)};
+  &:hover:not(:disabled) {
+    color: ${({ $active, theme }) => ($active ? theme.accentFg : theme.fg)};
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+`;
+
 const SslRow = styled.div`
   display: flex;
   align-items: center;
@@ -195,6 +233,16 @@ const SslWarning = styled.span`
   color: ${({ theme }) => theme.error};
   background: color-mix(in srgb, ${({ theme }) => theme.error} 14%, transparent);
   border: 1px solid color-mix(in srgb, ${({ theme }) => theme.error} 35%, transparent);
+  padding: 1px 6px;
+  border-radius: 8px;
+`;
+
+const SslNote = styled.span`
+  font-size: 10px;
+  font-weight: 500;
+  color: ${({ theme }) => theme.info};
+  background: color-mix(in srgb, ${({ theme }) => theme.info} 12%, transparent);
+  border: 1px solid color-mix(in srgb, ${({ theme }) => theme.info} 30%, transparent);
   padding: 1px 6px;
   border-radius: 8px;
 `;
@@ -317,6 +365,7 @@ export const MainPanel: React.FC = () => {
   const sendRef = useRef<() => void>(() => {});
   const activeEnvIdRef = useRef<string | null>(null);
   const pendingSecretResolves = useRef(new Map<string, (value: string) => void>());
+  const [wsSessions, setWsSessions] = useState<Record<string, WsSessionState>>({});
 
   /* ── Helpers ─────────────────────────────────────── */
   const post = useCallback(
@@ -358,11 +407,31 @@ export const MainPanel: React.FC = () => {
     const idx = tabsRef.current.findIndex((t) => t.id === id);
     const next = tabsRef.current.filter((t) => t.id !== id);
     setTabs(next);
+    if (wsSessions[id]) {
+      post({ command: "wsDisconnect", tabId: id });
+      setWsSessions((prev) => {
+        const { [id]: _removed, ...rest } = prev;
+        return rest;
+      });
+    }
     if (activeTabIdRef.current === id) {
       const neighbor = next[Math.max(0, idx - 1)] ?? next[0];
       setActiveTabId(neighbor.id);
       post({ command: "updateTitle", title: tabLabel(neighbor), tabId: neighbor.id });
     }
+  };
+
+  const handleTypeChange = (type: "rest" | "ws") => {
+    const id = activeTabIdRef.current;
+    const t = tabsRef.current.find((x) => x.id === id);
+    if (t?.request.type === "ws" && type !== "ws" && wsSessions[id]) {
+      post({ command: "wsDisconnect", tabId: id });
+      setWsSessions((prev) => {
+        const { [id]: _removed, ...rest } = prev;
+        return rest;
+      });
+    }
+    updateActiveRequest({ type });
   };
 
   /* ── VS Code API bootstrap ───────────────────────── */
@@ -474,6 +543,52 @@ export const MainPanel: React.FC = () => {
           }));
           break;
         }
+        case "streamStart": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === tid
+                ? {
+                    ...t,
+                    loading: true,
+                    response: {
+                      status: msg.status || 0,
+                      statusText: msg.statusText || "",
+                      headers: msg.headers || {},
+                      body: t.response?.body || "",
+                      duration: 0,
+                      size: 0,
+                      isStreaming: true,
+                    },
+                  }
+                : t,
+            ),
+          );
+          break;
+        }
+        case "streamChunk": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === tid
+                ? {
+                    ...t,
+                    loading: true,
+                    response: {
+                      status: t.response?.status ?? 0,
+                      statusText: t.response?.statusText ?? "",
+                      headers: t.response?.headers ?? {},
+                      body: (t.response?.body || "") + (msg.chunk || ""),
+                      size: (t.response?.size || 0) + (msg.size || 0),
+                      duration: t.response?.duration ?? 0,
+                      isStreaming: true,
+                    },
+                  }
+                : t,
+            ),
+          );
+          break;
+        }
         case "requestComplete": {
           const tid = msg.tabId ?? activeTabIdRef.current;
           setTabs((prev) =>
@@ -482,7 +597,7 @@ export const MainPanel: React.FC = () => {
                 ? {
                     ...t,
                     loading: false,
-                    response: msg.response,
+                    response: { ...msg.response, isStreaming: false },
                     schemaValidation: msg.schemaValidation ?? null,
                     requestInfo: {
                       ...(msg.requestInfo || {}),
@@ -593,6 +708,38 @@ export const MainPanel: React.FC = () => {
           } catch (e) {
             console.error("Failed to append debugLog", e);
           }
+          break;
+        }
+        case "wsStatus": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          setWsSessions((prev) => ({
+            ...prev,
+            [tid]: {
+              ...(prev[tid] || { status: "idle", log: [] }),
+              status: msg.state ?? "idle",
+              protocol: msg.protocol ?? prev[tid]?.protocol,
+              error: msg.error ?? undefined,
+            },
+          }));
+          break;
+        }
+        case "wsLog": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          setWsSessions((prev) => ({
+            ...prev,
+            [tid]: {
+              ...(prev[tid] || { status: "idle", log: [] }),
+              log: [...(prev[tid]?.log || []), msg.entry],
+            },
+          }));
+          break;
+        }
+        case "wsClear": {
+          const tid = msg.tabId ?? activeTabIdRef.current;
+          setWsSessions((prev) => ({
+            ...prev,
+            [tid]: { status: "idle", log: [] },
+          }));
           break;
         }
       }
@@ -965,6 +1112,51 @@ export const MainPanel: React.FC = () => {
       {/* Animated loading bar */}
       <LoadingBar $active={activeTab.loading} />
 
+      <TypeToggleRow>
+        <TypeToggle>
+          <TypeSegment
+            data-testid="type-toggle-rest"
+            $active={activeTab.request.type !== "ws"}
+            onClick={() => handleTypeChange("rest")}
+          >
+            REST
+          </TypeSegment>
+          <TypeSegment
+            data-testid="type-toggle-ws"
+            $active={activeTab.request.type === "ws"}
+            onClick={() => handleTypeChange("ws")}
+          >
+            WebSocket
+          </TypeSegment>
+        </TypeToggle>
+      </TypeToggleRow>
+
+      {activeTab.request.type === "ws" ? (
+        <MainArea>
+          <WebSocketClientView
+            tabId={activeTab.id}
+            request={activeTab.request}
+            session={wsSessions[activeTab.id] || { status: "idle", log: [] }}
+            onUpdate={updateActiveRequest}
+            onConnect={(url, token) =>
+              post({ command: "wsConnect", tabId: activeTab.id, url, token })
+            }
+            onDisconnect={() =>
+              post({ command: "wsDisconnect", tabId: activeTab.id })
+            }
+            onSend={(data, binary) =>
+              post({ command: "wsSend", tabId: activeTab.id, data, binary })
+            }
+            onClear={() =>
+              setWsSessions((prev) => ({
+                ...prev,
+                [activeTab.id]: { status: "idle", log: [] },
+              }))
+            }
+          />
+        </MainArea>
+      ) : (
+        <>
       <UrlBar
         method={activeTab.request.method}
         url={activeTab.request.url}
@@ -1011,6 +1203,22 @@ export const MainPanel: React.FC = () => {
             }
           />
           Follow Redirects
+        </label>
+
+        <label
+          title="Send over HTTP/2 (ALPN). HTTP/2 bypasses the configured proxy."
+          data-testid="http2-toggle"
+        >
+          <OptionIcon icon={faBolt} size={12} />
+          <input
+            type="checkbox"
+            checked={!!activeTab.request.useHttp2}
+            onChange={(e) =>
+              updateActiveRequest({ useHttp2: e.target.checked })
+            }
+          />
+          HTTP/2
+          {!!activeTab.request.useHttp2 && <SslNote>bypasses proxy</SslNote>}
         </label>
 
         <RowDivider />
@@ -1095,6 +1303,8 @@ export const MainPanel: React.FC = () => {
           />
         </SplitPane>
       </MainArea>
+        </>
+      )}
 
       <SaveModal
         open={saveModalOpen}

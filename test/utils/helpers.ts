@@ -9,10 +9,8 @@ import {
   getVariableInputValue,
   sendRequestViaEnter,
   findMainPanelFrame,
-  findWebSocketPanelFrame,
   clickRestifyIcon,
   dismissOnboarding,
-  runCommand,
   log,
   DIALOG_STUB_FILE,
   type VSCodeApp,
@@ -85,14 +83,12 @@ export async function setupMainPanel(
   return frame;
 }
 
-// ─── WebSocket Panel ────────────────────────────────────────────────
+// ─── Unified WebSocket Client (main panel) ─────────────────────────
 
-export async function openWebSocketPanel(app: VSCodeApp): Promise<Frame> {
-  const { window } = app;
-  await runCommand(window, 'Restify: Open WebSocket Client');
-  await window.waitForTimeout(2000);
-  const frame = await findWebSocketPanelFrame(window);
-  if (!frame) throw new Error('Could not find WebSocket panel frame');
+export async function openWebSocketClient(app: VSCodeApp): Promise<Frame> {
+  const frame = await setupMainPanel(app);
+  await clickInFrame(frame, '[data-testid="type-toggle-ws"]');
+  await frame.waitForTimeout(300);
   return frame;
 }
 

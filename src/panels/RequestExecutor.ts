@@ -40,6 +40,12 @@ import {
   runCollectionTestScript,
   buildRequestInterceptors,
   runInterceptorPipeline,
+  cacheKeyFor,
+  cacheEntryFromResult,
+  isCacheableResult,
+  isCacheFresh,
+  requestResultFromCache,
+  pruneCache,
   type InterceptorRequest,
   type RequestInterceptor,
   type CoreRequestForBody,
@@ -48,6 +54,7 @@ import {
   type AuthType,
   type HttpStreamCallbacks,
   type StreamEvent,
+  type CachedResponse,
 } from "../core";
 import {
   buildChallengeCredentials,
@@ -387,23 +394,49 @@ export class RequestExecutor {
       useHttp2: req.useHttp2 === true,
     };
 
+    // F29: response cache — check for a fresh cached entry before making a network request.
+    const cacheConfig = settings.responseCache;
+    const cacheKey = cacheKeyFor(method, finalUrl, headers, body);
+    let servedFromCache = false;
+    let cachedResult: RequestResult | null = null;
+
+    if (cacheConfig.enabled) {
+      const cachedEntries = this.deps.storage.getResponseCache();
+      const ttlMs = cacheConfig.ttlSeconds * 1000;
+      const freshEntry = cachedEntries.find(
+        (e: CachedResponse) => e.key === cacheKey && isCacheFresh(e, ttlMs),
+      );
+      if (freshEntry) {
+        servedFromCache = true;
+        cachedResult = requestResultFromCache(freshEntry);
+        this.debugLog("cacheHit", { key: cacheKey, url: finalUrl }, tabId);
+      }
+    }
+
     try {
       const netStart = Date.now();
       // F28: forward event-stream headers/body to the webview as they arrive.
       const onStreamEvent = createStreamForwarder(tabId, (message) =>
         this.deps.postMessage(message),
       );
-      const result = await this.doRequest(
-        method,
-        finalUrl,
-        headers,
-        body,
-        verifySsl,
-        proxyOpts,
-        requestOptions,
-        onStreamEvent,
-        interceptors,
-      );
+
+      // F29: use cached result if available, otherwise make a network request.
+      let result: RequestResult;
+      if (cachedResult) {
+        result = cachedResult;
+      } else {
+        result = await this.doRequest(
+          method,
+          finalUrl,
+          headers,
+          body,
+          verifySsl,
+          proxyOpts,
+          requestOptions,
+          onStreamEvent,
+          interceptors,
+        );
+      }
 
       // HTTP Digest (RFC 7616) and NTLM (challenge-response): the first attempt
       // gets a 401 challenge, then we compute the Authorization header and retry.
@@ -492,7 +525,25 @@ export class RequestExecutor {
         fileBase64: finalResult.fileBase64,
         filePreviewType: finalResult.filePreviewType,
         timings: finalResult.timings,
+        servedFromCache,
       };
+
+      // F29: store successful responses in cache (skip if already served from cache or streaming).
+      if (
+        cacheConfig.enabled &&
+        !servedFromCache &&
+        !finalResult.isFileResponse &&
+        isCacheableResult(finalResult) &&
+        !onStreamEvent
+      ) {
+        const entries = this.deps.storage.getResponseCache();
+        const newEntry = cacheEntryFromResult(cacheKey, method, finalUrl, finalResult);
+        const updatedEntries = pruneCache(
+          [...entries.filter((e: CachedResponse) => e.key !== cacheKey), newEntry],
+          cacheConfig.ttlSeconds * 1000,
+        );
+        this.deps.storage.saveResponseCache(updatedEntries);
+      }
 
       const schemaValidation = validateResponseIfEnabled(req, responseBody);
 
@@ -725,6 +776,69 @@ export class RequestExecutor {
         tabId,
       );
       const duration = Date.now() - startTime;
+
+      // F29: replay from cache on network error when enabled.
+      if (
+        cacheConfig.enabled &&
+        cacheConfig.replayOnNetworkError &&
+        !controller.signal.aborted
+      ) {
+        const cachedEntries = this.deps.storage.getResponseCache();
+        const ttlMs = cacheConfig.ttlSeconds * 1000;
+        const freshEntry = cachedEntries.find(
+          (e: CachedResponse) => e.key === cacheKey && isCacheFresh(e, ttlMs),
+        );
+        if (freshEntry) {
+          const cachedResult = requestResultFromCache(freshEntry);
+          servedFromCache = true;
+          this.debugLog("cacheReplay", { key: cacheKey, url: finalUrl }, tabId);
+          this.deps.activity?.append(
+            "Replayed from cache",
+            [
+              `Method: ${method}`,
+              `URL: ${finalUrl}`,
+              `Original error: ${err?.message || String(err)}`,
+              `Cache status: ${cachedResult.status}`,
+            ].join("\n"),
+            "info",
+          );
+          const replayResponseBody = cachedResult.body;
+          const replayResponseData = {
+            status: cachedResult.status,
+            statusText: cachedResult.statusText,
+            headers: cachedResult.headers,
+            body: replayResponseBody,
+            duration,
+            size: cachedResult.bodySize || Buffer.byteLength(String(replayResponseBody || ""), "utf8"),
+            isFileResponse: cachedResult.isFileResponse,
+            fileDetectionSource: cachedResult.fileDetectionSource,
+            fileName: cachedResult.fileName,
+            fileMimeType: cachedResult.fileMimeType,
+            fileBase64: cachedResult.fileBase64,
+            filePreviewType: cachedResult.filePreviewType,
+            timings: cachedResult.timings,
+            servedFromCache: true,
+          };
+          this.deps.postMessage({
+            command: "response",
+            tabId,
+            response: replayResponseData,
+            duration,
+          });
+          notifyRequestComplete(this.deps.storage, { method, url: finalUrl, status: cachedResult.status, durationMs: duration });
+          this.deps.storage.addToHistory({
+            method,
+            url: finalUrl,
+            name: historyName(historyReq, method, finalUrl),
+            status: cachedResult.status,
+            duration,
+            request: historyReq,
+            activeEnvironmentId: this.deps.storage.getActiveEnvironment()?.id || null,
+          });
+          return;
+        }
+      }
+
       this.deps.activity?.append(
         "Request failed",
         [

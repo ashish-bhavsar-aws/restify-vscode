@@ -128,6 +128,12 @@ export interface SettingsState {
     };
     logging: { enabled: boolean; logHeaders: boolean };
   };
+  /** F29: response cache / offline replay. */
+  responseCache: {
+    enabled: boolean;
+    ttlSeconds: number;
+    replayOnNetworkError: boolean;
+  };
 }
 
 export class StorageManager {
@@ -1213,6 +1219,19 @@ export class StorageManager {
     this.notifyChange();
   }
 
+  // ─── Response Cache (F29) ──────────────────────────────────
+  getResponseCache(): any[] {
+    return this.globalState.get("restify.responseCache", []);
+  }
+
+  saveResponseCache(entries: any[]): void {
+    this.globalState.update("restify.responseCache", entries);
+  }
+
+  clearResponseCache(): void {
+    this.globalState.update("restify.responseCache", []);
+  }
+
   // ─── Settings ─────────────────────────────────────────────
   getSettings(): SettingsState {
     const saved = this.globalState.get<Partial<SettingsState>>(
@@ -1289,6 +1308,11 @@ export class StorageManager {
           logHeaders:
             saved.interceptors?.logging?.logHeaders ?? DEFAULT_LOGGING_INTERCEPTOR.logHeaders,
         },
+      },
+      responseCache: {
+        enabled: saved.responseCache?.enabled ?? false,
+        ttlSeconds: saved.responseCache?.ttlSeconds ?? 300,
+        replayOnNetworkError: saved.responseCache?.replayOnNetworkError ?? true,
       },
     };
   }

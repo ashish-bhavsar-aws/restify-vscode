@@ -477,6 +477,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [logEnabled, setLogEnabled] = useState(false);
   const [logHeaders, setLogHeaders] = useState(false);
 
+  // F29: response cache settings
+  const [cacheEnabled, setCacheEnabled] = useState(false);
+  const [cacheTtlSeconds, setCacheTtlSeconds] = useState(300);
+  const [cacheReplayOnNetworkError, setCacheReplayOnNetworkError] = useState(true);
+
   const [proxyError, setProxyError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'proxy' | 'soap' | 'interceptors'>('general');
@@ -546,6 +551,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setRetryNetworkErrors(initialSettings.interceptors?.retry?.retryOnNetworkError ?? true);
       setLogEnabled(initialSettings.interceptors?.logging?.enabled ?? false);
       setLogHeaders(initialSettings.interceptors?.logging?.logHeaders ?? false);
+
+      // F29: response cache settings
+      setCacheEnabled(initialSettings.responseCache?.enabled ?? false);
+      setCacheTtlSeconds(initialSettings.responseCache?.ttlSeconds ?? 300);
+      setCacheReplayOnNetworkError(initialSettings.responseCache?.replayOnNetworkError ?? true);
     }
 
     if (!open) {
@@ -613,6 +623,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           enabled: logEnabled,
           logHeaders,
         },
+      },
+      responseCache: {
+        enabled: cacheEnabled,
+        ttlSeconds: Math.max(1, Number(cacheTtlSeconds) || 300),
+        replayOnNetworkError: cacheReplayOnNetworkError,
       },
     });
   };
@@ -1287,6 +1302,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   />
                   Include request headers in the log
                 </CheckboxLabel>
+              )}
+            </Section>
+
+            <Section>
+              <h4>Response Cache</h4>
+              <HelperText>
+                Cache successful responses to avoid redundant network requests.
+                Cached responses can be replayed instantly or used when the
+                network is unavailable.
+              </HelperText>
+              <CheckboxLabel data-testid="response-cache-toggle">
+                <input
+                  type="checkbox"
+                  checked={cacheEnabled}
+                  onChange={(e) => setCacheEnabled(e.target.checked)}
+                />
+                Enable response caching
+              </CheckboxLabel>
+
+              {cacheEnabled && (
+                <>
+                  <Label>Cache TTL (seconds)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={cacheTtlSeconds}
+                    data-testid="response-cache-ttl"
+                    onChange={(e) => setCacheTtlSeconds(Number(e.target.value))}
+                  />
+                  <HelperText>
+                    How long cached responses remain valid (default: 300s / 5 min).
+                  </HelperText>
+
+                  <CheckboxLabel data-testid="response-cache-replay-toggle">
+                    <input
+                      type="checkbox"
+                      checked={cacheReplayOnNetworkError}
+                      onChange={(e) => setCacheReplayOnNetworkError(e.target.checked)}
+                    />
+                    Replay from cache on network error
+                  </CheckboxLabel>
+                </>
               )}
             </Section>
           </>

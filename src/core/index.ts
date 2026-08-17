@@ -21,6 +21,7 @@ export * from "./interceptors";
 export * from "./oauth2";
 export * from "./redirects";
 export * from "./responsePreview";
+export * from "./responseCache";
 export * from "./responseResult";
 export * from "./responseSave";
 export * from "./script";

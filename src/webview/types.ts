@@ -152,6 +152,8 @@ export interface ResponseState {
   timings?: RequestTimings;
   /** F28: response body is still being received (event-stream). */
   isStreaming?: boolean;
+  /** F29: response was served from the local cache. */
+  servedFromCache?: boolean;
 }
 
 export type WsSessionStatus = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
@@ -270,6 +272,12 @@ export interface ResponseViewerSettings {
   fontSize: number;
 }
 
+export interface ResponseCacheSettings {
+  enabled: boolean;
+  ttlSeconds: number;
+  replayOnNetworkError: boolean;
+}
+
 export interface SettingsState {
   proxy: string;
   proxyAuthorization: string;
@@ -284,6 +292,7 @@ export interface SettingsState {
   headerPresets: HeaderPreset[];
   responseViewer: ResponseViewerSettings; // F24: body viewer display options
   interceptors: InterceptorSettings; // F50: retry + HTTP log toggles
+  responseCache: ResponseCacheSettings; // F29: response cache / offline replay
 }
 
 export const DEFAULT_RESPONSE_VIEWER: ResponseViewerSettings = {
@@ -328,6 +337,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   interceptors: {
     retry: { enabled: false, maxAttempts: 3, retryDelayMs: 500, retryStatuses: [429, 500, 502, 503, 504], retryOnNetworkError: true },
     logging: { enabled: false, logHeaders: false },
+  },
+  responseCache: {
+    enabled: false,
+    ttlSeconds: 300,
+    replayOnNetworkError: true,
   },
 };
 

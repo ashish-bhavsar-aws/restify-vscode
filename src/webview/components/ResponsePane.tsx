@@ -255,6 +255,11 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
             ● LIVE
           </LiveChip>
         )}
+        {response.servedFromCache && (
+          <LiveChip data-testid="cache-badge" title="Response served from local cache" style={{ backgroundColor: 'var(--vscode-badge-background)', color: 'var(--vscode-badge-foreground)' }}>
+            CACHE
+          </LiveChip>
+        )}
         <MetaChip>{response.duration} ms</MetaChip>
         <MetaChip>{formatSize(response.size)}</MetaChip>
         {response.isFileResponse && response.fileDetectionSource === 'filename' && (

@@ -96,6 +96,8 @@ interface TabState {
   savedCollectionName: string | null;
   savedGroupId?: string;
   oauthStatus: { state: 'success' | 'error' | 'none'; text?: string };
+  /** F55: snapshot of request at last save time for rich diff. */
+  savedSnapshot?: Partial<RequestState>;
 }
 
 const createTab = (requestData?: Partial<RequestState>): TabState => ({
@@ -127,6 +129,31 @@ const isPristine = (t: TabState): boolean =>
   !t.response &&
   !t.request.url &&
   !hasRealName(t.request);
+
+/** F55: Compute which fields changed between current request and last-saved snapshot. */
+const DIFF_FIELDS: Array<{ key: keyof RequestState; label: string }> = [
+  { key: "url", label: "URL" },
+  { key: "method", label: "Method" },
+  { key: "name", label: "Name" },
+  { key: "body", label: "Body" },
+  { key: "bodyType", label: "Body type" },
+  { key: "headers", label: "Headers" },
+  { key: "queryParams", label: "Query params" },
+  { key: "urlencoded", label: "URL-encoded" },
+  { key: "formData", label: "Form data" },
+  { key: "authType", label: "Auth type" },
+  { key: "authData", label: "Auth data" },
+];
+const computeDirtyFields = (current: RequestState, snapshot?: Partial<RequestState>): string[] => {
+  if (!snapshot) return [];
+  return DIFF_FIELDS
+    .filter(({ key }) => {
+      const cur = current[key];
+      const sav = snapshot[key];
+      return JSON.stringify(cur) !== JSON.stringify(sav);
+    })
+    .map(({ label }) => label);
+};
 
 /* ─── Styled Components ───────────────────────────────────── */
 
@@ -832,7 +859,7 @@ export const MainPanel: React.FC = () => {
             groupId: t.savedGroupId,
             tabId: t.id,
           });
-          patchTab(t.id, (tt) => ({ ...tt, isDirty: false }));
+          patchTab(t.id, (tt) => ({ ...tt, isDirty: false, savedSnapshot: { ...tt.request } }));
         } else {
           setSaveModalOpen(true);
         }
@@ -917,6 +944,7 @@ export const MainPanel: React.FC = () => {
               savedGroupId: groupId,
               request: { ...t.request, name: reqName },
               isDirty: false,
+              savedSnapshot: { ...t.request, name: reqName },
             }
           : t,
       ),
@@ -1081,6 +1109,7 @@ export const MainPanel: React.FC = () => {
       <TopBar
         name={activeTab.request.name}
         isDirty={activeTab.isDirty}
+        dirtyFields={computeDirtyFields(activeTab.request, activeTab.savedSnapshot)}
         environments={environments}
         activeEnvId={activeEnvId}
         onNameChange={(name) => updateActiveRequest({ name })}

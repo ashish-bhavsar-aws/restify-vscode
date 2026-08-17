@@ -7,6 +7,7 @@ import { faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons';
 interface TopBarProps {
   name: string;
   isDirty?: boolean;
+  dirtyFields?: string[];
   environments: Environment[];
   activeEnvId: string | null;
   onNameChange: (name: string) => void;
@@ -462,6 +463,7 @@ const EnvDropdown: React.FC<{
 export const TopBar: React.FC<TopBarProps> = ({
   name,
   isDirty = false,
+  dirtyFields,
   environments,
   activeEnvId,
   onNameChange,
@@ -488,7 +490,9 @@ export const TopBar: React.FC<TopBarProps> = ({
         onChange={(e) => onNameChange(e.target.value)}
         placeholder="Untitled Request"
       />
-      {isDirty && <DirtyDot title="Unsaved changes" />}
+      {isDirty && <DirtyDot title={dirtyFields && dirtyFields.length > 0
+        ? `Unsaved changes: ${dirtyFields.join(", ")}`
+        : "Unsaved changes"} />}
     </RequestNameWrapper>
 
     <EnvDropdown

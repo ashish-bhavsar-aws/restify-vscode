@@ -186,6 +186,12 @@
         "title": "Stop Mock Server",
         "category": "Restify",
         "icon": "$(circle-slash)"
+      },
+      {
+        "command": "restify.generateDocs",
+        "title": "Generate API Documentation",
+        "category": "Restify",
+        "icon": "$(file-text)"
       }
     ],
     "menus": {

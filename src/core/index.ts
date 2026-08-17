@@ -10,6 +10,7 @@ export * from "./converters";
 export * from "./cookies";
 export * from "./decompress";
 export * from "./defaultHeaders";
+export * from "./docsGenerator";
 export * from "./dynamicVarTokens";
 export * from "./dynamicVars";
 export * from "./errors";

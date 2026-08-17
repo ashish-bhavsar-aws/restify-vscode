@@ -7,6 +7,7 @@ import { MockServerManager } from './panels/mockServerManager';
 import { ActivityProvider } from './panels/ActivityProvider';
 import { parseCurl } from './core/curlParser';
 import { parseImportTextAuto, requestToHttpText } from './core/converters';
+import { generateMarkdown } from './core/docsGenerator';
 import { showOpenDialog, showSaveDialog } from './panels/dialogStub';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -288,6 +289,38 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.stopMockServer', () => {
       mockServerManager.stop();
+    })
+  );
+
+  // F38: documentation generation
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.generateDocs', async () => {
+      const collections = storageManager.getCollections();
+      if (collections.length === 0) {
+        vscode.window.showWarningMessage("No collections found.");
+        return;
+      }
+      if (collections.length === 1) {
+        const md = generateMarkdown(collections[0]);
+        const doc = await vscode.workspace.openTextDocument({ content: md, language: "markdown" });
+        await vscode.window.showTextDocument(doc);
+        return;
+      }
+      const picks = collections.map(c => ({
+        label: c.name,
+        description: `${(c.requests || []).length} request(s)`,
+        id: c.id,
+      }));
+      const chosen = await vscode.window.showQuickPick(picks, {
+        placeHolder: "Select a collection to generate documentation for",
+      });
+      if (!chosen) return;
+      const col = collections.find(c => c.id === chosen.id);
+      if (col) {
+        const md = generateMarkdown(col);
+        const doc = await vscode.workspace.openTextDocument({ content: md, language: "markdown" });
+        await vscode.window.showTextDocument(doc);
+      }
     })
   );
 

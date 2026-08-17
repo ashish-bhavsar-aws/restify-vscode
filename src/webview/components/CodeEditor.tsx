@@ -471,6 +471,16 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     }
   }, [editorValue, language, onJsonFormatModeChange, readOnly, updateValue]);
 
+  const undo = useCallback(() => {
+    textareaRef.current?.focus();
+    document.execCommand('undo');
+  }, []);
+
+  const redo = useCallback(() => {
+    textareaRef.current?.focus();
+    document.execCommand('redo');
+  }, []);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (readOnly) return;
 
@@ -650,6 +660,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               </EditorBtn>
             </>
           )}
+          <EditorBtn onClick={undo} disabled={readOnly} title="Undo (Ctrl+Z)">Undo</EditorBtn>
+          <EditorBtn onClick={redo} disabled={readOnly} title="Redo (Ctrl+Shift+Z)">Redo</EditorBtn>
           <LanguageBadge>{langLabel}</LanguageBadge>
         </ToolbarButtons>
       </Toolbar>

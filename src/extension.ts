@@ -3,6 +3,7 @@ import { StorageManager } from './storage/StorageManager';
 import { RestifyPanel } from './panels/RestifyPanel';
 import { SidebarProvider } from './panels/sidebar/SidebarProvider';
 import { OpenApiProvider } from './panels/sidebar/OpenApiProvider';
+import { MockServerManager } from './panels/mockServerManager';
 import { ActivityProvider } from './panels/ActivityProvider';
 import { parseCurl } from './core/curlParser';
 import { parseImportTextAuto, requestToHttpText } from './core/converters';
@@ -273,6 +274,20 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('restify.showHttpLog', () => {
       vscode.window.createOutputChannel('Restify: HTTP Log').show();
+    })
+  );
+
+  // F37: mock server manager
+  const mockServerManager = new MockServerManager(context, storageManager);
+  context.subscriptions.push(mockServerManager);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.startMockServer', (collectionId?: string) => {
+      mockServerManager.start(collectionId);
+    })
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('restify.stopMockServer', () => {
+      mockServerManager.stop();
     })
   );
 

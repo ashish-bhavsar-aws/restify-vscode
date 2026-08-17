@@ -72,7 +72,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F34 | **Export to OpenAPI / HAR / .http** | 🟡 P2 | Reverse of the importers. Postman export already supported via `importCollection`. |
 | F35 | **Import HAR / Insomnia / .http** | 🟡 P2 | Extend importers beyond Postman + OpenAPI. |
 | F36 | **OpenAPI viewer / explorer** | ⚪ P3 | ✅ Render an OpenAPI spec as browsable endpoints with generated requests (currently only imports spec → collections). *(done — `src/core/openapiViewer.ts` pure parser extracts endpoint metadata (params, body, responses, descriptions); `src/panels/sidebar/OpenApiProvider.ts` extension-host sidebar provider with file/URL loading, expansion state persistence; `SidebarOpenApi.tsx` React panel with tag-organized endpoint browser, search filter, method badges, deprecated indicators, and "Import as Collection" action; third sidebar view registered in `package.json` + `extension.ts`; 13 unit tests in `test/unit/openapiViewer.test.ts`)* |
-| F37 | **Mock server generation** | ⚪ P3 | Spin up a local mock server from collection responses (e.g., Prism-style). |
+| F37 | **Mock server generation** | ⚪ P3 | ✅ Spin up a local mock server from collection responses (e.g., Prism-style). *(done — `src/core/mockServer.ts` pure module with route matching + path params + HTTP server; `src/panels/mockServerManager.ts` extension-host manager with collection picker, status bar, output channel; `restify.startMockServer`/`restify.stopMockServer` commands in palette + collection context; 14 unit tests in `test/unit/mockServer.test.ts`)* |
 | F38 | **Documentation generation** | ⚪ P3 | Publish a human-readable HTML/Markdown docs page from a collection. |
 | F39 | **Workspace file format** | 🟡 P2 | `.restify` project files committed to a repo (like Postman workspaces / `.http` files), with git-friendly diff. |
 | F40 | **Collection-level scripts** | 🟡 P2 | ✅ Pre-request/test scripts inherited by all children requests. *(done — `preScript`/`testScript` on `Collection` + a **Scripts** button on each collection row opening an editor modal; `runScriptSequence` in `src/core/script.ts` merges collection+request scripts into one ordered pipeline (collection pre-request → request pre-request → request tests → collection tests) with vars and assertions merged; single requests run it via `runPreScriptPipeline`/`runCollectionTestScript` in `src/core/collectionScripts.ts`, the collection runner threads `preScript`/`testScript` through `CollectionRunnerOptions`; unit tests in `test/unit/collectionScripts.test.ts` + `test/unit/script.test.ts` + `test/unit/collectionRunner.test.ts`)* |
@@ -239,7 +239,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F48 HTTP/2.
 - [x] F50 interceptors (retry + HTTP log pipeline), [ ] F57 HTTP/3 (QUIC).
 - [x] F26 response diff, [x] F27 timeline breakdown, ~~F24 response tree view~~ ✅.
-- [x] F36 OpenAPI explorer, [ ] F37 mock server, [ ] F38 docs generation.
+- [x] F36 OpenAPI explorer, [x] F37 mock server, [ ] F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
 - [x] F47 gRPC, ~~F29 response cache/offline replay~~ ✅, F55/F56 editor polish.
 

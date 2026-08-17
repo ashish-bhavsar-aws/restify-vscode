@@ -71,7 +71,7 @@ Legend: 🔴 **P0** critical (bug/security/core networking) · 🟠 **P1** high-
 | F33 | **Test/assertion scripts** | 🟠 P1 | ✅ Postman-style `tests` tab: assertions render as pass/fail badges in the response pane. *(done — `src/core/pm.ts` adds a Postman-compatible `pm` API to test scripts: `pm.test(name, fn)` records pass/fail + per-assertion failure messages, `pm.expect(...)` (chai-style matchers incl. `.to.equal/.include/.match/.be.*/.have.length/.have.property/.not`), `pm.response` (`.to.have.status/statusText/header/body/jsonBody`, `.json()/.text()/.code/.responseTime`), and `pm.environment`/`pm.variables` (map to script vars); `ScriptResult` gains `testMessages` merged across `runScriptSequence`; the Tests tab now renders the failure message under each failed assertion and the sandbox gains `setTimeout`/`clearTimeout` for async scripts; the panel `scriptRunner` was deduped to delegate to `executeUserScript` so request/collection scripts all share the same sandbox; 24 unit tests in `test/unit/pm.test.ts`, E2E in `feature4.spec.ts`)* |
 | F34 | **Export to OpenAPI / HAR / .http** | 🟡 P2 | Reverse of the importers. Postman export already supported via `importCollection`. |
 | F35 | **Import HAR / Insomnia / .http** | 🟡 P2 | Extend importers beyond Postman + OpenAPI. |
-| F36 | **OpenAPI viewer / explorer** | ⚪ P3 | Render an OpenAPI spec as browsable endpoints with generated requests (currently only imports spec → collections). |
+| F36 | **OpenAPI viewer / explorer** | ⚪ P3 | ✅ Render an OpenAPI spec as browsable endpoints with generated requests (currently only imports spec → collections). *(done — `src/core/openapiViewer.ts` pure parser extracts endpoint metadata (params, body, responses, descriptions); `src/panels/sidebar/OpenApiProvider.ts` extension-host sidebar provider with file/URL loading, expansion state persistence; `SidebarOpenApi.tsx` React panel with tag-organized endpoint browser, search filter, method badges, deprecated indicators, and "Import as Collection" action; third sidebar view registered in `package.json` + `extension.ts`; 13 unit tests in `test/unit/openapiViewer.test.ts`)* |
 | F37 | **Mock server generation** | ⚪ P3 | Spin up a local mock server from collection responses (e.g., Prism-style). |
 | F38 | **Documentation generation** | ⚪ P3 | Publish a human-readable HTML/Markdown docs page from a collection. |
 | F39 | **Workspace file format** | 🟡 P2 | `.restify` project files committed to a repo (like Postman workspaces / `.http` files), with git-friendly diff. |
@@ -239,7 +239,7 @@ Phases are ordered by (bug/security first) → (high user impact) → (ecosystem
 - [x] F48 HTTP/2.
 - [x] F50 interceptors (retry + HTTP log pipeline), [ ] F57 HTTP/3 (QUIC).
 - [x] F26 response diff, [x] F27 timeline breakdown, ~~F24 response tree view~~ ✅.
-- [ ] F36 OpenAPI explorer, F37 mock server, F38 docs generation.
+- [x] F36 OpenAPI explorer, [ ] F37 mock server, [ ] F38 docs generation.
 - [x] F39 workspace `.restify` files, [x] F40 collection-level scripts.
 - [x] F47 gRPC, ~~F29 response cache/offline replay~~ ✅, F55/F56 editor polish.
 

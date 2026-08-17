@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from './storage/StorageManager';
 import { RestifyPanel } from './panels/RestifyPanel';
 import { SidebarProvider } from './panels/sidebar/SidebarProvider';
+import { OpenApiProvider } from './panels/sidebar/OpenApiProvider';
 import { ActivityProvider } from './panels/ActivityProvider';
 import { parseCurl } from './core/curlParser';
 import { parseImportTextAuto, requestToHttpText } from './core/converters';
@@ -31,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
     'collections',
     storageManager
   );
+  const openApiProvider = new OpenApiProvider(context, storageManager);
   const activityProvider = new ActivityProvider(context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -40,6 +42,10 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(
       'restify-collections',
       collectionsProvider
+    ),
+    vscode.window.registerWebviewViewProvider(
+      'restify-openapi',
+      openApiProvider
     ),
     vscode.window.registerWebviewViewProvider(
       'restify-activity',

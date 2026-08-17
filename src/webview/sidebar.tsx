@@ -6,6 +6,7 @@ import { Container } from './components/sidebarStyles';
 import { HistoryPanel } from './components/SidebarHistory';
 import { CollectionsPanel } from './components/SidebarCollections';
 import { RunnerResultsModal } from './components/SidebarRunner';
+import { OpenApiPanel } from './components/SidebarOpenApi';
 
 export const Sidebar: React.FC = () => {
   const [sidebarType, setSidebarType] = useState<SidebarType>('history');
@@ -133,6 +134,9 @@ export const Sidebar: React.FC = () => {
             const col = collections.find((c) => c.id === id);
             if (col) post({ command: 'saveCollection', data: { ...col, preScript, testScript } });
           }} />
+      )}
+      {sidebarType === 'openapi' && (
+        <OpenApiPanel />
       )}
       <RunnerResultsModal runState={runState}
         onCancel={() => post({ command: 'cancelCollectionRun' })}

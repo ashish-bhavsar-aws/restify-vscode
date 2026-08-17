@@ -88,6 +88,11 @@
           "id": "restify-collections",
           "name": "Collections",
           "type": "webview"
+        },
+        {
+          "id": "restify-openapi",
+          "name": "API Explorer",
+          "type": "webview"
         }
       ],
       "restify-panel-container": [

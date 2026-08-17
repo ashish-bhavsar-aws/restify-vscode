@@ -11,7 +11,7 @@ export interface Collection {
   id: string; name: string; requests?: CollectionRequest[]; groups?: CollectionGroup[];
   variables?: CollectionVar[]; preScript?: string; testScript?: string;
 }
-export type SidebarType = 'history' | 'collections' | 'environments';
+export type SidebarType = 'history' | 'collections' | 'environments' | 'openapi';
 export interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; }
 export interface RunEntry {
   requestId: string;

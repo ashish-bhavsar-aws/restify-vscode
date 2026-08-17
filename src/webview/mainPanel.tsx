@@ -87,6 +87,8 @@ interface TabState {
   id: string;
   request: RequestState;
   response: ResponseState | null;
+  /** F26: previous response for diff comparison. */
+  previousResponse: ResponseState | null;
   requestInfo: any | null;
   schemaValidation: any | null;
   loading: boolean;
@@ -102,6 +104,7 @@ const createTab = (requestData?: Partial<RequestState>): TabState => ({
     ? { ...DEFAULT_REQUEST, ...requestData }
     : { ...DEFAULT_REQUEST },
   response: null,
+  previousResponse: null,
   requestInfo: null,
   schemaValidation: null,
   loading: false,
@@ -597,6 +600,8 @@ export const MainPanel: React.FC = () => {
                 ? {
                     ...t,
                     loading: false,
+                    // F26: store the current response as previousResponse before setting the new one
+                    previousResponse: t.response,
                     response: { ...msg.response, isStreaming: false },
                     schemaValidation: msg.schemaValidation ?? null,
                     requestInfo: {
@@ -1296,6 +1301,7 @@ export const MainPanel: React.FC = () => {
           <Resizer />
           <ResponsePane
             response={activeTab.response}
+            previousResponse={activeTab.previousResponse}
             loading={activeTab.loading}
             request={activeTab.requestInfo}
             schemaValidation={activeTab.schemaValidation}

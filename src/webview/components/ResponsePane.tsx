@@ -5,7 +5,7 @@ import {
   faPaperPlane, faCopy, faTerminal, faMagnifyingGlass,
   faClipboardList,
   faLink, faFileLines, faDownload, faFileCode, faCookieBite,
-  faFlaskVial, faListCheck, faFloppyDisk, faClock,
+  faFlaskVial, faListCheck, faFloppyDisk, faClock, faCodeCompare,
 } from '@fortawesome/free-solid-svg-icons';
 import { PrettyBodyViewer } from './PrettyBodyViewer';
 import { ResponseSearchBar, type ResponseSearchMode } from './ResponseSearchBar';
@@ -26,6 +26,7 @@ import {
 import { FilePreview } from './ResponseFilePreview';
 import { RequestLog, ScriptResultLog, buildCurlCommand } from './ResponseLogs';
 import { TestResults, SchemaResults } from './ResponseResults';
+import { ResponseDiff } from './ResponseDiff';
 import {
   ResponsePaneWrapper,
   ResponseEmpty,
@@ -63,6 +64,8 @@ import {
 
 interface ResponsePaneProps {
   response: ResponseState | null;
+  /** F26: previous response for diff comparison. */
+  previousResponse: ResponseState | null;
   loading: boolean;
   request?: any;
   schemaValidation?: any;
@@ -74,9 +77,9 @@ interface ResponsePaneProps {
   onViewerChange?: (viewer: ResponseViewerSettings) => void;
 }
 
-type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw' | 'timeline';
+type ResTab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'logs' | 'raw' | 'timeline' | 'diff';
 
-export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, request, schemaValidation, onDownloadFile, onSaveResponse, post, viewer, onViewerChange }) => {
+export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, previousResponse, loading, request, schemaValidation, onDownloadFile, onSaveResponse, post, viewer, onViewerChange }) => {
   const [activeTab, setActiveTab] = useState<ResTab>('body');
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
@@ -302,7 +305,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
 
       {/* Tab bar */}
       <TabBar id="res-tabs">
-        {(['body', 'headers', 'cookies', 'tests', 'schema', 'logs', 'raw', 'timeline'] as ResTab[]).map((tab) => (
+        {(['body', 'headers', 'cookies', 'tests', 'schema', 'logs', 'raw', 'timeline', 'diff'] as ResTab[]).map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}
@@ -319,6 +322,7 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
                 : tab === 'schema' ? faListCheck
                 : tab === 'logs' ? faClipboardList
                 : tab === 'timeline' ? faClock
+                : tab === 'diff' ? faCodeCompare
                 : faFileCode
               }
               size={12}
@@ -510,6 +514,22 @@ export const ResponsePane: React.FC<ResponsePaneProps> = ({ response, loading, r
           <ScrollArea>
             <TimelineView timings={response.timings} duration={response.duration} />
           </ScrollArea>
+        </TabContent>
+      )}
+
+      {/* Diff tab (F26) */}
+      {activeTab === 'diff' && (
+        <TabContent>
+          {previousResponse ? (
+            <ResponseDiff
+              leftBody={previousResponse.body || ''}
+              rightBody={response.body || ''}
+              leftLabel={`Previous (${previousResponse.status} ${previousResponse.statusText})`}
+              rightLabel={`Current (${response.status} ${response.statusText})`}
+            />
+          ) : (
+            <EmptyHint>No previous response to compare. Send another request to see the diff.</EmptyHint>
+          )}
         </TabContent>
       )}
     </ResponsePaneWrapper>

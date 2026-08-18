@@ -611,7 +611,7 @@ export async function deleteEnvironment(
   const envItem = frame.locator('div').filter({ hasText: new RegExp(`^${name}`) }).first();
   const deleteBtn = envItem.locator('button').last();
   if (await deleteBtn.count() > 0) {
-    await deleteBtn.click();
+    await deleteBtn.evaluate((el: HTMLElement) => (el as HTMLButtonElement).click());
     await frame.waitForTimeout(300);
     // Confirm deletion if dialog appears
     const confirmBtn = frame.locator('button').filter({ hasText: /delete|confirm|ok/i });
@@ -688,6 +688,41 @@ export async function closeSettings(frame: Frame): Promise<void> {
     await clickInFrame(frame, '[data-testid="settings-overlay"]');
     await frame.waitForTimeout(200);
   }
+}
+
+export async function enableRequestChaining(frame: Frame): Promise<void> {
+  await setRequestChaining(frame, true);
+}
+
+export async function disableRequestChaining(frame: Frame): Promise<void> {
+  await setRequestChaining(frame, false);
+}
+
+async function setRequestChaining(frame: Frame, enabled: boolean): Promise<void> {
+  // Bypass the SettingsModal UI entirely — the React controlled-checkbox + <label>
+  // double-toggle issue prevents the onChange from persisting.  Instead, inject the
+  // settings directly via the webview's window message handler (same shape as the
+  // extension's "loadSettings" message) and persist via "saveSettings".
+  await frame.evaluate((val) => {
+    window.postMessage({
+      command: 'loadSettings',
+      settings: {
+        proxy: '', proxyAuthorization: '', noProxy: '', certificates: [],
+        showActivityLog: true, defaultTimeout: 30000,
+        notifyOnLongRequest: true, longRequestThresholdMs: 5000,
+        defaultHeaders: { userAgent: false, requestId: false, correlationId: false, date: false, custom: [] },
+        soapSecurity: [], headerPresets: [],
+        responseViewer: { wrap: true, lineNumbers: true, fontSize: 12 },
+        interceptors: {
+          retry: { enabled: false, maxAttempts: 3, retryDelayMs: 500, retryStatuses: [429, 500, 502, 503, 504], retryOnNetworkError: true },
+          logging: { enabled: false, logHeaders: false },
+        },
+        responseCache: { enabled: false, ttlSeconds: 300, replayOnNetworkError: true },
+        enableRequestChaining: val,
+      },
+    }, '*');
+  }, enabled);
+  await frame.waitForTimeout(500);
 }
 
 // ─── Quick Request Helper ─────────────────────────────────────────

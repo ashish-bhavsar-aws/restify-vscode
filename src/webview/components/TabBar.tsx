@@ -124,6 +124,7 @@ const TabBar: React.FC<TabBarProps> = ({ tabs, onSelect, onClose, onAdd, enableM
         key={tab.id}
         $active={tab.active}
         title={tab.label}
+        data-testid="multi-tab"
         onClick={() => onSelect(tab.id)}
       >
         {tab.dirty && <DirtyDot />}

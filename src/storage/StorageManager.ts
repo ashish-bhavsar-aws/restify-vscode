@@ -134,6 +134,7 @@ export interface SettingsState {
     ttlSeconds: number;
     replayOnNetworkError: boolean;
   };
+  enableRequestChaining: boolean;
 }
 
 export class StorageManager {

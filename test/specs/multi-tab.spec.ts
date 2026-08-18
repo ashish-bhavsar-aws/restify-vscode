@@ -64,10 +64,10 @@ test.describe('Multi-Tab Panels', () => {
 
     await enableRequestChaining(frame);
 
-    // Tab bar should now be visible with at least one tab
-    const tabs = frame.locator('[data-testid^="req-tab-"]');
+    // Multi-tab bar should now be visible with at least one tab
+    const tabs = frame.locator('[data-testid="multi-tab"]');
     const tabCount = await tabs.count();
-    log(`Tab count (chaining on): ${tabCount}`);
+    log(`Multi-tab count (chaining on): ${tabCount}`);
     expect(tabCount).toBeGreaterThanOrEqual(1);
 
     // Script tab should appear
@@ -140,20 +140,21 @@ test.describe('Multi-Tab Panels', () => {
     log('--- Test: Chaining off → loadRequest replaces active tab ---');
     await disableRequestChaining(frame);
 
-    // Load a request via the extension (simulates clicking from sidebar)
+    // With chaining off, multi-tab bar should be hidden (no add/close buttons)
+    const addBtn = frame.locator('button[title="New request"]');
+    const closeBtn = frame.locator('button[title="Close tab"]');
+    expect(await addBtn.count()).toBe(0);
+    expect(await closeBtn.count()).toBe(0);
+
+    // Load a request via the extension — should replace, not open new tab
     await frame.evaluate((url) => {
       window.postMessage({ command: 'loadRequest', data: { url, method: 'GET' } }, '*');
     }, mockUrl('/api/json-response'));
-    await frame.waitForTimeout(1000);
+    await frame.waitForTimeout(2000);
 
-    // With chaining off, tab bar is hidden but the request should still load
-    // We verify the URL was set by checking the URL input
-    const urlInput = frame.locator('.url-input [data-testid="variable-text-input"]');
-    if (await urlInput.count() > 0) {
-      const val = await urlInput.first().inputValue();
-      log(`URL after loadRequest (chaining off): ${val}`);
-      expect(val).toContain('/api/json-response');
-    }
+    // Tab bar should still be hidden (no new tab opened)
+    expect(await addBtn.count()).toBe(0);
+    expect(await closeBtn.count()).toBe(0);
 
     await screenshot(app.window, 'multitab-replace-tab');
   });
@@ -162,9 +163,9 @@ test.describe('Multi-Tab Panels', () => {
     log('--- Test: Chaining on → loadRequest opens new tab ---');
     await enableRequestChaining(frame);
 
-    // Get initial tab count
-    const initialCount = await frame.locator('[data-testid^="req-tab-"]').count();
-    log(`Initial tab count: ${initialCount}`);
+    // Get initial multi-tab bar count
+    const initialCount = await frame.locator('[data-testid="multi-tab"]').count();
+    log(`Initial multi-tab count: ${initialCount}`);
 
     // Send a request first to make the initial tab non-pristine
     await setUrl(frame, mockUrl('/'));
@@ -172,14 +173,17 @@ test.describe('Multi-Tab Panels', () => {
     await waitForResponse(frame, 20000);
 
     // Load a new request via the extension
+    // Re-inject chaining on — the extension may have sent loadSettings
+    // back with defaults (chaining off) during/after the request cycle.
+    await enableRequestChaining(frame);
     await frame.evaluate((url) => {
       window.postMessage({ command: 'loadRequest', data: { url, method: 'GET' } }, '*');
     }, mockUrl('/api/json-response'));
-    await frame.waitForTimeout(1000);
+    await frame.waitForTimeout(2000);
 
     // Tab count should increase by 1 (new tab, not replace)
-    const afterCount = await frame.locator('[data-testid^="req-tab-"]').count();
-    log(`Tab count after loadRequest (chaining on): ${afterCount}`);
+    const afterCount = await frame.locator('[data-testid="multi-tab"]').count();
+    log(`Multi-tab count after loadRequest (chaining on): ${afterCount}`);
     expect(afterCount).toBeGreaterThanOrEqual(initialCount + 1);
 
     await screenshot(app.window, 'multitab-new-tab');

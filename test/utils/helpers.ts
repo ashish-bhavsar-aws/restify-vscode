@@ -699,29 +699,24 @@ export async function disableRequestChaining(frame: Frame): Promise<void> {
 }
 
 async function setRequestChaining(frame: Frame, enabled: boolean): Promise<void> {
-  // Bypass the SettingsModal UI entirely — the React controlled-checkbox + <label>
-  // double-toggle issue prevents the onChange from persisting.  Instead, inject the
-  // settings directly via the webview's window message handler (same shape as the
-  // extension's "loadSettings" message) and persist via "saveSettings".
-  await frame.evaluate((val) => {
-    window.postMessage({
-      command: 'loadSettings',
-      settings: {
-        proxy: '', proxyAuthorization: '', noProxy: '', certificates: [],
-        showActivityLog: true, defaultTimeout: 30000,
-        notifyOnLongRequest: true, longRequestThresholdMs: 5000,
-        defaultHeaders: { userAgent: false, requestId: false, correlationId: false, date: false, custom: [] },
-        soapSecurity: [], headerPresets: [],
-        responseViewer: { wrap: true, lineNumbers: true, fontSize: 12 },
-        interceptors: {
-          retry: { enabled: false, maxAttempts: 3, retryDelayMs: 500, retryStatuses: [429, 500, 502, 503, 504], retryOnNetworkError: true },
-          logging: { enabled: false, logHeaders: false },
-        },
-        responseCache: { enabled: false, ttlSeconds: 300, replayOnNetworkError: true },
-        enableRequestChaining: val,
-      },
-    }, '*');
-  }, enabled);
+  const settings = {
+    proxy: '', proxyAuthorization: '', noProxy: '', certificates: [],
+    showActivityLog: true, defaultTimeout: 30000,
+    notifyOnLongRequest: true, longRequestThresholdMs: 5000,
+    defaultHeaders: { userAgent: false, requestId: false, correlationId: false, date: false, custom: [] },
+    soapSecurity: [], headerPresets: [],
+    responseViewer: { wrap: true, lineNumbers: true, fontSize: 12 },
+    interceptors: {
+      retry: { enabled: false, maxAttempts: 3, retryDelayMs: 500, retryStatuses: [429, 500, 502, 503, 504], retryOnNetworkError: true },
+      logging: { enabled: false, logHeaders: false },
+    },
+    responseCache: { enabled: false, ttlSeconds: 300, replayOnNetworkError: true },
+    enableRequestChaining: enabled,
+  };
+  // Inject into webview React state immediately
+  await frame.evaluate((s) => {
+    window.postMessage({ command: 'loadSettings', settings: s }, '*');
+  }, settings);
   await frame.waitForTimeout(500);
 }
 

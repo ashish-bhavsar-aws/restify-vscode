@@ -1140,20 +1140,22 @@ export const MainPanel: React.FC = () => {
         codegenEnabled={codeGenEnabled}
       />
 
-      <TabBar
-        tabs={tabs.map((t) => ({
-          id: t.id,
-          label: tabLabelShort(t),
-          dirty: t.isDirty,
-          active: t.id === activeTab.id,
-          loading: t.loading,
-          method: t.request.method,
-        }))}
-        onSelect={selectTab}
-        onClose={closeTab}
-        onAdd={addTab}
-        enableMultiTab={settings.enableRequestChaining}
-      />
+      {settings.enableRequestChaining && (
+        <TabBar
+          tabs={tabs.map((t) => ({
+            id: t.id,
+            label: tabLabelShort(t),
+            dirty: t.isDirty,
+            active: t.id === activeTab.id,
+            loading: t.loading,
+            method: t.request.method,
+          }))}
+          onSelect={selectTab}
+          onClose={closeTab}
+          onAdd={addTab}
+          enableMultiTab={settings.enableRequestChaining}
+        />
+      )}
 
       {/* Animated loading bar */}
       <LoadingBar $active={activeTab.loading} />

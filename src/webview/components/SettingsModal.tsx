@@ -426,6 +426,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultTimeout, setDefaultTimeout] = useState(30000);
   const [notifyOnLongRequest, setNotifyOnLongRequest] = useState(true);
   const [notifyThreshold, setNotifyThreshold] = useState(5000);
+  const [enableRequestChaining, setEnableRequestChaining] = useState(false);
   const [defaultHeaders, setDefaultHeaders] = useState<SettingsState['defaultHeaders']>({
     userAgent: false,
     requestId: false,
@@ -531,6 +532,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setDefaultTimeout(initialSettings.defaultTimeout ?? 30000);
       setNotifyOnLongRequest(initialSettings.notifyOnLongRequest !== false);
       setNotifyThreshold(initialSettings.longRequestThresholdMs ?? 5000);
+      setEnableRequestChaining(initialSettings.enableRequestChaining ?? false);
       setDefaultHeaders(
         initialSettings.defaultHeaders || {
           userAgent: false,
@@ -629,6 +631,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         ttlSeconds: Math.max(1, Number(cacheTtlSeconds) || 300),
         replayOnNetworkError: cacheReplayOnNetworkError,
       },
+      enableRequestChaining,
     });
   };
 
@@ -898,6 +901,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <HelperText>
                 Requests taking longer than this trigger the completion
                 notification.
+              </HelperText>
+
+              <CheckboxLabel data-testid="request-chaining-toggle">
+                <input
+                  type="checkbox"
+                  checked={enableRequestChaining}
+                  onChange={(e) => setEnableRequestChaining(e.target.checked)}
+                />
+                Enable Request Chaining
+              </CheckboxLabel>
+              <HelperText>
+                Show the Script tab for pre-request and post-response scripts
+                that can chain variables between requests.
               </HelperText>
             </Section>
 

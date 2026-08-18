@@ -147,7 +147,15 @@ export async function launchVSCode(): Promise<VSCodeApp> {
   log('  settings.json written (dark theme + maximize)');
 
   log('  Downloading VS Code (stable)...');
-  const vscodeExecutablePath = await downloadAndUnzipVSCode('stable');
+  let vscodeExecutablePath = await downloadAndUnzipVSCode('stable');
+  // Newer macOS VS Code versions use 'Code' instead of 'Electron' as the binary name
+  if (!fs.existsSync(vscodeExecutablePath)) {
+    const codePath = vscodeExecutablePath.replace(/Electron$/, 'Code');
+    if (fs.existsSync(codePath)) {
+      log(`  Binary name changed: using "${codePath}" instead of "${vscodeExecutablePath}"`);
+      vscodeExecutablePath = codePath;
+    }
+  }
   log(`  VS Code executable: ${vscodeExecutablePath}`);
 
   log('  Spawning Electron process...');
@@ -477,8 +485,10 @@ export async function waitForNewMainPanelFrame(
   return null;
 }
 
-export async function findMainPanelFrame(page: Page, timeoutMs = 30_000): Promise<Frame | null> {
+export async function findMainPanelFrame(page: Page, timeoutMs = 60_000): Promise<Frame | null> {
   log(`Searching for main panel frame (timeout=${timeoutMs}ms)...`);
+  // Dismiss blocking dialogs BEFORE starting the search loop
+  await dismissOnboarding(page);
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -490,14 +500,33 @@ export async function findMainPanelFrame(page: Page, timeoutMs = 30_000): Promis
     const result = await findSendButtonNewest(page);
     if (result) return result;
 
+    // Dismiss any blocking dialogs (Welcome, onboarding, etc.)
+    await dismissOnboarding(page);
+
     // Also search ALL frames (not just vscode-webview://) for Send button
     try {
       const allFrames = [...page.frames()].reverse();
       for (const frame of allFrames) {
-        const hasSend = await frame.locator('[data-testid="send-btn"]').count().catch(() => 0);
-        if (hasSend > 0) {
+        const hasSend = await frame.evaluate(() => !!document.querySelector('[data-testid="send-btn"]')).catch(() => false);
+        if (hasSend) {
           log(`  ✓ Found Send button in non-webview frame: ${frame.url().slice(0, 60)}`);
           return frame;
+        }
+      }
+    } catch { /* continue */ }
+
+    // Try using page.locator() which searches across all frames
+    try {
+      const sendBtn = page.locator('[data-testid="send-btn"]');
+      if (await sendBtn.count() > 0) {
+        // Found it! Now find which frame it's in
+        const allFrames = [...page.frames()].reverse();
+        for (const frame of allFrames) {
+          const hasSend = await frame.evaluate(() => !!document.querySelector('[data-testid="send-btn"]')).catch(() => false);
+          if (hasSend) {
+            log(`  ✓ Found Send button via page.locator in frame: ${frame.url().slice(0, 60)}`);
+            return frame;
+          }
         }
       }
     } catch { /* continue */ }
@@ -530,11 +559,12 @@ export async function findMainPanelFrame(page: Page, timeoutMs = 30_000): Promis
 
 async function findSendButtonInTree(frame: Frame, depth = 0): Promise<Frame | null> {
   const prefix = '  '.repeat(depth + 1);
-  const selector = '[data-testid="send-btn"], button:has-text("Send")';
 
-  // Check this frame for Send button
-  const hasSend = await frame.locator(selector).count().catch(() => 0);
-  if (hasSend > 0) {
+  // Use evaluate to pierce cross-origin/sandboxed frames
+  const hasSend = await frame.evaluate(() => {
+    return !!document.querySelector('[data-testid="send-btn"]');
+  }).catch(() => false);
+  if (hasSend) {
     log(`${prefix}✓ Found frame with Send button: ${frame.url().slice(0, 60)}`);
     return frame;
   }
@@ -694,6 +724,30 @@ export async function dismissOnboarding(page: Page): Promise<void> {
   if (await skipBtn.count() > 0) {
     await skipBtn.first().click({ timeout: 3_000 }).catch(() => {});
     await page.waitForTimeout(300);
+  }
+  // VS Code Welcome dialog (appears on first launch — may be multi-step)
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const welcomeDialog = page.locator('dialog:has-text("Welcome to Visual Studio Code"), [role="dialog"]:has-text("Welcome to Visual Studio Code")');
+    if (await welcomeDialog.count() === 0) break;
+    log(`  VS Code Welcome dialog found (attempt ${attempt + 1})`);
+    // Press Escape first — most reliable way to dismiss dialogs
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+    // Check if still there and try clicking Continue without Signing In
+    if (await welcomeDialog.count() > 0) {
+      const continueBtn = page.locator('button:has-text("Continue without Signing In")');
+      if (await continueBtn.count() > 0) {
+        await continueBtn.first().click({ timeout: 3_000 }).catch(() => {});
+        log('  Welcome dialog: clicked "Continue without Signing In"');
+        await page.waitForTimeout(800);
+      }
+    }
+    // Try the Close button as last resort
+    if (await welcomeDialog.count() > 0) {
+      const closeBtn = page.locator('button:has-text("Close")').first();
+      await closeBtn.click({ timeout: 2_000 }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
   }
 }
 

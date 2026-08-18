@@ -392,6 +392,7 @@ export const MainPanel: React.FC = () => {
   const tabsRef = useRef(tabs);
   const activeTabRef = useRef(activeTab);
   const activeTabIdRef = useRef(activeTabId);
+  const settingsRef = useRef(settings);
   const sendRef = useRef<() => void>(() => {});
   const activeEnvIdRef = useRef<string | null>(null);
   const pendingSecretResolves = useRef(new Map<string, (value: string) => void>());
@@ -426,6 +427,7 @@ export const MainPanel: React.FC = () => {
   };
 
   const addTab = () => {
+    if (!settings.enableRequestChaining) return;
     const t = createTab();
     setTabs((prev) => [...prev, t]);
     setActiveTabId(t.id);
@@ -483,18 +485,20 @@ export const MainPanel: React.FC = () => {
         case "loadRequest": {
           const { _collectionName, _groupId, ...reqData } = msg.data;
           const current = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
-          // Reuse the untouched initial tab so the first opened request
-          // replaces the empty placeholder rather than stacking a second tab.
+          // When multi-tab is disabled (chaining off), always replace the active tab.
+          // When enabled, reuse the untouched initial tab or open a new one.
+          const chainingEnabled = settingsRef.current.enableRequestChaining;
           const replace =
-            tabsRef.current.length === 1 && current !== undefined && isPristine(current);
-          if (replace) {
+            !chainingEnabled ||
+            (tabsRef.current.length === 1 && current !== undefined && isPristine(current));
+          if (replace && current) {
             const t: TabState = {
               ...createTab(reqData),
               id: current.id,
               savedCollectionName: _collectionName ?? null,
               savedGroupId: _groupId ?? undefined,
             };
-            setTabs([t]);
+            setTabs((prev) => prev.map((tab) => (tab.id === current.id ? t : tab)));
             post({ command: "updateTitle", title: tabLabel(t), tabId: t.id });
           } else {
             const t = createTab(reqData);
@@ -802,6 +806,9 @@ export const MainPanel: React.FC = () => {
   useEffect(() => {
     activeEnvIdRef.current = activeEnvId;
   }, [activeEnvId]);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   /* Build the request object, injecting auth headers/params */
   const buildPayload = useCallback((): RequestState => {
@@ -1145,6 +1152,7 @@ export const MainPanel: React.FC = () => {
         onSelect={selectTab}
         onClose={closeTab}
         onAdd={addTab}
+        enableMultiTab={settings.enableRequestChaining}
       />
 
       {/* Animated loading bar */}
@@ -1326,6 +1334,7 @@ export const MainPanel: React.FC = () => {
             headerPresets={headerPresets}
             onSaveHeaderPreset={handleSaveHeaderPreset}
             onDeleteHeaderPreset={handleDeleteHeaderPreset}
+            enableRequestChaining={settings.enableRequestChaining ?? false}
           />
           <Resizer />
           <ResponsePane

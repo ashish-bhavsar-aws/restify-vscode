@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   workers: 1,
-  maxFailures: 1,
+  maxFailures: 5,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
     trace: 'on-first-retry',

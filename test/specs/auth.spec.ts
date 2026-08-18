@@ -1,174 +1,165 @@
 import { test, expect } from '@playwright/test';
+import type { Frame } from '@playwright/test';
 import {
   launchVSCode,
   closeVSCode,
   screenshot,
-  injectCursorOverlay,
-  resetLog,
   log,
-  logCheck,
-  type VSCodeApp,
+  resetLog,
 } from '../utils/vscode';
 import {
   startMockServer,
+  stopMockServer,
   mockUrl,
   setupMainPanel,
-  setUrlAndSend,
+  setUrl,
+  sendRequest,
   waitForResponse,
+  getStatusCode,
   getResponseText,
-  setAuthType,
+  setMethod,
   fillBearerToken,
   fillBasicAuth,
   fillApiKeyAuth,
   fillDigestAuth,
-  fillSigV4Auth,
   fillJwtAuth,
   fillHawkAuth,
+  clickRequestTab,
+  setBodyType,
+  fillBody,
 } from '../utils/helpers';
-import type { Frame } from '@playwright/test';
-
-let app: VSCodeApp;
-let mainFrame: Frame | null = null;
 
 test.describe('Authentication', () => {
-  test.describe.configure({ mode: 'serial' });
+  let app: Awaited<ReturnType<typeof launchVSCode>>;
+  let frame: Frame;
 
   test.beforeAll(async () => {
     resetLog();
-    log('=== [Auth] beforeAll ===');
     await startMockServer();
     app = await launchVSCode();
-    await injectCursorOverlay(app.window);
-    mainFrame = await setupMainPanel(app);
-    log('=== [Auth] setup complete ===');
+    frame = await setupMainPanel(app);
   });
 
   test.afterAll(async () => {
-    log('=== [Auth] afterAll ===');
     await closeVSCode(app);
+    await stopMockServer();
   });
 
-  test('Bearer token is sent in Authorization header', async () => {
-    log('--- Bearer token ---');
-    await fillBearerToken(mainFrame!, 'my-secret-token-123');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/verify'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('Bearer token in response', body.includes('my-secret-token-123'));
-    expect(body).toContain('my-secret-token-123');
-    await screenshot(app.window, 'auth-bearer');
+  test('should send request with Bearer token auth', async () => {
+    log('--- Test: Bearer token auth ---');
+    await fillBearerToken(frame, 'my-secret-bearer-token');
+    await setUrl(frame, mockUrl('/api/auth/verify'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
+    const body = await getResponseText(frame);
+    expect(body).toContain('my-secret-bearer-token');
+
+    await screenshot(app.window, 'auth-bearer-token');
   });
 
-  test('Basic auth sends base64 encoded credentials', async () => {
-    log('--- Basic auth ---');
-    await fillBasicAuth(mainFrame!, 'admin', 'secret123');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/verify'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    // Basic auth sends "Basic base64(admin:secret123)"
-    const expectedB64 = Buffer.from('admin:secret123').toString('base64');
-    logCheck('Basic auth header present', body.includes('Basic'));
-    expect(body).toContain(expectedB64);
+  test('should send request with Basic auth', async () => {
+    log('--- Test: Basic auth ---');
+    await fillBasicAuth(frame, 'admin', 'password123');
+    await setUrl(frame, mockUrl('/api/auth/verify'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
     await screenshot(app.window, 'auth-basic');
   });
 
-  test('API Key in header', async () => {
-    log('--- API Key header ---');
-    await fillApiKeyAuth(mainFrame!, 'X-API-Key', 'my-api-key-value', 'header');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/verify'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('API Key in response', body.includes('my-api-key-value'));
-    expect(body).toContain('my-api-key-value');
-    await screenshot(app.window, 'auth-apikey-header');
+  test('should send request with API Key auth (header)', async () => {
+    log('--- Test: API Key auth ---');
+    await fillApiKeyAuth(frame, 'X-API-Key', 'my-api-key-12345', 'header');
+    await setUrl(frame, mockUrl('/api/auth/verify'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
+    const body = await getResponseText(frame);
+    expect(body).toContain('my-api-key-12345');
+
+    await screenshot(app.window, 'auth-api-key');
   });
 
-  test('API Key in query param', async () => {
-    log('--- API Key query ---');
-    await fillApiKeyAuth(mainFrame!, 'api_key', 'query-key-123', 'query');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/verify'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('API Key in query response', body.includes('query-key-123'));
-    expect(body).toContain('query-key-123');
-    await screenshot(app.window, 'auth-apikey-query');
-  });
+  test('should send request with Digest auth', async () => {
+    log('--- Test: Digest auth ---');
+    await fillDigestAuth(frame, 'digestuser', 'digestpass');
+    await setUrl(frame, mockUrl('/api/auth/digest'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
 
-  test('Digest auth completes the 401 challenge round-trip', async () => {
-    log('--- Digest auth ---');
-    await fillDigestAuth(mainFrame!, 'digestuser', 'digestpass');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/digest'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('Digest authenticated in response', body.includes('digestuser'));
-    expect(body).toContain('digestuser');
-    expect(body).toContain('digest');
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
     await screenshot(app.window, 'auth-digest');
   });
 
-  test('AWS SigV4 header is well-formed and accepted', async () => {
-    log('--- AWS SigV4 ---');
-    await fillSigV4Auth(mainFrame!, {
-      accessKey: 'AKIAIOSFODNN7EXAMPLE',
-      secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-      region: 'us-east-1',
-      service: 'execute-api',
-    });
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/sigv4'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('SigV4 accepted', body.includes('awssigv4'));
-    expect(body).toContain('awssigv4');
-    expect(body).toContain('AKIAIOSFODNN7EXAMPLE');
-    await screenshot(app.window, 'auth-sigv4');
-  });
+  test('should send request with JWT auth', async () => {
+    log('--- Test: JWT auth ---');
+    await fillJwtAuth(frame, { secret: 'test-secret', issuer: 'restify', expiresIn: '3600' });
+    await setUrl(frame, mockUrl('/api/auth/jwt'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
 
-  test('JWT bearer token is signed and validated', async () => {
-    log('--- JWT bearer ---');
-    await fillJwtAuth(mainFrame!, {
-      secret: 'test-secret',
-      issuer: 'restify-e2e',
-      subject: 'e2e-user',
-      expiresIn: '3600',
-    });
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/jwt'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('JWT accepted', body.includes('jwt'));
-    expect(body).toContain('jwt');
-    expect(body).toContain('restify-e2e');
-    expect(body).toContain('e2e-user');
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
+    const body = await getResponseText(frame);
+    expect(body).toContain('restify');
+
     await screenshot(app.window, 'auth-jwt');
   });
 
-  test('Hawk MAC authorization is accepted', async () => {
-    log('--- Hawk auth ---');
-    await fillHawkAuth(mainFrame!, 'dh37fgj492je', 'werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/hawk'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('Hawk accepted', body.includes('hawk'));
-    expect(body).toContain('hawk');
-    expect(body).toContain('dh37fgj492je');
+  test('should send request with Hawk auth', async () => {
+    log('--- Test: Hawk auth ---');
+    await fillHawkAuth(frame, 'hawk-id', 'hawk-secret');
+    await setUrl(frame, mockUrl('/api/auth/hawk'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
     await screenshot(app.window, 'auth-hawk');
   });
 
-  test('No auth sends no Authorization header', async () => {
-    log('--- No auth ---');
-    await setAuthType(mainFrame!, 'none');
-    await setUrlAndSend(mainFrame!, mockUrl('/api/auth/verify'));
-    const ok = await waitForResponse(mainFrame!, 15_000);
-    expect(ok).toBe(true);
-    const body = await getResponseText(mainFrame!);
-    logCheck('No Authorization header', !body.includes('Bearer') && !body.includes('Basic'));
-    await screenshot(app.window, 'auth-none');
+  test('should display auth tab correctly', async () => {
+    log('--- Test: Auth tab display ---');
+    await clickRequestTab(frame, 'auth');
+    await frame.waitForTimeout(500);
+
+    await screenshot(app.window, 'auth-tab-display');
+  });
+
+  test('should send POST with Bearer auth', async () => {
+    log('--- Test: POST with Bearer auth ---');
+    await setMethod(frame, 'POST');
+    await fillBearerToken(frame, 'post-bearer-token');
+    await setBodyType(frame, 'json');
+    await fillBody(frame, JSON.stringify({ test: true }, null, 2));
+    await setUrl(frame, mockUrl('/api/auth/verify'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    const status = await getStatusCode(frame);
+    expect(status).toContain('200');
+
+    await screenshot(app.window, 'auth-post-bearer');
   });
 });

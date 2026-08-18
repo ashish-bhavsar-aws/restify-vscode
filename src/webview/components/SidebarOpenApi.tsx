@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Icon } from './FaIcon';
 import {
-  faMagnifyingGlass, faFileImport, faChevronRight, faUpload, faLink,
+  faMagnifyingGlass, faFileImport, faChevronRight, faUpload,
   faCode,
 } from '@fortawesome/free-solid-svg-icons';
 import { listNavKeyDown, METHOD_SHORT, vscodeApi } from './sidebarTypes';
@@ -204,12 +204,6 @@ export const OpenApiPanel: React.FC = () => {
           <SearchInput placeholder="Filter endpoints..." value={search}
             onChange={e => setSearch(e.target.value)} />
         </SearchWrapper>
-        <GhostButton title="Load spec from file" onClick={() => post({ command: 'loadSpecFile' })}>
-          <Icon icon={faUpload} size={12} />
-        </GhostButton>
-        <GhostButton title="Load spec from URL" onClick={() => post({ command: 'loadSpecUrl' })}>
-          <Icon icon={faLink} size={12} />
-        </GhostButton>
       </Toolbar>
 
       {!spec ? (

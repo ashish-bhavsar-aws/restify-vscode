@@ -1314,6 +1314,7 @@ export class StorageManager {
         ttlSeconds: saved.responseCache?.ttlSeconds ?? 300,
         replayOnNetworkError: saved.responseCache?.replayOnNetworkError ?? true,
       },
+      enableRequestChaining: saved.enableRequestChaining ?? false,
     };
   }
 

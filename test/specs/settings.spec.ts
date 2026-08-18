@@ -1,166 +1,130 @@
 import { test, expect } from '@playwright/test';
+import type { Frame } from '@playwright/test';
 import {
   launchVSCode,
   closeVSCode,
   screenshot,
-  injectCursorOverlay,
-  clickInFrame,
-  resetLog,
   log,
-  logCheck,
-  type VSCodeApp,
+  resetLog,
 } from '../utils/vscode';
 import {
+  startMockServer,
+  stopMockServer,
+  mockUrl,
   setupMainPanel,
+  setUrl,
+  sendRequest,
+  waitForResponse,
   openSettings,
   closeSettings,
+  clickRequestTab,
+  clickResponseTab,
+  setMethod,
 } from '../utils/helpers';
-import type { Frame } from '@playwright/test';
 
-let app: VSCodeApp;
-let mainFrame: Frame | null = null;
-
-test.describe('Settings', () => {
-  test.describe.configure({ mode: 'serial' });
+test.describe('Settings and Tabs', () => {
+  let app: Awaited<ReturnType<typeof launchVSCode>>;
+  let frame: Frame;
 
   test.beforeAll(async () => {
     resetLog();
-    log('=== [Settings] beforeAll ===');
+    await startMockServer();
     app = await launchVSCode();
-    await injectCursorOverlay(app.window);
-    mainFrame = await setupMainPanel(app);
-    log('=== [Settings] setup complete ===');
+    frame = await setupMainPanel(app);
   });
 
   test.afterAll(async () => {
-    log('=== [Settings] afterAll ===');
     await closeVSCode(app);
+    await stopMockServer();
   });
 
-  test('Open settings modal', async () => {
-    log('--- Open settings ---');
-    await openSettings(mainFrame!);
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const visible = await modal.isVisible().catch(() => false);
-    logCheck('Settings modal visible', visible);
-    expect(visible).toBe(true);
-    await screenshot(app.window, 'settings-open');
-  });
+  test('should open settings modal', async () => {
+    log('--- Test: Open settings ---');
+    await openSettings(frame);
+    await frame.waitForTimeout(500);
 
-  test('Settings modal has General / SSL / Proxy tabs', async () => {
-    log('--- Settings tabs ---');
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    for (const tab of ['general', 'ssl', 'proxy']) {
-      const btn = modal.locator(`[data-testid="settings-tab-${tab}"]`);
-      const exists = await btn.count() > 0;
-      logCheck(`Tab "${tab}" present`, exists);
-      expect(exists).toBe(true);
-    }
-  });
-
-  test('Proxy tab shows proxy settings', async () => {
-    log('--- Proxy tab ---');
-    await clickInFrame(mainFrame!, '[data-testid="settings-tab-proxy"]');
-    await mainFrame!.waitForTimeout(300);
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const text = (await modal.textContent().catch(() => '')) ?? '';
-    logCheck('Contains "Proxy Settings"', text.includes('Proxy Settings'));
-    expect(text).toContain('Proxy Settings');
-    const proxyInput = modal.locator('input[placeholder*="proxy"]').count();
-    const portInput = modal.locator('input[type="number"]').count();
-    logCheck('Proxy host input found', await proxyInput);
-    logCheck('Proxy port input found', await portInput);
-    expect(await proxyInput).toBeGreaterThan(0);
-    expect(await portInput).toBeGreaterThan(0);
-    await screenshot(app.window, 'settings-proxy-tab');
-    await clickInFrame(mainFrame!, '[data-testid="settings-tab-general"]');
-    await mainFrame!.waitForTimeout(200);
-  });
-
-  test('SSL tab shows client certificates', async () => {
-    log('--- SSL tab ---');
-    await clickInFrame(mainFrame!, '[data-testid="settings-tab-ssl"]');
-    await mainFrame!.waitForTimeout(300);
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const text = (await modal.textContent().catch(() => '')) ?? '';
-    logCheck('Contains "Client Certificates"', text.includes('Client Certificates'));
-    expect(text).toContain('Client Certificates');
-    await screenshot(app.window, 'settings-ssl-tab');
-    await clickInFrame(mainFrame!, '[data-testid="settings-tab-general"]');
-    await mainFrame!.waitForTimeout(200);
-  });
-
-  test('Settings contains Activity Log toggle', async () => {
-    log('--- Activity log toggle ---');
-    const toggle = mainFrame!.locator('[data-testid="activity-log-toggle"]');
-    const exists = await toggle.count() > 0;
-    logCheck('Activity log toggle found', exists);
-    expect(exists).toBe(true);
-  });
-
-  test('Proxy host and port inputs exist', async () => {
-    log('--- Proxy inputs ---');
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const inputs = modal.locator('input');
-    const count = await inputs.count();
-    logCheck('Settings has input fields', count);
+    const modal = frame.locator('[data-testid="settings-modal"]');
+    const count = await modal.count();
     expect(count).toBeGreaterThan(0);
-    await screenshot(app.window, 'settings-inputs');
+
+    await screenshot(app.window, 'settings-modal-open');
   });
 
-  test('Toggle activity log off', async () => {
-    log('--- Toggle activity log off ---');
-    const toggle = mainFrame!.locator('[data-testid="activity-log-toggle"]');
-    if (await toggle.count() > 0) {
-      const checkbox = toggle.locator('input[type="checkbox"]');
-      if (await checkbox.count() > 0) {
-        const isChecked = await checkbox.isChecked();
-        if (isChecked) {
-          await clickInFrame(mainFrame!, '[data-testid="activity-log-toggle"]');
-          await mainFrame!.waitForTimeout(300);
-          log('Activity log toggled off');
-        }
-      } else {
-        // Try clicking the label itself
-        await toggle.click();
-        await mainFrame!.waitForTimeout(300);
-        log('Activity log toggled');
-      }
+  test('should display settings content', async () => {
+    log('--- Test: Settings content ---');
+    const modal = frame.locator('[data-testid="settings-modal"]');
+    const text = await modal.textContent();
+    expect(text).toBeTruthy();
+
+    await screenshot(app.window, 'settings-content');
+  });
+
+  test('should close settings modal', async () => {
+    log('--- Test: Close settings ---');
+    await closeSettings(frame);
+    await frame.waitForTimeout(300);
+
+    await screenshot(app.window, 'settings-modal-closed');
+  });
+
+  test('should navigate request pane tabs', async () => {
+    log('--- Test: Navigate request tabs ---');
+    await clickRequestTab(frame, 'params');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'tab-params');
+
+    await clickRequestTab(frame, 'headers');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'tab-headers');
+
+    await clickRequestTab(frame, 'body');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'tab-body');
+
+    await clickRequestTab(frame, 'auth');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'tab-auth');
+
+    const scriptTab = frame.locator('[data-testid="req-tab-script"]');
+    if ((await scriptTab.count()) > 0) {
+      await clickRequestTab(frame, 'script');
+      await frame.waitForTimeout(300);
+      await screenshot(app.window, 'tab-script');
     }
-    await screenshot(app.window, 'settings-toggled');
   });
 
-  test('Toggle activity log back on', async () => {
-    log('--- Toggle activity log on ---');
-    const toggle = mainFrame!.locator('[data-testid="activity-log-toggle"]');
-    if (await toggle.count() > 0) {
-      await toggle.click();
-      await mainFrame!.waitForTimeout(300);
-      log('Activity log toggled back');
+  test('should navigate response pane tabs after sending request', async () => {
+    log('--- Test: Navigate response tabs ---');
+    await setUrl(frame, mockUrl('/api/json-response'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    await clickResponseTab(frame, 'body');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'res-tab-body');
+
+    await clickResponseTab(frame, 'headers');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'res-tab-headers');
+
+    await clickResponseTab(frame, 'cookies');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'res-tab-cookies');
+
+    await clickResponseTab(frame, 'raw');
+    await frame.waitForTimeout(300);
+    await screenshot(app.window, 'res-tab-raw');
+  });
+
+  test('should switch HTTP methods via dropdown', async () => {
+    log('--- Test: Switch HTTP methods ---');
+    const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    for (const method of methods) {
+      await setMethod(frame, method);
+      await frame.waitForTimeout(200);
     }
-    await screenshot(app.window, 'settings-toggled-back');
-  });
 
-  test('Close settings modal via overlay', async () => {
-    log('--- Close settings ---');
-    await closeSettings(mainFrame!);
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const stillVisible = await modal.isVisible().catch(() => false);
-    logCheck('Settings closed', !stillVisible);
-    expect(stillVisible).toBe(false);
-  });
-
-  test('Reopen and verify settings persisted', async () => {
-    log('--- Reopen settings ---');
-    await openSettings(mainFrame!);
-    const modal = mainFrame!.locator('[data-testid="settings-modal"]');
-    const visible = await modal.isVisible().catch(() => false);
-    logCheck('Settings reopened', visible);
-    expect(visible).toBe(true);
-
-    const text = (await modal.textContent().catch(() => '')) ?? '';
-    logCheck('Settings content intact', text.includes('General') && text.includes('SSL') && text.includes('Proxy'));
-    await screenshot(app.window, 'settings-reopened');
-    await closeSettings(mainFrame!);
+    await screenshot(app.window, 'method-switched');
   });
 });

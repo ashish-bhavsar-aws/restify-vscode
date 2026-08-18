@@ -4,9 +4,9 @@ import {
   launchVSCode,
   closeVSCode,
   screenshot,
+  runCommand,
   log,
   resetLog,
-  runCommand,
 } from '../utils/vscode';
 import {
   startMockServer,
@@ -14,7 +14,7 @@ import {
   setupMainPanel,
 } from '../utils/helpers';
 
-test.describe('Import/Export Formats', () => {
+test.describe('.http File Support', () => {
   let app: Awaited<ReturnType<typeof launchVSCode>>;
   let _frame: Frame;
 
@@ -30,35 +30,43 @@ test.describe('Import/Export Formats', () => {
     await stopMockServer();
   });
 
-  test('should open import collection via command palette', async () => {
-    log('--- Test: Import Collection ---');
-    await runCommand(app.window, 'Restify: Import Collection');
+  test('should open .http file via command palette', async () => {
+    log('--- Test: Open .http file ---');
+    await runCommand(app.window, 'Restify: Open .http File');
     await app.window.waitForTimeout(2000);
 
-    await screenshot(app.window, 'import-collection');
+    await screenshot(app.window, 'http-file-open-command');
+  });
 
+  test('should display .http file prompt', async () => {
+    log('--- Test: .http file prompt ---');
     const quickInput = app.window.locator('.quick-input-widget:visible');
-    if ((await quickInput.count()) > 0) {
+    const count = await quickInput.count();
+    log(`Quick input visible: ${count > 0}`);
+
+    await screenshot(app.window, 'http-file-prompt');
+
+    if (count > 0) {
       await app.window.keyboard.press('Escape');
       await app.window.waitForTimeout(500);
     }
   });
 
-  test('should open export all collections via command palette', async () => {
-    log('--- Test: Export All Collections ---');
-    await runCommand(app.window, 'Restify: Export All Collections');
+  test('should export request to .http via command palette', async () => {
+    log('--- Test: Export to .http ---');
+    await runCommand(app.window, 'Restify: Export Request to .http');
     await app.window.waitForTimeout(2000);
 
-    await screenshot(app.window, 'export-all-collections');
+    await screenshot(app.window, 'http-file-export-command');
   });
 
-  test('should display import format prompt', async () => {
-    log('--- Test: Import format prompt ---');
+  test('should display export prompt', async () => {
+    log('--- Test: Export prompt ---');
     const quickInput = app.window.locator('.quick-input-widget:visible');
     const count = await quickInput.count();
     log(`Quick input visible: ${count > 0}`);
 
-    await screenshot(app.window, 'import-format-prompt');
+    await screenshot(app.window, 'http-file-export-prompt');
 
     if (count > 0) {
       await app.window.keyboard.press('Escape');

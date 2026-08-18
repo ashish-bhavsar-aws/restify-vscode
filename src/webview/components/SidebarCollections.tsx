@@ -4,7 +4,7 @@ import {
   faMagnifyingGlass, faTrash, faPen,
   faFileExport, faFileImport, faCopy, faGripVertical,
   faFolder, faFolderOpen, faAnglesDown, faAnglesUp, faChevronRight, faFolderPlus,
-  faPlay, faPlus, faListUl, faCode,
+  faPlay, faListUl, faCode,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   Collection, CollectionGroup, CollectionRequest, CollectionVar, DragState,
@@ -21,7 +21,6 @@ import {
   CopyBtn,
   DragHandle,
   Empty,
-  EmptyCta,
   EmptyIcon,
   EmptySub,
   GhostButton,
@@ -367,9 +366,6 @@ export const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
             <EmptyIcon><Icon icon={faFolder} size={28} style={{ opacity: 0.4 }} /></EmptyIcon>
             <div>No collections</div>
             <EmptySub>Save requests to organize them</EmptySub>
-            <EmptyCta data-testid="collections-empty-new" onClick={() => setShowNew(true)}>
-              <Icon icon={faPlus} size={11} /> New Collection
-            </EmptyCta>
           </Empty>
         : filtered.map(col => {
             const topReqs = col.requests || [];

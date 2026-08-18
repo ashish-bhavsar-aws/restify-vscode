@@ -18,6 +18,7 @@ interface TabBarProps {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onAdd: () => void;
+  enableMultiTab?: boolean;
 }
 
 const METHOD_COLORS: Record<string, string> = {
@@ -116,7 +117,7 @@ const Add = styled.button`
   }
 `;
 
-const TabBar: React.FC<TabBarProps> = ({ tabs, onSelect, onClose, onAdd }) => (
+const TabBar: React.FC<TabBarProps> = ({ tabs, onSelect, onClose, onAdd, enableMultiTab }) => (
   <Bar>
     {tabs.map((tab) => (
       <Tab
@@ -139,9 +140,11 @@ const TabBar: React.FC<TabBarProps> = ({ tabs, onSelect, onClose, onAdd }) => (
         </Close>
       </Tab>
     ))}
-    <Add title="New request" onClick={onAdd}>
-      <FontAwesomeIcon icon={faPlus} fixedWidth />
-    </Add>
+    {enableMultiTab && (
+      <Add title="New request" onClick={onAdd}>
+        <FontAwesomeIcon icon={faPlus} fixedWidth />
+      </Add>
+    )}
   </Bar>
 );
 

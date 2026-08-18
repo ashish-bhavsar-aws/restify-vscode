@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { Icon } from './FaIcon';
 import {
   faMagnifyingGlass, faFloppyDisk, faTrash,
-  faPaperPlane, faPlus, faStar,
+  faPaperPlane, faStar,
 } from '@fortawesome/free-solid-svg-icons';
 import { Collection, CollectionGroup, HistoryEntry, listNavKeyDown, relativeTime, METHOD_SHORT } from './sidebarTypes';
 import {
   Empty,
-  EmptyCta,
   EmptyIcon,
   EmptySub,
   GhostButton,
@@ -48,7 +47,7 @@ interface HistoryPanelProps {
   onNewRequest(): void;
 }
 
-export const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onTogglePin, onSaveToCollection, onNewRequest }) => {
+export const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, collections, onSearch, onLoad, onDelete, onClear, onTogglePin, onSaveToCollection, onNewRequest: _onNewRequest }) => {
   const [saveTarget, setSaveTarget] = useState<HistoryEntry | null>(null);
   const [selectedCol, setSelectedCol] = useState('');
   const [newColName, setNewColName] = useState('');
@@ -96,9 +95,6 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, search, col
             </EmptyIcon>
             <div>No requests yet</div>
             <EmptySub>Execute a request to see it here</EmptySub>
-            <EmptyCta data-testid="history-empty-new-request" onClick={onNewRequest}>
-              <Icon icon={faPlus} size={11} /> New Request
-            </EmptyCta>
           </Empty>
         : filtered.map(entry => {
             const sc = !entry.status || entry.status === 0 ? 'err' : entry.status < 300 ? 'ok' : entry.status < 400 ? 'warn' : 'err';

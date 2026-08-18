@@ -16,11 +16,10 @@ import {
   sendRequest,
   waitForResponse,
   getStatusCode,
-  clickRequestTab,
   clickResponseTab,
 } from '../utils/helpers';
 
-test.describe('Schema Validation', () => {
+test.describe('Cookies', () => {
   let app: Awaited<ReturnType<typeof launchVSCode>>;
   let frame: Frame;
 
@@ -36,17 +35,9 @@ test.describe('Schema Validation', () => {
     await stopMockServer();
   });
 
-  test('should open schema tab in request pane', async () => {
-    log('--- Test: Open schema tab ---');
-    await clickRequestTab(frame, 'schema');
-    await frame.waitForTimeout(500);
-
-    await screenshot(app.window, 'schema-request-tab');
-  });
-
-  test('should send request and check response schema tab', async () => {
-    log('--- Test: Response schema tab ---');
-    await setUrl(frame, mockUrl('/api/schema-validation'));
+  test('should set cookie via API endpoint', async () => {
+    log('--- Test: Set cookie ---');
+    await setUrl(frame, mockUrl('/api/cookie/set?name=session&value=abc123'));
     await sendRequest(frame);
     const gotResponse = await waitForResponse(frame, 20000);
     expect(gotResponse).toBeTruthy();
@@ -54,18 +45,24 @@ test.describe('Schema Validation', () => {
     const status = await getStatusCode(frame);
     expect(status).toContain('200');
 
-    await clickResponseTab(frame, 'schema');
-    await frame.waitForTimeout(500);
-
-    await screenshot(app.window, 'schema-response-tab');
+    await screenshot(app.window, 'cookies-set');
   });
 
-  test('should display schema validation content', async () => {
-    log('--- Test: Schema content ---');
-    const pane = frame.locator('#res-pane');
-    const text = await pane.textContent();
-    expect(text).toBeTruthy();
+  test('should check cookies tab in response', async () => {
+    log('--- Test: Check cookies tab ---');
+    await clickResponseTab(frame, 'cookies');
+    await frame.waitForTimeout(500);
 
-    await screenshot(app.window, 'schema-content');
+    await screenshot(app.window, 'cookies-tab-view');
+  });
+
+  test('should send request to cookie check endpoint', async () => {
+    log('--- Test: Cookie check endpoint ---');
+    await setUrl(frame, mockUrl('/api/cookie/check'));
+    await sendRequest(frame);
+    const gotResponse = await waitForResponse(frame, 20000);
+    expect(gotResponse).toBeTruthy();
+
+    await screenshot(app.window, 'cookies-check');
   });
 });

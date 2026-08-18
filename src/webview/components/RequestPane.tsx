@@ -52,6 +52,7 @@ interface RequestPaneProps {
   headerPresets?: HeaderPreset[];
   onSaveHeaderPreset?: (name: string, headers: KVItem[]) => void;
   onDeleteHeaderPreset?: (id: string) => void;
+  enableRequestChaining?: boolean;
 }
 
 type ReqTab = 'params' | 'headers' | 'body' | 'script' | 'auth' | 'schema';
@@ -63,7 +64,7 @@ const BODY_TYPES: BodyType[] = ['none', 'json', 'form', 'urlencoded', 'text', 'x
 
 /* ─── RequestPane ────────────────────────────────── */
 
-export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment, oauthFetching, oauthStatus, onGetOAuthToken, headerPresets = [], onSaveHeaderPreset, onDeleteHeaderPreset }) => {
+export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, themeKind, environment, oauthFetching, oauthStatus, onGetOAuthToken, headerPresets = [], onSaveHeaderPreset, onDeleteHeaderPreset, enableRequestChaining = false }) => {
   const [activeTab, setActiveTab] = useState<ReqTab>('params');
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [namingPreset, setNamingPreset] = useState(false);
@@ -198,7 +199,7 @@ export const RequestPane: React.FC<RequestPaneProps> = ({ request, onUpdate, the
     <PaneWrapper id="req-pane">
       {/* Tab Bar */}
       <TabBarContainer id="req-tabs">
-        {(['params', 'headers', 'body', 'script', 'auth', 'schema'] as ReqTab[]).map((tab) => (
+        {(['params', 'headers', 'body', 'script', 'auth', 'schema'] as ReqTab[]).filter((tab) => enableRequestChaining || tab !== 'script').map((tab) => (
           <TabItem
             key={tab}
             $active={activeTab === tab}

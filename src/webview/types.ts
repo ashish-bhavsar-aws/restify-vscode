@@ -293,6 +293,7 @@ export interface SettingsState {
   responseViewer: ResponseViewerSettings; // F24: body viewer display options
   interceptors: InterceptorSettings; // F50: retry + HTTP log toggles
   responseCache: ResponseCacheSettings; // F29: response cache / offline replay
+  enableRequestChaining: boolean; // Request chaining scripts (off by default)
 }
 
 export const DEFAULT_RESPONSE_VIEWER: ResponseViewerSettings = {
@@ -343,6 +344,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
     ttlSeconds: 300,
     replayOnNetworkError: true,
   },
+  enableRequestChaining: false,
 };
 
 export const DEFAULT_REQUEST: RequestState = {

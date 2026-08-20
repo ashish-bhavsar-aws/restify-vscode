@@ -115,11 +115,11 @@ export const Sidebar: React.FC = () => {
           onDeleteGroup={(cid, gid, groupName) => post({ command: 'deleteGroup', collectionId: cid, groupId: gid, groupName })}
           onRenameGroup={(cid, gid, name) => post({ command: 'renameGroup', collectionId: cid, groupId: gid, name })}
           onDeleteGroupRequest={(cid, gid, rid) => post({ command: 'deleteRequestFromGroup', collectionId: cid, groupId: gid, requestId: rid })}
-          onMoveRequestToGroup={(cid, rid, fromGid, toGid, fromCollectionId) => {
+          onMoveRequestToGroup={(cid, rid, fromGid, toGid, fromCollectionId, targetIndex) => {
             if (fromCollectionId && fromCollectionId !== cid) {
               post({ command: 'moveRequestAcrossCollections', fromCollectionId, toCollectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid });
             } else {
-              post({ command: 'moveRequestToGroup', collectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid });
+              post({ command: 'moveRequestToGroup', collectionId: cid, requestId: rid, fromGroupId: fromGid, toGroupId: toGid, targetIndex });
             }
           }}
           triggerNew={triggerNewCollection}

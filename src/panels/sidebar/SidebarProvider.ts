@@ -246,7 +246,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             msg.collectionId,
             msg.requestId,
             msg.fromGroupId ?? null,
-            msg.toGroupId ?? null
+            msg.toGroupId ?? null,
+            msg.targetIndex,
           );
           break;
         }

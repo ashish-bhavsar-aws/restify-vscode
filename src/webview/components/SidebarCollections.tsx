@@ -69,12 +69,14 @@ interface RequestRowProps {
   onCancelRename(): void;
   onDragStart?(e: React.DragEvent): void;
   onDragEnd?(e: React.DragEvent): void;
+  onDragOver?(e: React.DragEvent): void;
+  onDrop?(e: React.DragEvent): void;
 }
 
-const RequestRow: React.FC<RequestRowProps> = ({ req, collectionName: _collectionName, editing, onLoad, onDelete, onCopy, onRename, onCommitRename, onCancelRename, onDragStart, onDragEnd }) => (
+const RequestRow: React.FC<RequestRowProps> = ({ req, collectionName: _collectionName, editing, onLoad, onDelete, onCopy, onRename, onCommitRename, onCancelRename, onDragStart, onDragEnd, onDragOver, onDrop }) => (
   <SubItem tabIndex={0} draggable data-testid="collection-request"
     onClick={onLoad} onKeyDown={e => { if (e.key === 'Enter') onLoad(); }}
-    onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver} onDrop={onDrop}>
     <DragHandle><Icon icon={faGripVertical} size={11} /></DragHandle>
     <MethodBadge $method={req.method}>{METHOD_SHORT[req.method] || req.method}</MethodBadge>
     {editing
@@ -114,7 +116,7 @@ interface GroupTreeProps {
   onSaveGroup(group: CollectionGroup, parentGroupId?: string): void;
   onDeleteGroup(groupId: string, groupName: string): void;
   onRenameGroup(groupId: string, name: string): void;
-  onMoveRequestToGroup(requestId: string, fromGroupId: string | null, toGroupId: string, fromCollectionId?: string): void;
+  onMoveRequestToGroup(requestId: string, fromGroupId: string | null, toGroupId: string, fromCollectionId?: string, targetIndex?: number): void;
   onRunGroup(groupId: string): void;
 }
 
@@ -186,11 +188,12 @@ const GroupTree: React.FC<GroupTreeProps> = ({
     setIsDragOver(false);
     clearAutoExpand();
     const d = dragRef.current;
-    if (!d || d.fromGroupId === group.id) return;
+    if (!d) return;
+    if (d.fromCollectionId === collectionId && d.fromGroupId === group.id) return;
     if (d.fromCollectionId === collectionId) {
-      onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id);
+      onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id, undefined, d.targetIndex);
     } else {
-      onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id, d.fromCollectionId);
+      onMoveRequestToGroup(d.requestId, d.fromGroupId, group.id, d.fromCollectionId, d.targetIndex);
     }
     dragRef.current = null;
   };
@@ -259,7 +262,7 @@ const GroupTree: React.FC<GroupTreeProps> = ({
                 onBlur={() => { if (newSubGroupName.trim()) handleCreateSubGroup(); else { setShowNewSubGroup(false); setNewSubGroupName(''); } }} />
             </NewGroupInline>
           )}
-          {reqs.filter(matchesSearch).map(req => (
+          {reqs.filter(matchesSearch).map((req, reqIdx) => (
             <RequestRow key={req.id} req={req} collectionName={collectionName}
               editing={editingRequest?.groupId === group.id && editingRequest?.requestId === req.id}
               onLoad={() => onLoad(req)}
@@ -269,7 +272,22 @@ const GroupTree: React.FC<GroupTreeProps> = ({
               onCommitRename={name => onCommitRenameRequest(group.id, req.id!, name)}
               onCancelRename={onCancelRenameRequest}
               onDragStart={e => { dragRef.current = { requestId: req.id!, fromCollectionId: collectionId, fromGroupId: group.id }; e.dataTransfer.effectAllowed = 'move'; (e.currentTarget as HTMLElement).setAttribute('data-dragging', ''); }}
-              onDragEnd={e => { (e.currentTarget as HTMLElement).removeAttribute('data-dragging'); }} />
+              onDragEnd={e => { (e.currentTarget as HTMLElement).removeAttribute('data-dragging'); }}
+              onDragOver={e => {
+                const d = dragRef.current;
+                if (!d || d.fromGroupId !== group.id || d.requestId === req.id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={e => {
+                const d = dragRef.current;
+                if (!d || d.fromGroupId !== group.id || d.requestId === req.id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                onMoveRequestToGroup(d.requestId, group.id, group.id, undefined, reqIdx);
+                dragRef.current = null;
+              }} />
           ))}
           {reqs.length === 0 && subGroups.length === 0 && !showNewSubGroup && (
             <SubEmpty>Empty folder</SubEmpty>
@@ -298,7 +316,7 @@ interface CollectionsPanelProps {
   onDeleteGroup(collectionId: string, groupId: string, groupName: string): void;
   onRenameGroup(collectionId: string, groupId: string, name: string): void;
   onDeleteGroupRequest(collectionId: string, groupId: string, requestId: string): void;
-  onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null, fromCollectionId?: string): void;
+  onMoveRequestToGroup(collectionId: string, requestId: string, fromGroupId: string | null, toGroupId: string | null, fromCollectionId?: string, targetIndex?: number): void;
   onRunCollection(collectionId: string): void;
   onRunGroup(collectionId: string, groupId: string): void;
   onSaveCollectionVariables(collectionId: string, variables: CollectionVar[]): void;
@@ -480,11 +498,11 @@ export const CollectionsPanel: React.FC<CollectionsPanelProps> = ({
                       onSaveGroup={(g, pId) => onSaveGroup(col.id, g, pId ?? grp.id)}
                       onDeleteGroup={(gid, gname) => onDeleteGroup(col.id, gid, gname)}
                       onRenameGroup={(gid, name) => onRenameGroup(col.id, gid, name)}
-                      onMoveRequestToGroup={(rid, fromGid, toGid, fromCollectionId) => {
+                      onMoveRequestToGroup={(rid, fromGid, toGid, fromCollectionId, targetIndex) => {
                         if (fromCollectionId && fromCollectionId !== col.id) {
-                          onMoveRequestToGroup(col.id, rid, fromGid, toGid, fromCollectionId);
+                          onMoveRequestToGroup(col.id, rid, fromGid, toGid, fromCollectionId, targetIndex);
                         } else {
-                          onMoveRequestToGroup(col.id, rid, fromGid, toGid);
+                          onMoveRequestToGroup(col.id, rid, fromGid, toGid, undefined, targetIndex);
                         }
                       }}
                       onRunGroup={gid => onRunGroup(col.id, gid)}

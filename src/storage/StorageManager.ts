@@ -810,35 +810,37 @@ export class StorageManager {
    * Move a request from its current location (top-level or a group) into
    * another location (a group or back to top-level).
    * fromGroupId / toGroupId = null means the collection's top-level requests array.
+   * Supports same-group reorder when fromGroupId === toGroupId with a targetIndex.
    */
   moveRequestToGroup(
     collectionId: string,
     requestId: string,
     fromGroupId: string | null,
     toGroupId: string | null,
+    targetIndex?: number,
   ): void {
-    if (fromGroupId === toGroupId) return;
     const collections = this.getCollections();
     const col = collections.find((c) => String(c.id) === String(collectionId));
     if (!col) return;
 
     // Remove from source
     let request: any;
+    let fromIdx = -1;
     if (fromGroupId) {
       const src = _findGroup(col.groups || [], fromGroupId);
       if (!src?.requests) return;
-      const idx = src.requests.findIndex(
+      fromIdx = src.requests.findIndex(
         (r: any) => String(r.id) === String(requestId),
       );
-      if (idx === -1) return;
-      [request] = src.requests.splice(idx, 1);
+      if (fromIdx === -1) return;
+      [request] = src.requests.splice(fromIdx, 1);
     } else {
       if (!col.requests) return;
-      const idx = col.requests.findIndex(
+      fromIdx = col.requests.findIndex(
         (r) => String(r.id) === String(requestId),
       );
-      if (idx === -1) return;
-      [request] = col.requests.splice(idx, 1);
+      if (fromIdx === -1) return;
+      [request] = col.requests.splice(fromIdx, 1);
     }
 
     // Add to destination
@@ -846,10 +848,20 @@ export class StorageManager {
       const dst = _findGroup(col.groups || [], toGroupId);
       if (!dst) return;
       if (!dst.requests) dst.requests = [];
-      dst.requests.push(request);
+      if (targetIndex !== undefined && fromGroupId === toGroupId) {
+        const insertAt = Math.min(Math.max(targetIndex, 0), dst.requests.length);
+        dst.requests.splice(insertAt, 0, request);
+      } else {
+        dst.requests.push(request);
+      }
     } else {
       if (!col.requests) col.requests = [];
-      col.requests.push(request);
+      if (targetIndex !== undefined && fromGroupId === null) {
+        const insertAt = Math.min(Math.max(targetIndex, 0), col.requests.length);
+        col.requests.splice(insertAt, 0, request);
+      } else {
+        col.requests.push(request);
+      }
     }
 
     this.globalState.update("restify.collections", collections);

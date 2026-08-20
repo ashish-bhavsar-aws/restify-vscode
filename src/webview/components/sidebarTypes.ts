@@ -12,7 +12,7 @@ export interface Collection {
   variables?: CollectionVar[]; preScript?: string; testScript?: string;
 }
 export type SidebarType = 'history' | 'collections' | 'environments' | 'openapi';
-export interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; }
+export interface DragState { requestId: string; fromCollectionId: string; fromGroupId: string | null; targetIndex?: number; }
 export interface RunEntry {
   requestId: string;
   name: string;

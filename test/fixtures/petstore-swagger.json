@@ -1,0 +1,95 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Swagger Petstore",
+    "version": "1.0.0",
+    "description": "A sample pet store API for testing import and rearrange"
+  },
+  "servers": [
+    { "url": "http://localhost:3000" }
+  ],
+  "tags": [
+    { "name": "pets", "description": "Pet operations" },
+    { "name": "store", "description": "Store operations" }
+  ],
+  "paths": {
+    "/api/json-response": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "List all pets",
+        "operationId": "listPets",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer" }, "example": 10 }
+        ],
+        "responses": {
+          "200": { "description": "A list of pets" }
+        }
+      },
+      "post": {
+        "tags": ["pets"],
+        "summary": "Create a pet",
+        "operationId": "createPet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "tag": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Pet created" }
+        }
+      }
+    },
+    "/api/json-response/{id}": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "Get pet by ID",
+        "operationId": "getPetById",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "A pet" }
+        }
+      },
+      "delete": {
+        "tags": ["pets"],
+        "summary": "Delete a pet",
+        "operationId": "deletePet",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Pet deleted" }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "tags": ["store"],
+        "summary": "Get server status",
+        "operationId": "getStatus",
+        "responses": {
+          "200": { "description": "Server status" }
+        }
+      }
+    },
+    "/api/headers": {
+      "get": {
+        "tags": ["store"],
+        "summary": "Get request headers",
+        "operationId": "getHeaders",
+        "responses": {
+          "200": { "description": "Echoed headers" }
+        }
+      }
+    }
+  }
+}
